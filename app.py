@@ -1,5 +1,3 @@
-
-import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -24,58 +22,67 @@ def calculate_signals(data):
     )
     return data
 
-# Streamlit app
-st.title("Real-Time Trade Signal Indicator")
+# Main script
+def main():
+    print("Real-Time Trade Signal Indicator")
+    
+    # Fetch and process data
+    data = fetch_data()
+    data = calculate_signals(data)
+    
+    # Plot EUR/USD prices with signals
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=data['Date'], y=data['EUR/USD'], mode='lines', name='EUR/USD'))
+    
+    # Add buy signals
+    buy_signals = data[data['Signal'] == 1]
+    fig.add_trace(go.Scatter(
+        x=buy_signals['Date'], 
+        y=buy_signals['EUR/USD'], 
+        mode='markers', 
+        marker=dict(color='green', size=10), 
+        name='Buy Signal'
+    ))
+    
+    # Add sell signals
+    sell_signals = data[data['Signal'] == -1]
+    fig.add_trace(go.Scatter(
+        x=sell_signals['Date'], 
+        y=sell_signals['EUR/USD'], 
+        mode='markers', 
+        marker=dict(color='red', size=10), 
+        name='Sell Signal'
+    ))
+    
+    # Update layout
+    fig.update_layout(
+        title="EUR/USD with Trade Signals",
+        xaxis_title="Date",
+        yaxis_title="EUR/USD Price",
+        legend_title="Legend",
+        template="plotly_white"
+    )
+    
+    # Show plot
+    fig.show()
 
-# Fetch and process data
-data = fetch_data()
-data = calculate_signals(data)
+    # Print latest signal in the console
+    print("\nTrade Signal Alerts:")
+    latest_signal = data.iloc[-1]
+    if latest_signal['Signal'] == 1:
+        print(f"Buy Signal detected on {latest_signal['Date'].date()} at EUR/USD: {latest_signal['EUR/USD']:.4f}")
+    elif latest_signal['Signal'] == -1:
+        print(f"Sell Signal detected on {latest_signal['Date'].date()} at EUR/USD: {latest_signal['EUR/USD']:.4f}")
+    else:
+        print("No trade signal at the moment.")
 
-# Display data table
-st.subheader("Latest Data")
-st.dataframe(data.tail(10))
+# Run the script
+main()
 
-# Plot EUR/USD prices with signals
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=data['Date'], y=data['EUR/USD'], mode='lines', name='EUR/USD'))
+# Save the code to a file
+with open('app.py', 'w') as f:
+    f.write(code)
+print("File saved as app.py")
 
-# Add buy signals
-buy_signals = data[data['Signal'] == 1]
-fig.add_trace(go.Scatter(
-    x=buy_signals['Date'], 
-    y=buy_signals['EUR/USD'], 
-    mode='markers', 
-    marker=dict(color='green', size=10), 
-    name='Buy Signal'
-))
-
-# Add sell signals
-sell_signals = data[data['Signal'] == -1]
-fig.add_trace(go.Scatter(
-    x=sell_signals['Date'], 
-    y=sell_signals['EUR/USD'], 
-    mode='markers', 
-    marker=dict(color='red', size=10), 
-    name='Sell Signal'
-))
-
-# Update layout
-fig.update_layout(
-    title="EUR/USD with Trade Signals",
-    xaxis_title="Date",
-    yaxis_title="EUR/USD Price",
-    legend_title="Legend",
-    template="plotly_white"
-)
-
-st.plotly_chart(fig)
-
-# Alarm notifications
-st.subheader("Trade Signal Alerts")
-latest_signal = data.iloc[-1]
-if latest_signal['Signal'] == 1:
-    st.success(f"Buy Signal detected on {latest_signal['Date'].date()} at EUR/USD: {latest_signal['EUR/USD']:.4f}")
-elif latest_signal['Signal'] == -1:
-    st.error(f"Sell Signal detected on {latest_signal['Date'].date()} at EUR/USD: {latest_signal['EUR/USD']:.4f}")
-else:
-    st.info("No trade signal at the moment.")
+from google.colab import files
+files.download('app.py')
