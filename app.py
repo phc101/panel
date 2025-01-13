@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
 
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
     """Calculate forward rate based on interest rate parity."""
@@ -18,14 +19,34 @@ def plot_forward_curve(spot_rate, domestic_rate, foreign_rate):
         calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, month / 12) for month in months
     ]
 
-    fig, ax = plt.subplots()
-    ax.plot(months, forward_rates, marker="o")
+    # Calculate forward points
+    forward_points = [rate - spot_rate for rate in forward_rates]
+
+    # Generate maturity dates
+    start_date = datetime.now()
+    maturity_dates = [(start_date + timedelta(days=30 * month)).strftime("%Y-%m-%d") for month in months]
+
+    fig, ax1 = plt.subplots()
+
+    # Plot forward rates
+    ax1.plot(maturity_dates, forward_rates, marker="o", label="Forward Rate")
+    ax1.set_xlabel("Maturity Date")
+    ax1.set_ylabel("Forward Rate", color="blue")
+    ax1.tick_params(axis="y", labelcolor="blue")
+    ax1.grid(True)
+
+    # Annotate forward rates
     for i, rate in enumerate(forward_rates):
-        ax.text(months[i], rate, f"{rate:.4f}", ha="left", va="bottom")
-    ax.set_title("Forward Rate Curve (1-Year Tenor)")
-    ax.set_xlabel("Months")
-    ax.set_ylabel("Forward Rate")
-    ax.grid(True)
+        ax1.text(maturity_dates[i], rate, f"{rate:.4f}", ha="center", va="bottom", fontsize=8)
+
+    # Add secondary axis for forward points
+    ax2 = ax1.twinx()
+    ax2.plot(maturity_dates, forward_points, marker="x", color="red", label="Forward Points")
+    ax2.set_ylabel("Forward Points", color="red")
+    ax2.tick_params(axis="y", labelcolor="red")
+
+    fig.suptitle("Forward Rate Curve (1-Year Tenor)")
+    fig.autofmt_xdate(rotation=45)
     return fig
 
 def main():
