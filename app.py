@@ -53,7 +53,17 @@ def plot_forward_curve(spot_rate, domestic_rate, foreign_rate):
 
     fig.suptitle("Forward Rate Curve (1-Year Tenor)")
     fig.autofmt_xdate(rotation=45)
-    return fig
+
+    # Create a DataFrame for the table
+    data = {
+        "Tenor (Months)": months,
+        "Maturity Date": maturity_dates,
+        "Forward Rate": [f"{rate:.4f}" for rate in forward_rates],
+        "Forward Points": [f"{point:.4f}" for point in forward_points]
+    }
+    df = pd.DataFrame(data)
+
+    return fig, df
 
 def main():
     st.title("Forward Rate Curve Calculator")
@@ -69,8 +79,11 @@ def main():
 
     if st.sidebar.button("Generate Forward Curve"):
         st.write("### Forward Rate Curve for 1-Year Tenor")
-        forward_curve = plot_forward_curve(spot_rate, poland_rate, foreign_rate)
+        forward_curve, forward_table = plot_forward_curve(spot_rate, poland_rate, foreign_rate)
         st.pyplot(forward_curve)
+
+        st.write("### Forward Rates Table")
+        st.dataframe(forward_table)
 
 if __name__ == "__main__":
     main()
