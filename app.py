@@ -1,40 +1,6 @@
 import streamlit as st
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
 import matplotlib.pyplot as plt
-
-def fetch_forward_rates():
-    """Fetch forward rates data from Investing.com."""
-    url = "https://pl.investing.com/currencies/eur-pln-forward-rates"
-
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-
-        soup = BeautifulSoup(response.text, "lxml")
-        table = soup.find("table", {"class": "genTbl closedTbl forward_ratesTbl"})
-        rows = table.find_all("tr")
-
-        data = {"Tenor": [], "Bid": [], "Ask": []}
-
-        for row in rows[1:]:  # Skip the header row
-            cells = row.find_all("td")
-            if len(cells) >= 3:
-                data["Tenor"].append(cells[0].text.strip())
-                data["Bid"].append(float(cells[1].text.strip().replace(',', '')))
-                data["Ask"].append(float(cells[2].text.strip().replace(',', '')))
-
-        df = pd.DataFrame(data)
-
-    except Exception as e:
-        st.error(f"Failed to fetch data: {e}")
-        df = pd.DataFrame({"Tenor": [], "Bid": [], "Ask": []})
-
-    return df
 
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
     """Calculate forward rate based on interest rate parity."""
@@ -45,71 +11,33 @@ def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
         st.error(f"Error in forward rate calculation: {e}")
         return None
 
-def plot_bid_rates(df):
-    """Plot bid rates."""
-    if "Bid" not in df.columns:
-        st.error("'Bid' column is missing in the data.")
-        return None
+def plot_forward_curve(spot_rate, domestic_rate, foreign_rate):
+    """Plot forward rate curve for a 1-year tenor on a monthly basis."""
+    months = [i for i in range(1, 13)]  # 1 to 12 months
+    forward_rates = [
+        calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, month / 12) for month in months
+    ]
 
     fig, ax = plt.subplots()
-    ax.plot(df["Tenor"], df["Bid"], marker="o", label="Bid")
-    ax.set_title("EUR/PLN Bid Points")
-    ax.set_xlabel("Tenor")
-    ax.set_ylabel("Rate")
-    ax.legend()
-    return fig
-
-def plot_ask_rates(df):
-    """Plot ask rates."""
-    if "Ask" not in df.columns:
-        st.error("'Ask' column is missing in the data.")
-        return None
-
-    fig, ax = plt.subplots()
-    ax.plot(df["Tenor"], df["Ask"], marker="o", label="Ask")
-    ax.set_title("EUR/PLN Ask Points")
-    ax.set_xlabel("Tenor")
-    ax.set_ylabel("Rate")
-    ax.legend()
+    ax.plot(months, forward_rates, marker="o")
+    ax.set_title("Forward Rate Curve (1-Year Tenor)")
+    ax.set_xlabel("Months")
+    ax.set_ylabel("Forward Rate")
+    ax.grid(True)
     return fig
 
 def main():
-    st.title("EUR/PLN Forward Rates")
+    st.title("Forward Rate Curve Calculator")
 
-    st.sidebar.header("Options")
-    refresh = st.sidebar.button("Refresh Data")
-
-    if refresh or "data" not in st.session_state:
-        with st.spinner("Fetching forward rates..."):
-            df = fetch_forward_rates()
-            st.session_state["data"] = df
-    else:
-        df = st.session_state["data"]
-
-    st.write("### Forward Rates Data")
-    st.write("Debugging DataFrame:", df)  # Debugging output
-    st.dataframe(df)
-
-    st.sidebar.header("Forward Rate Calculator")
+    st.sidebar.header("Inputs")
     spot_rate = st.sidebar.number_input("Spot Rate", value=4.5, step=0.01)
     domestic_rate = st.sidebar.number_input("Domestic Interest Rate (%)", value=1.5, step=0.1) / 100
     foreign_rate = st.sidebar.number_input("Foreign Interest Rate (%)", value=0.5, step=0.1) / 100
-    tenor = st.sidebar.number_input("Tenor (Years)", value=1.0, step=0.1)
 
-    if st.sidebar.button("Calculate Forward Rate"):
-        forward_rate = calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor)
-        if forward_rate:
-            st.sidebar.write(f"Calculated Forward Rate: {forward_rate:.4f}")
-
-    st.write("### Bid Points Chart")
-    bid_chart = plot_bid_rates(df)
-    if bid_chart:
-        st.pyplot(bid_chart)
-
-    st.write("### Ask Points Chart")
-    ask_chart = plot_ask_rates(df)
-    if ask_chart:
-        st.pyplot(ask_chart)
+    if st.sidebar.button("Generate Forward Curve"):
+        st.write("### Forward Rate Curve for 1-Year Tenor")
+        forward_curve = plot_forward_curve(spot_rate, domestic_rate, foreign_rate)
+        st.pyplot(forward_curve)
 
 if __name__ == "__main__":
     main()
