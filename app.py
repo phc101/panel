@@ -14,9 +14,12 @@ def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
 
 def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_start, window_end):
     """Plot forward rate curve for a window forward contract."""
+    today = datetime.now().date()
+    start_tenor = (window_start - today).days / 365 if window_start > today else 0
+
     window_days = (window_end - window_start).days
     days = [i for i in range(0, window_days + 1, 30)]  # Monthly intervals within the window
-    tenors = [day / 365 for day in days]  # Convert days to years
+    tenors = [(start_tenor + day / 365) for day in days]  # Adjust tenors based on start_tenor
 
     forward_rates = [
         calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor) for tenor in tenors
@@ -58,7 +61,7 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
 
     # Create a DataFrame for the table
     data = {
-        "Tenor (Days)": days,
+        "Tenor (Days)": [int((start_tenor * 365) + day) for day in days],
         "Maturity Date": maturity_dates,
         "Forward Rate": [f"{rate:.4f}" for rate in forward_rates],
         "Forward Points": [f"{point:.4f}" for point in forward_points]
