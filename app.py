@@ -18,12 +18,19 @@ def fetch_data():
 
 # Calculate signals based on Z-score
 def calculate_signals(data, window=20):
+    # Calculate rolling mean and standard deviation
     data['Mean'] = data['Close'].rolling(window=window).mean()
     data['StdDev'] = data['Close'].rolling(window=window).std()
+    
+    # Avoid division by zero or NaN values
     data['Z-Score'] = (data['Close'] - data['Mean']) / data['StdDev']
+    data['Z-Score'] = data['Z-Score'].fillna(0)  # Fill NaN Z-scores with 0
+    
+    # Generate signals
     data['Signal'] = np.where(data['Z-Score'] < -2, 'Buy',
                      np.where(data['Z-Score'] > 2, 'Sell', 'Hold'))
     return data
+
 
 # Plot the price chart with buy/sell signals
 def plot_chart(data):
