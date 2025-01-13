@@ -1,81 +1,52 @@
 
 import streamlit as st
+import yfinance as yf
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
+import matplotlib.pyplot as plt
 
-# Placeholder for fetching live data (replace with real API calls)
+# App title
+st.title("EUR/PLN Buy/Sell Recommendations")
+
+# Fetch live EUR/PLN data
+@st.cache
 def fetch_data():
-    # Simulate 10Y yield and EUR/USD data for demonstration
-    np.random.seed(42)
-    dates = pd.date_range(datetime.now() - timedelta(days=365), periods=52, freq='W-FRI')
-    yields = 1.5 + np.cumsum(np.random.normal(0, 0.05, len(dates)))
-    eur_usd = 1.1 + np.cumsum(np.random.normal(0, 0.01, len(dates)))
-    return pd.DataFrame({'Date': dates, '10Y Yield': yields, 'EUR/USD': eur_usd})
-
-# Calculate Z-scores for the last 4 weeks
-def calculate_signals(data):
-    data['Z-Score'] = data['10Y Yield'].rolling(window=4).apply(
-        lambda x: (x.iloc[-1] - x.mean()) / x.std(), raw=False
-    )
-    data['Signal'] = data['Z-Score'].apply(
-        lambda z: 1 if z < -1 else -1 if z > 1 else 0
-    )
+    ticker = "EURPLN=X"  # Yahoo Finance ticker for EUR/PLN
+    data = yf.download(ticker, period="1y", interval="1d")
+    data['Date'] = data.index
     return data
 
-# Streamlit app
-st.title("Real-Time Trade Signal Indicator")
+# Calculate signals based on Z-score
+def calculate_signals(data, window=20):
+    data['Mean'] = data['Close'].rolling(window=window).mean()
+    data['StdDev'] = data['Close'].rolling(window=window).std()
+    data['Z-Score'] = (data['Close'] - data['Mean']) / data['StdDev']
+    data['Signal'] = np.where(data['Z-Score'] < -2, 'Buy',
+                     np.where(data['Z-Score'] > 2, 'Sell', 'Hold'))
+    return data
 
-# Fetch and process data
+# Plot the price chart with buy/sell signals
+def plot_chart(data):
+    plt.figure(figsize=(12, 6))
+    plt.plot(data['Date'], data['Close'], label="EUR/PLN Close Price", color="blue", alpha=0.6)
+    buy_signals = data[data['Signal'] == 'Buy']
+    sell_signals = data[data['Signal'] == 'Sell']
+    plt.scatter(buy_signals['Date'], buy_signals['Close'], color='green', label='Buy Signal', marker='^', alpha=1)
+    plt.scatter(sell_signals['Date'], sell_signals['Close'], color='red', label='Sell Signal', marker='v', alpha=1)
+    plt.title("EUR/PLN with Buy/Sell Signals")
+    plt.xlabel("Date")
+    plt.ylabel("Price (PLN)")
+    plt.legend()
+    plt.grid()
+    st.pyplot(plt)
+
+# Main logic
 data = fetch_data()
 data = calculate_signals(data)
 
-# Display data table
-st.subheader("Latest Data")
-st.dataframe(data.tail(10))
+# Display data and chart
+st.write("### EUR/PLN Historical Data (Last 12 Months)")
+st.dataframe(data[['Date', 'Close', 'Signal']])
 
-# Plot EUR/USD prices with signals
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=data['Date'], y=data['EUR/USD'], mode='lines', name='EUR/USD'))
-
-# Add buy signals
-buy_signals = data[data['Signal'] == 1]
-fig.add_trace(go.Scatter(
-    x=buy_signals['Date'], 
-    y=buy_signals['EUR/USD'], 
-    mode='markers', 
-    marker=dict(color='green', size=10), 
-    name='Buy Signal'
-))
-
-# Add sell signals
-sell_signals = data[data['Signal'] == -1]
-fig.add_trace(go.Scatter(
-    x=sell_signals['Date'], 
-    y=sell_signals['EUR/USD'], 
-    mode='markers', 
-    marker=dict(color='red', size=10), 
-    name='Sell Signal'
-))
-
-# Update layout
-fig.update_layout(
-    title="EUR/USD with Trade Signals",
-    xaxis_title="Date",
-    yaxis_title="EUR/USD Price",
-    legend_title="Legend",
-    template="plotly_white"
-)
-
-st.plotly_chart(fig)
-
-# Alarm notifications
-st.subheader("Trade Signal Alerts")
-latest_signal = data.iloc[-1]
-if latest_signal['Signal'] == 1:
-    st.success(f"Buy Signal detected on {latest_signal['Date'].date()} at EUR/USD: {latest_signal['EUR/USD']:.4f}")
-elif latest_signal['Signal'] == -1:
-    st.error(f"Sell Signal detected on {latest_signal['Date'].date()} at EUR/USD: {latest_signal['EUR/USD']:.4f}")
-else:
-    st.info("No trade signal at the moment.")
+st.write("### Price Chart with Signals")
+plot_chart(data)
