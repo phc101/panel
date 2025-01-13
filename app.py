@@ -36,6 +36,15 @@ def fetch_forward_rates():
 
     return df
 
+def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
+    """Calculate forward rate based on interest rate parity."""
+    try:
+        forward_rate = spot_rate * (1 + domestic_rate * tenor) / (1 + foreign_rate * tenor)
+        return forward_rate
+    except Exception as e:
+        st.error(f"Error in forward rate calculation: {e}")
+        return None
+
 def plot_bid_rates(df):
     """Plot bid rates."""
     if "Bid" not in df.columns:
@@ -80,6 +89,17 @@ def main():
     st.write("### Forward Rates Data")
     st.write("Debugging DataFrame:", df)  # Debugging output
     st.dataframe(df)
+
+    st.sidebar.header("Forward Rate Calculator")
+    spot_rate = st.sidebar.number_input("Spot Rate", value=4.5, step=0.01)
+    domestic_rate = st.sidebar.number_input("Domestic Interest Rate (%)", value=1.5, step=0.1) / 100
+    foreign_rate = st.sidebar.number_input("Foreign Interest Rate (%)", value=0.5, step=0.1) / 100
+    tenor = st.sidebar.number_input("Tenor (Years)", value=1.0, step=0.1)
+
+    if st.sidebar.button("Calculate Forward Rate"):
+        forward_rate = calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor)
+        if forward_rate:
+            st.sidebar.write(f"Calculated Forward Rate: {forward_rate:.4f}")
 
     st.write("### Bid Points Chart")
     bid_chart = plot_bid_rates(df)
