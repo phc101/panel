@@ -20,6 +20,8 @@ def plot_forward_curve(spot_rate, domestic_rate, foreign_rate):
 
     fig, ax = plt.subplots()
     ax.plot(months, forward_rates, marker="o")
+    for i, rate in enumerate(forward_rates):
+        ax.text(months[i], rate, f"{rate:.4f}", ha="left", va="bottom")
     ax.set_title("Forward Rate Curve (1-Year Tenor)")
     ax.set_xlabel("Months")
     ax.set_ylabel("Forward Rate")
