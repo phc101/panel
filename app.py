@@ -106,7 +106,14 @@ def calculate_nominal_loss(fixed_rate, forward_rates, maturity_dates, total_amou
         })
         remaining_amount -= close_amount
 
-    return pd.DataFrame(nominal_losses)
+    df = pd.DataFrame(nominal_losses)
+    df.loc["Total"] = df[["Nominal Loss (PLN)"]].sum(numeric_only=True)
+    df.loc["Total", "Maturity Date"] = "Total"
+    df.loc["Total", "Remaining Amount (EUR)"] = "-"
+    df.loc["Total", "Closure Amount (EUR)"] = "-"
+    df.loc["Total", "Forward Rate"] = "-"
+
+    return df
 
 def main():
     st.title("Window Forward Rate Calculator")
