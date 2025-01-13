@@ -37,17 +37,11 @@ def main():
     # Domestic rate set to Poland interest rate
     poland_rate = st.sidebar.number_input("Poland Interest Rate (%)", value=5.75, step=0.1) / 100
 
-    # Foreign rate options: US, Euro Zone, UK
-    foreign_rate_options = {
-        "US": 5.25 / 100,
-        "Euro Zone": 3.15 / 100,
-        "UK": 4.75 / 100
-    }
-    foreign_rate_selection = st.sidebar.selectbox("Select Foreign Interest Rate Region", options=foreign_rate_options.keys())
-    foreign_rate = foreign_rate_options[foreign_rate_selection]
+    # Manual foreign interest rate input
+    foreign_rate = st.sidebar.number_input("Foreign Interest Rate (%)", value=3.0, step=0.1) / 100
 
     if st.sidebar.button("Generate Forward Curve"):
-        st.write(f"### Forward Rate Curve for 1-Year Tenor (Foreign Rate: {foreign_rate_selection})")
+        st.write("### Forward Rate Curve for 1-Year Tenor")
         forward_curve = plot_forward_curve(spot_rate, poland_rate, foreign_rate)
         st.pyplot(forward_curve)
 
