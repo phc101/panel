@@ -10,22 +10,34 @@ def fetch_forward_rates():
     # response = requests.get(url)
     # forward_rates = response.json() or pd.read_html(response.text)[0]
     # For simplicity, replace this with your data-fetching logic.
-    
+
     # Simulating data
     data = {
-        "Tenor": ["1M", "3M", "6M", "1Y"],
-        "Forward Rate": [4.5678, 4.6012, 4.6500, 4.7200],
+        "Tenor": ["1M", "3M", "6M", "1Y", "2Y", "5Y"],
+        "Bid": [4.5500, 4.5800, 4.6200, 4.6900, 4.8000, 5.0000],
+        "Ask": [4.5700, 4.6000, 4.6400, 4.7100, 4.8200, 5.0200],
     }
     df = pd.DataFrame(data)
     return df
 
-def plot_forward_rates(df):
-    """Plot forward rates."""
+def plot_bid_rates(df):
+    """Plot bid rates."""
     fig, ax = plt.subplots()
-    ax.plot(df["Tenor"], df["Forward Rate"], marker="o")
-    ax.set_title("EUR/PLN Forward Rates")
+    ax.plot(df["Tenor"], df["Bid"], marker="o", label="Bid")
+    ax.set_title("EUR/PLN Bid Points")
     ax.set_xlabel("Tenor")
-    ax.set_ylabel("Forward Rate")
+    ax.set_ylabel("Rate")
+    ax.legend()
+    return fig
+
+def plot_ask_rates(df):
+    """Plot ask rates."""
+    fig, ax = plt.subplots()
+    ax.plot(df["Tenor"], df["Ask"], marker="o", label="Ask")
+    ax.set_title("EUR/PLN Ask Points")
+    ax.set_xlabel("Tenor")
+    ax.set_ylabel("Rate")
+    ax.legend()
     return fig
 
 def main():
@@ -44,9 +56,13 @@ def main():
     st.write("### Forward Rates Data")
     st.dataframe(df)
 
-    st.write("### Forward Rates Chart")
-    chart = plot_forward_rates(df)
-    st.pyplot(chart)
+    st.write("### Bid Points Chart")
+    bid_chart = plot_bid_rates(df)
+    st.pyplot(bid_chart)
+
+    st.write("### Ask Points Chart")
+    ask_chart = plot_ask_rates(df)
+    st.pyplot(ask_chart)
 
 if __name__ == "__main__":
     main()
