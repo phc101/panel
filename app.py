@@ -1,24 +1,35 @@
 import streamlit as st
 import pandas as pd
 import requests
+from bs4 import BeautifulSoup
 import matplotlib.pyplot as plt
 
 def fetch_forward_rates():
-    """Fetch forward rates data from FX Empire or other sources."""
-    url = "https://www.fxempire.com/currencies/eur-pln/forward-rates"
-    # Example: If FX Empire has an API or returns JSON, parse accordingly
-    # response = requests.get(url)
-    # forward_rates = response.json() or pd.read_html(response.text)[0]
-    # For simplicity, replace this with your data-fetching logic.
+    """Fetch forward rates data from Investing.com."""
+    url = "https://pl.investing.com/currencies/eur-pln-forward-rates"
 
     try:
-        # Simulating data
-        data = {
-            "Tenor": ["1M", "3M", "6M", "1Y", "2Y", "5Y"],
-            "Bid": [4.5500, 4.5800, 4.6200, 4.6900, 4.8000, 5.0000],
-            "Ask": [4.5700, 4.6000, 4.6400, 4.7100, 4.8200, 5.0200],
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "lxml")
+        table = soup.find("table", {"class": "genTbl closedTbl forward_ratesTbl"})
+        rows = table.find_all("tr")
+
+        data = {"Tenor": [], "Bid": [], "Ask": []}
+
+        for row in rows[1:]:  # Skip the header row
+            cells = row.find_all("td")
+            if len(cells) >= 3:
+                data["Tenor"].append(cells[0].text.strip())
+                data["Bid"].append(float(cells[1].text.strip().replace(',', '')))
+                data["Ask"].append(float(cells[2].text.strip().replace(',', '')))
+
         df = pd.DataFrame(data)
+
     except Exception as e:
         st.error(f"Failed to fetch data: {e}")
         df = pd.DataFrame({"Tenor": [], "Bid": [], "Ask": []})
