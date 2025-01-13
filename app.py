@@ -65,7 +65,23 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
     }
     df = pd.DataFrame(data)
 
-    return fig, df
+    return fig, df, forward_rates, forward_points
+
+def plot_loss_due_to_fixed_rate(fixed_rate, forward_rates, forward_points, maturity_dates):
+    """Plot the client's loss due to holding fixed at window open rate."""
+    losses = [fixed_rate - rate for rate in forward_rates]
+
+    fig, ax = plt.subplots()
+    ax.plot(maturity_dates, losses, marker="o", label="Loss")
+    ax.set_xlabel("Maturity Date")
+    ax.set_ylabel("Loss in Forward Points")
+    ax.set_title("Loss Due to Fixed Rate")
+    ax.grid(True)
+
+    for i, loss in enumerate(losses):
+        ax.text(maturity_dates[i], losses[i], f"{loss:.4f}", ha="center", va="bottom", fontsize=7)
+
+    return fig
 
 def main():
     st.title("Window Forward Rate Calculator")
@@ -88,11 +104,16 @@ def main():
             st.error("Window End Date must be after Window Start Date.")
         else:
             st.write("### Window Forward Rate Curve")
-            forward_curve, forward_table = plot_window_forward_curve(spot_rate, poland_rate, foreign_rate, window_start, window_end)
+            forward_curve, forward_table, forward_rates, forward_points = plot_window_forward_curve(spot_rate, poland_rate, foreign_rate, window_start, window_end)
             st.pyplot(forward_curve)
 
             st.write("### Window Forward Rates Table")
             st.dataframe(forward_table)
+
+            fixed_rate = forward_rates[0]  # Assume fixed rate is the first forward rate in the window
+            st.write(f"### Loss Analysis (Fixed Rate: {fixed_rate:.4f})")
+            loss_curve = plot_loss_due_to_fixed_rate(fixed_rate, forward_rates, forward_points, forward_table["Maturity Date"].tolist())
+            st.pyplot(loss_curve)
 
 if __name__ == "__main__":
     main()
