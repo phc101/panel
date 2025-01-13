@@ -84,7 +84,29 @@ def plot_loss_due_to_fixed_rate(fixed_rate, forward_rates, forward_points, matur
     for i, loss in enumerate(losses):
         ax.text(maturity_dates[i], losses[i], f"{loss:.4f}", ha="center", va="bottom", fontsize=7)
 
-    return fig
+    return fig, losses
+
+def calculate_nominal_loss(fixed_rate, forward_rates, maturity_dates, total_amount, monthly_closure):
+    """Calculate nominal loss in PLN given a fixed rate and monthly closures."""
+    remaining_amount = total_amount
+    nominal_losses = []
+
+    for i, rate in enumerate(forward_rates):
+        if remaining_amount <= 0:
+            break
+
+        close_amount = min(monthly_closure, remaining_amount)
+        loss = (fixed_rate - rate) * close_amount
+        nominal_losses.append({
+            "Maturity Date": maturity_dates[i],
+            "Remaining Amount (EUR)": remaining_amount,
+            "Closure Amount (EUR)": close_amount,
+            "Forward Rate": rate,
+            "Nominal Loss (PLN)": loss
+        })
+        remaining_amount -= close_amount
+
+    return pd.DataFrame(nominal_losses)
 
 def main():
     st.title("Window Forward Rate Calculator")
@@ -102,6 +124,9 @@ def main():
     window_start = st.sidebar.date_input("Window Start Date", value=datetime.now().date())
     window_end = st.sidebar.date_input("Window End Date", value=(datetime.now() + timedelta(days=90)).date())
 
+    total_amount = st.sidebar.number_input("Total Hedge Amount (EUR)", value=1000000, step=100000)
+    monthly_closure = st.sidebar.number_input("Monthly Closure Amount (EUR)", value=100000, step=10000)
+
     if st.sidebar.button("Generate Window Forward Curve"):
         if window_start >= window_end:
             st.error("Window End Date must be after Window Start Date.")
@@ -115,8 +140,12 @@ def main():
 
             fixed_rate = forward_rates[0]  # Assume fixed rate is the first forward rate in the window
             st.write(f"### Loss Analysis (Fixed Rate: {fixed_rate:.4f})")
-            loss_curve = plot_loss_due_to_fixed_rate(fixed_rate, forward_rates, forward_points, forward_table["Maturity Date"].tolist())
+            loss_curve, losses = plot_loss_due_to_fixed_rate(fixed_rate, forward_rates, forward_points, forward_table["Maturity Date"].tolist())
             st.pyplot(loss_curve)
+
+            st.write("### Nominal Loss in PLN")
+            nominal_loss_table = calculate_nominal_loss(fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
+            st.dataframe(nominal_loss_table)
 
 if __name__ == "__main__":
     main()
