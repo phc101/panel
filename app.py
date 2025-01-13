@@ -35,15 +35,21 @@ def plot_forward_curve(spot_rate, domestic_rate, foreign_rate):
     ax1.tick_params(axis="y", labelcolor="blue")
     ax1.grid(True)
 
-    # Annotate forward rates
-    for i, rate in enumerate(forward_rates):
-        ax1.text(maturity_dates[i], rate, f"{rate:.4f}", ha="center", va="bottom", fontsize=8)
+    # Annotate forward rates and move points next to the red line
+    for i, (rate, point) in enumerate(zip(forward_rates, forward_points)):
+        ax1.text(maturity_dates[i], rate, f"Rate: {rate:.4f}", 
+                 ha="left", va="bottom", fontsize=7, color="blue")
 
     # Add secondary axis for forward points
     ax2 = ax1.twinx()
     ax2.plot(maturity_dates, forward_points, marker="x", color="red", label="Forward Points")
     ax2.set_ylabel("Forward Points", color="red")
     ax2.tick_params(axis="y", labelcolor="red")
+
+    # Annotate forward points
+    for i, point in enumerate(forward_points):
+        ax2.text(maturity_dates[i], point, f"{point:.4f}", 
+                 ha="right", va="bottom", fontsize=7, color="red")
 
     fig.suptitle("Forward Rate Curve (1-Year Tenor)")
     fig.autofmt_xdate(rotation=45)
