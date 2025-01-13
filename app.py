@@ -12,19 +12,21 @@ def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
         st.error(f"Error in forward rate calculation: {e}")
         return None
 
-def plot_forward_curve(spot_rate, domestic_rate, foreign_rate):
-    """Plot forward rate curve for a 1-year tenor on a monthly basis."""
-    months = [i for i in range(1, 13)]  # 1 to 12 months
+def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_start, window_end):
+    """Plot forward rate curve for a window forward contract."""
+    window_days = (window_end - window_start).days
+    days = [i for i in range(0, window_days + 1, 30)]  # Monthly intervals within the window
+    tenors = [day / 365 for day in days]  # Convert days to years
+
     forward_rates = [
-        calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, month / 12) for month in months
+        calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor) for tenor in tenors
     ]
 
     # Calculate forward points
     forward_points = [rate - spot_rate for rate in forward_rates]
 
     # Generate maturity dates
-    start_date = datetime.now()
-    maturity_dates = [(start_date + timedelta(days=30 * month)).strftime("%Y-%m-%d") for month in months]
+    maturity_dates = [(window_start + timedelta(days=day)).strftime("%Y-%m-%d") for day in days]
 
     fig, ax1 = plt.subplots()
 
@@ -51,12 +53,12 @@ def plot_forward_curve(spot_rate, domestic_rate, foreign_rate):
         ax2.text(maturity_dates[i], point, f"{point:.4f}", 
                  ha="right", va="bottom", fontsize=7, color="red")
 
-    fig.suptitle("Forward Rate Curve (1-Year Tenor)")
+    fig.suptitle("Window Forward Rate Curve")
     fig.autofmt_xdate(rotation=45)
 
     # Create a DataFrame for the table
     data = {
-        "Tenor (Months)": months,
+        "Tenor (Days)": days,
         "Maturity Date": maturity_dates,
         "Forward Rate": [f"{rate:.4f}" for rate in forward_rates],
         "Forward Points": [f"{point:.4f}" for point in forward_points]
@@ -66,7 +68,7 @@ def plot_forward_curve(spot_rate, domestic_rate, foreign_rate):
     return fig, df
 
 def main():
-    st.title("Forward Rate Curve Calculator")
+    st.title("Window Forward Rate Calculator")
 
     st.sidebar.header("Inputs")
     spot_rate = st.sidebar.number_input("Spot Rate", value=4.5, step=0.01)
@@ -77,13 +79,20 @@ def main():
     # Manual foreign interest rate input
     foreign_rate = st.sidebar.number_input("Foreign Interest Rate (%)", value=3.0, step=0.1) / 100
 
-    if st.sidebar.button("Generate Forward Curve"):
-        st.write("### Forward Rate Curve for 1-Year Tenor")
-        forward_curve, forward_table = plot_forward_curve(spot_rate, poland_rate, foreign_rate)
-        st.pyplot(forward_curve)
+    # Window forward inputs
+    window_start = st.sidebar.date_input("Window Start Date", value=datetime.now().date())
+    window_end = st.sidebar.date_input("Window End Date", value=(datetime.now() + timedelta(days=90)).date())
 
-        st.write("### Forward Rates Table")
-        st.dataframe(forward_table)
+    if st.sidebar.button("Generate Window Forward Curve"):
+        if window_start >= window_end:
+            st.error("Window End Date must be after Window Start Date.")
+        else:
+            st.write("### Window Forward Rate Curve")
+            forward_curve, forward_table = plot_window_forward_curve(spot_rate, poland_rate, foreign_rate, window_start, window_end)
+            st.pyplot(forward_curve)
+
+            st.write("### Window Forward Rates Table")
+            st.dataframe(forward_table)
 
 if __name__ == "__main__":
     main()
