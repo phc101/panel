@@ -35,13 +35,13 @@ def main():
     spot_rate = st.sidebar.number_input("Spot Rate", value=4.5, step=0.01)
 
     # Domestic rate set to Poland interest rate
-    poland_rate = st.sidebar.number_input("Poland Interest Rate (%)", value=6.5, step=0.1) / 100
+    poland_rate = st.sidebar.number_input("Poland Interest Rate (%)", value=5.75, step=0.1) / 100
 
     # Foreign rate options: US, Euro Zone, UK
     foreign_rate_options = {
-        "US": 5.0 / 100,
-        "Euro Zone": 4.0 / 100,
-        "UK": 4.5 / 100
+        "US": 5.25 / 100,
+        "Euro Zone": 3.15 / 100,
+        "UK": 4.75 / 100
     }
     foreign_rate_selection = st.sidebar.selectbox("Select Foreign Interest Rate Region", options=foreign_rate_options.keys())
     foreign_rate = foreign_rate_options[foreign_rate_selection]
