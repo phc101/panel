@@ -70,21 +70,16 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
 
     return fig, df, forward_rates, forward_points
 
-def plot_loss_due_to_fixed_rate(fixed_rate, forward_rates, forward_points, maturity_dates):
-    """Plot the client's loss due to holding fixed at window open rate."""
-    losses = [fixed_rate - rate for rate in forward_rates]
-
+def plot_gain_bar_chart(gain_table):
+    """Plot a bar chart showing the gains over time."""
+    gain_table = gain_table[gain_table["Maturity Date"] != "Total"]  # Exclude the total row
     fig, ax = plt.subplots()
-    ax.plot(maturity_dates, losses, marker="o", label="Loss")
+    ax.bar(gain_table["Maturity Date"], gain_table["Gain from Points (PLN)"], color="green")
     ax.set_xlabel("Maturity Date")
-    ax.set_ylabel("Loss in Forward Points")
-    ax.set_title("Loss Due to Fixed Rate")
-    ax.grid(True)
-
-    for i, loss in enumerate(losses):
-        ax.text(maturity_dates[i], losses[i], f"{loss:.4f}", ha="center", va="bottom", fontsize=7)
-
-    return fig, losses
+    ax.set_ylabel("Gain from Points (PLN)")
+    ax.set_title("Gain Analysis")
+    ax.tick_params(axis="x", rotation=45)
+    return fig
 
 def calculate_gain_from_points(fixed_rate, forward_rates, maturity_dates, total_amount, monthly_closure):
     """Calculate gain from points in PLN given a fixed rate and monthly closures."""
@@ -141,19 +136,12 @@ def main():
     # Option to use average price on open
     use_average_rate = st.sidebar.checkbox("Average Price on Open", value=False)
 
-    # Option to add points to pricing
-    points_percentage = st.sidebar.selectbox("Add Points to Pricing (%)", [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
-
     if st.sidebar.button("Generate Window Forward Curve"):
         if window_start >= window_end:
             st.error("Window End Date must be after Window Start Date.")
         else:
-            st.write("### Window Forward Rate Curve")
+            st.write("### Gain Analysis")
             forward_curve, forward_table, forward_rates, forward_points = plot_window_forward_curve(spot_rate, poland_rate, foreign_rate, window_start, window_end)
-            st.pyplot(forward_curve)
-
-            st.write("### Window Forward Rates Table")
-            st.dataframe(forward_table)
 
             # Determine the fixed rate based on the option
             if use_average_rate:
@@ -163,14 +151,17 @@ def main():
                 fixed_rate = forward_rates[0]  # Use the first forward rate as the fixed rate
                 st.write(f"Using First Forward Rate as Fixed Rate: {fixed_rate:.4f}")
 
-            # Adjust fixed rate by adding points percentage
-            adjusted_fixed_rate = fixed_rate + (forward_points[0] * points_percentage / 100)
-            st.write(f"Adjusted Fixed Rate (with {points_percentage}% points added): {adjusted_fixed_rate:.4f}")
-
-            # Gain analysis based on adjusted fixed rate
-            st.write(f"### Gain Analysis (Adjusted Fixed Rate: {adjusted_fixed_rate:.4f})")
-            gain_table = calculate_gain_from_points(adjusted_fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
+            gain_table = calculate_gain_from_points(fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
             st.dataframe(gain_table)
+
+            bar_chart = plot_gain_bar_chart(gain_table)
+            st.pyplot(bar_chart)
+
+            st.write("### Window Forward Rate Curve")
+            st.pyplot(forward_curve)
+
+            st.write("### Window Forward Rates Table")
+            st.dataframe(forward_table)
 
 if __name__ == "__main__":
     main()
