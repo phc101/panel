@@ -34,7 +34,8 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
     fig, ax1 = plt.subplots()
 
     # Plot forward rates
-    ax1.plot(maturity_dates, forward_rates, marker="o", label="Forward Rate")
+    ax1.plot(maturity_dates, forward_rates, marker="o", label="Forward Rate", linewidth=1)
+    ax1.axhline(spot_rate, color="orange", linestyle="--", linewidth=1, label="Spot Rate")
     ax1.set_xlabel("Maturity Date")
     ax1.set_ylabel("Forward Rate", color="blue")
     ax1.tick_params(axis="y", labelcolor="blue")
@@ -47,7 +48,7 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
 
     # Add secondary axis for forward points
     ax2 = ax1.twinx()
-    ax2.plot(maturity_dates, forward_points, marker="x", color="red", label="Forward Points")
+    ax2.plot(maturity_dates, forward_points, marker="x", color="red", label="Forward Points", linewidth=1)
     ax2.set_ylabel("Forward Points", color="red")
     ax2.tick_params(axis="y", labelcolor="red")
 
@@ -57,6 +58,7 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
                  ha="right", va="bottom", fontsize=7, color="red")
 
     fig.suptitle("Window Forward Rate Curve")
+    fig.legend(loc="upper left")
     fig.autofmt_xdate(rotation=45)
 
     # Create a DataFrame for the table
@@ -128,7 +130,7 @@ def calculate_client_pricing_table(fixed_rate, maturity_dates):
 def plot_client_pricing_chart(pricing_table):
     """Plot the client's forward pricing as a line chart."""
     fig, ax = plt.subplots()
-    ax.plot(pricing_table["Maturity Date"], pricing_table["Client Forward Price (PLN)"], marker="o", color="purple")
+    ax.plot(pricing_table["Maturity Date"], pricing_table["Client Forward Price (PLN)"], marker="o", color="purple", linewidth=1)
     ax.set_xlabel("Maturity Date")
     ax.set_ylabel("Client Forward Price (PLN)")
     ax.set_title("Client Forward Pricing")
