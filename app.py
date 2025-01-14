@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -17,29 +17,41 @@ def calculate_margin(days):
     additional_margin = 0.001 * months  # +0.10% per month
     return base_margin + additional_margin
 
+# Initialize session state for monthly cashflows
+if "monthly_cashflows" not in st.session_state:
+    st.session_state.monthly_cashflows = {month: [] for month in range(1, 13)}
+
 # Streamlit App
-st.title("FX Forward Rate Calculator with Margins")
+st.title("FX Forward Rate Calculator with Monthly Planning and Margins")
 
 st.markdown("""
-This app allows you to calculate forward rates with automatic margins for multiple future cashflows in EUR or USD and see their equivalent values in PLN. You can also view the profit from margins.
+This app allows you to calculate forward rates with automatic margins for multiple future cashflows in EUR or USD, organize cashflows by month, and view their equivalent values in PLN.
 """)
 
-# Placeholder for cashflows
-if "cashflows" not in st.session_state:
-    st.session_state.cashflows = []
+# Define months for navigation
+MONTH_NAMES = [
+    "January", "February", "March", "April", "May", "June", 
+    "July", "August", "September", "October", "November", "December"
+]
+
+# Bookmarks for each month
+selected_month = st.radio("Select Month to Plan Cashflows", MONTH_NAMES, horizontal=True)
+
+# Get the month number from the selected name
+current_month = MONTH_NAMES.index(selected_month) + 1
 
 # Sidebar for managing cashflows
 with st.sidebar:
-    st.header("Add New Cashflow")
-    currency = st.selectbox("Currency", ["EUR", "USD"], key="currency")
-    amount = st.number_input("Cashflow Amount", min_value=0.0, value=1000.0, step=100.0, key="amount")
-    future_date = st.date_input("Future Date", min_value=datetime.today(), key="future_date")
-    domestic_rate = st.slider("Domestic Interest Rate (%)", 0.0, 10.0, 5.0, step=0.25, key="domestic_rate") / 100
-    foreign_rate = st.slider("Foreign Interest Rate (%)", 0.0, 10.0, 3.0, step=0.25, key="foreign_rate") / 100
-    spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.01, key="spot_rate")
+    st.header(f"Add Cashflow for {selected_month}")
+    currency = st.selectbox("Currency", ["EUR", "USD"], key=f"currency_{current_month}")
+    amount = st.number_input("Cashflow Amount", min_value=0.0, value=1000.0, step=100.0, key=f"amount_{current_month}")
+    future_date = st.date_input("Future Date", min_value=datetime.today(), key=f"future_date_{current_month}")
+    domestic_rate = st.slider("Domestic Interest Rate (%)", 0.0, 10.0, 5.0, step=0.25, key=f"domestic_rate_{current_month}") / 100
+    foreign_rate = st.slider("Foreign Interest Rate (%)", 0.0, 10.0, 3.0, step=0.25, key=f"foreign_rate_{current_month}") / 100
+    spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.01, key=f"spot_rate_{current_month}")
 
     if st.button("Add Cashflow"):
-        st.session_state.cashflows.append({
+        st.session_state.monthly_cashflows[current_month].append({
             "Currency": currency,
             "Amount": amount,
             "Future Date": future_date,
@@ -48,19 +60,19 @@ with st.sidebar:
             "Spot Rate": spot_rate,
         })
 
-# Main panel for displaying and editing cashflows
-st.header("Cashflow Records")
-if len(st.session_state.cashflows) > 0:
+# Display and edit cashflows for the selected month
+st.header(f"Cashflow Records for {selected_month}")
+if len(st.session_state.monthly_cashflows[current_month]) > 0:
     # Editable table simulation
     edited_cashflows = []
-    for i, cashflow in enumerate(st.session_state.cashflows):
+    for i, cashflow in enumerate(st.session_state.monthly_cashflows[current_month]):
         with st.expander(f"Edit Record {i + 1}"):
-            currency = st.selectbox(f"Currency for Record {i + 1}", ["EUR", "USD"], index=["EUR", "USD"].index(cashflow["Currency"]), key=f"currency_{i}")
-            amount = st.number_input(f"Amount for Record {i + 1}", value=cashflow["Amount"], step=100.0, key=f"amount_{i}")
-            future_date = st.date_input(f"Future Date for Record {i + 1}", value=cashflow["Future Date"], key=f"future_date_{i}")
-            domestic_rate = st.slider(f"Domestic Interest Rate (%) for Record {i + 1}", 0.0, 10.0, value=cashflow["Domestic Rate (%)"], step=0.25, key=f"domestic_rate_{i}") / 100
-            foreign_rate = st.slider(f"Foreign Interest Rate (%) for Record {i + 1}", 0.0, 10.0, value=cashflow["Foreign Rate (%)"], step=0.25, key=f"foreign_rate_{i}") / 100
-            spot_rate = st.number_input(f"Spot Rate for Record {i + 1}", value=cashflow["Spot Rate"], step=0.01, key=f"spot_rate_{i}")
+            currency = st.selectbox(f"Currency for Record {i + 1}", ["EUR", "USD"], index=["EUR", "USD"].index(cashflow["Currency"]), key=f"currency_{current_month}_{i}")
+            amount = st.number_input(f"Amount for Record {i + 1}", value=cashflow["Amount"], step=100.0, key=f"amount_{current_month}_{i}")
+            future_date = st.date_input(f"Future Date for Record {i + 1}", value=cashflow["Future Date"], key=f"future_date_{current_month}_{i}")
+            domestic_rate = st.slider(f"Domestic Interest Rate (%) for Record {i + 1}", 0.0, 10.0, value=cashflow["Domestic Rate (%)"], step=0.25, key=f"domestic_rate_{current_month}_{i}") / 100
+            foreign_rate = st.slider(f"Foreign Interest Rate (%) for Record {i + 1}", 0.0, 10.0, value=cashflow["Foreign Rate (%)"], step=0.25, key=f"foreign_rate_{current_month}_{i}") / 100
+            spot_rate = st.number_input(f"Spot Rate for Record {i + 1}", value=cashflow["Spot Rate"], step=0.01, key=f"spot_rate_{current_month}_{i}")
             edited_cashflows.append({
                 "Currency": currency,
                 "Amount": amount,
@@ -71,13 +83,12 @@ if len(st.session_state.cashflows) > 0:
             })
 
     # Update session state with edited data
-    st.session_state.cashflows = edited_cashflows
+    st.session_state.monthly_cashflows[current_month] = edited_cashflows
 
     # Calculate forward rate, PLN value, and profit for each record
     results = []
     total_profit = 0
-    monthly_profits = {}
-    for cashflow in st.session_state.cashflows:
+    for cashflow in st.session_state.monthly_cashflows[current_month]:
         days = (cashflow["Future Date"] - datetime.today().date()).days
         forward_rate = calculate_forward_rate(
             cashflow["Spot Rate"], cashflow["Domestic Rate (%)"] / 100, cashflow["Foreign Rate (%)"] / 100, days
@@ -87,13 +98,6 @@ if len(st.session_state.cashflows) > 0:
         pln_value = forward_rate_with_margin * cashflow["Amount"]
         profit = (forward_rate_with_margin - forward_rate) * cashflow["Amount"]
         total_profit += profit
-
-        # Track monthly profit
-        months = days // 30
-        if months not in monthly_profits:
-            monthly_profits[months] = 0
-        monthly_profits[months] += profit
-
         results.append({
             "Forward Rate": round(forward_rate, 4),
             "Forward Rate (with Margin)": round(forward_rate_with_margin, 4),
@@ -102,27 +106,16 @@ if len(st.session_state.cashflows) > 0:
         })
 
     # Add results to DataFrame and display
-    df = pd.DataFrame(st.session_state.cashflows)
+    df = pd.DataFrame(st.session_state.monthly_cashflows[current_month])
     results_df = pd.DataFrame(results)
     final_df = pd.concat([df, results_df], axis=1)
     st.table(final_df)
 
-    # Display total profit
-    st.header("Total Profit")
+    # Display total profit for the selected month
+    st.header(f"Total Profit for {selected_month}")
     st.success(f"Total Profit from Margins: PLN {round(total_profit, 2)}")
-
-    # Plot monthly profit distribution
-    st.header("Monthly Profit Distribution")
-    if monthly_profits:
-        months = list(monthly_profits.keys())
-        profits = list(monthly_profits.values())
-        plt.bar(months, profits)
-        plt.xlabel("Months from Today")
-        plt.ylabel("Profit (PLN)")
-        plt.title("Profit from Margins by Month")
-        st.pyplot(plt)
 else:
-    st.info("No cashflow records added yet. Use the sidebar to add records.")
+    st.info(f"No cashflow records added for {selected_month}. Use the sidebar to add records.")
 
 # Footer
 st.markdown("---")
