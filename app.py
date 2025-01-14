@@ -21,10 +21,28 @@ def calculate_margin(days):
 
 # Function to send email
 def send_email(subject, body, recipient):
-    sender_email = "your_email@example.com"  # Replace with your email
-    sender_password = "your_password"  # Replace with your email password or app-specific password
-    smtp_server = "smtp.example.com"  # Replace with your SMTP server (e.g., smtp.gmail.com for Gmail)
-    smtp_port = 587  # Usually 587 for TLS
+    sender_email = "your_email@gmail.com"  # Replace with your Gmail address
+    sender_password = "your_app_password"  # Replace with your Gmail app-specific password
+    smtp_server = "smtp.gmail.com"  # Gmail SMTP server
+    smtp_port = 587  # Port for TLS
+
+    # Create the email
+    msg = MIMEMultipart()
+    msg["From"] = sender_email
+    msg["To"] = recipient
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    try:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()  # Secure the connection
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, recipient, msg.as_string())
+            return True
+    except Exception as e:
+        st.error(f"Failed to send email: {e}")
+        return False
+
 
     # Create the email
     msg = MIMEMultipart()
