@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import datetime
 import pandas as pd
+import matplotlib.pyplot as plt
 
 # Function to calculate forward rate
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days):
@@ -9,11 +10,18 @@ def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days):
     years = days / 365
     return spot_rate * ((1 + domestic_rate) / (1 + foreign_rate)) ** years
 
+# Function to calculate margin
+def calculate_margin(days):
+    months = days // 30
+    base_margin = 0.002  # 0.20%
+    additional_margin = 0.001 * months  # +0.10% per month
+    return base_margin + additional_margin
+
 # Streamlit App
-st.title("FX Forward Rate Calculator")
+st.title("FX Forward Rate Calculator with Margins")
 
 st.markdown("""
-This app allows you to calculate forward rates for multiple future cashflows in EUR or USD and see their equivalent values in PLN. You can also edit existing records.
+This app allows you to calculate forward rates with automatic margins for multiple future cashflows in EUR or USD and see their equivalent values in PLN. You can also view the profit from margins.
 """)
 
 # Placeholder for cashflows
@@ -65,21 +73,54 @@ if len(st.session_state.cashflows) > 0:
     # Update session state with edited data
     st.session_state.cashflows = edited_cashflows
 
-    # Calculate forward rate and PLN value for each record
+    # Calculate forward rate, PLN value, and profit for each record
     results = []
+    total_profit = 0
+    monthly_profits = {}
     for cashflow in st.session_state.cashflows:
         days = (cashflow["Future Date"] - datetime.today().date()).days
         forward_rate = calculate_forward_rate(
             cashflow["Spot Rate"], cashflow["Domestic Rate (%)"] / 100, cashflow["Foreign Rate (%)"] / 100, days
         )
-        pln_value = forward_rate * cashflow["Amount"]
-        results.append({"Forward Rate": round(forward_rate, 4), "PLN Value": round(pln_value, 2)})
+        margin = calculate_margin(days)
+        forward_rate_with_margin = forward_rate * (1 + margin)
+        pln_value = forward_rate_with_margin * cashflow["Amount"]
+        profit = (forward_rate_with_margin - forward_rate) * cashflow["Amount"]
+        total_profit += profit
+
+        # Track monthly profit
+        months = days // 30
+        if months not in monthly_profits:
+            monthly_profits[months] = 0
+        monthly_profits[months] += profit
+
+        results.append({
+            "Forward Rate": round(forward_rate, 4),
+            "Forward Rate (with Margin)": round(forward_rate_with_margin, 4),
+            "PLN Value": round(pln_value, 2),
+            "Profit from Margin": round(profit, 2),
+        })
 
     # Add results to DataFrame and display
     df = pd.DataFrame(st.session_state.cashflows)
     results_df = pd.DataFrame(results)
     final_df = pd.concat([df, results_df], axis=1)
     st.table(final_df)
+
+    # Display total profit
+    st.header("Total Profit")
+    st.success(f"Total Profit from Margins: PLN {round(total_profit, 2)}")
+
+    # Plot monthly profit distribution
+    st.header("Monthly Profit Distribution")
+    if monthly_profits:
+        months = list(monthly_profits.keys())
+        profits = list(monthly_profits.values())
+        plt.bar(months, profits)
+        plt.xlabel("Months from Today")
+        plt.ylabel("Profit (PLN)")
+        plt.title("Profit from Margins by Month")
+        st.pyplot(plt)
 else:
     st.info("No cashflow records added yet. Use the sidebar to add records.")
 
