@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import datetime
 import pandas as pd
+import os
 
 # Function to calculate forward rate
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days):
@@ -29,6 +30,17 @@ MONTH_NAMES = [
     "July", "August", "September", "October", "November", "December"
 ]
 
+# Display logo at the top
+logo_path = "phc_logo.png"  # Replace with the actual file path
+if os.path.exists(logo_path):
+    st.image(logo_path, width=100)
+else:
+    st.warning("Logo not found. Please ensure 'phc_logo.png' is in the correct directory.")
+
+# Title
+st.title("FX Forward Rate Calculator")
+st.write("### Select Month to Plan Cashflows")
+
 # Global interest rates
 with st.sidebar:
     st.header("Global Settings")
@@ -36,9 +48,6 @@ with st.sidebar:
     global_foreign_rate = st.slider("Global Foreign Interest Rate (%)", 0.0, 10.0, 3.0, step=0.25) / 100
 
 # Horizontal bookmarks for month navigation
-st.image("phc_logo.png", width=100)  # Add the logo at the top left
-st.title("FX Forward Rate Calculator")
-st.write("### Select Month to Plan Cashflows")
 selected_month = st.radio(
     "Months", MONTH_NAMES, index=st.session_state.selected_month - 1, horizontal=True
 )
