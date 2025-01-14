@@ -85,7 +85,8 @@ def plot_gain_bar_chart(gain_table):
     gain_table = gain_table[gain_table["Maturity Date"] != "Total"]  # Exclude the total row
     fig, ax = plt.subplots()
     colors = ["green" if x > 0 else "red" for x in gain_table["Gain from Points (PLN)"]]
-    ax.bar(gain_table["Maturity Date"], gain_table["Gain from Points (PLN)"], color=colors, alpha=0.7)
+    ax.bar(gain_table["Maturity Date"], gain_table["Gain from Points (PLN)"]
+           , color=colors, alpha=0.7)
     ax.set_xlabel("Maturity Date")
     ax.set_ylabel("Gain from Points (PLN)")
     ax.set_title("Gain Analysis")
@@ -178,7 +179,4 @@ def main():
     points_percentage = st.sidebar.number_input("Add % of Points to Fixed Rate", value=0, step=1, min_value=-100, max_value=100) / 100
 
     if st.sidebar.button("Generate Window Forward Curve"):
-        if window_start >= window_end:
-            st.error("Window End Date must be after Window Start Date.")
-        else:
-            st.write("### Gain
+        if window_start >= window_end
