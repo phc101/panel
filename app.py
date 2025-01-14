@@ -137,6 +137,9 @@ def main():
     # Option to add percentage of points to the fixed rate
     points_percentage = st.sidebar.number_input("Add % of Points to Fixed Rate", value=0, step=1, min_value=-100, max_value=100) / 100
 
+    # Option to apply percentage to average or all forwards
+    apply_to_average = st.sidebar.radio("Apply % of Points to:", ("Average Price on Open", "All Window Open Forwards"))
+
     if st.sidebar.button("Generate Window Forward Curve"):
         if window_start >= window_end:
             st.error("Window End Date must be after Window Start Date.")
@@ -153,8 +156,12 @@ def main():
                 st.write(f"Using First Forward Rate as Fixed Rate: {base_fixed_rate:.4f}")
 
             # Adjust fixed rate by adding percentage of points
-            adjusted_fixed_rate = base_fixed_rate + (forward_points[0] * points_percentage)
-            st.write(f"Adjusted Fixed Rate (with {points_percentage * 100:.0f}% points added): {adjusted_fixed_rate:.4f}")
+            if apply_to_average == "Average Price on Open":
+                adjusted_fixed_rate = base_fixed_rate + (forward_points[0] * points_percentage)
+                st.write(f"Adjusted Fixed Rate (Average Price + {points_percentage * 100:.0f}% points): {adjusted_fixed_rate:.4f}")
+            else:
+                adjusted_fixed_rate = forward_rates[0] + (forward_points[0] * points_percentage)
+                st.write(f"Adjusted Fixed Rate (All Window Open + {points_percentage * 100:.0f}% points): {adjusted_fixed_rate:.4f}")
 
             gain_table = calculate_gain_from_points(adjusted_fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
             st.dataframe(gain_table)
