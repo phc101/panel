@@ -10,6 +10,8 @@ def get_spot_rate(currency):
 
 # Function to calculate forward rate
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days):
+    if days <= 0:
+        return 0
     years = days / 365
     return spot_rate * ((1 + domestic_rate) / (1 + foreign_rate)) ** years
 
@@ -17,24 +19,23 @@ def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days):
 st.title("FX Forward Rate Calculator")
 
 st.markdown("""
-This app allows you to calculate forward rates for multiple future cashflows in EUR or USD and see their equivalent values in PLN.
+This app allows you to calculate forward rates for multiple future cashflows in EUR or USD and see their equivalent values in PLN. You can also edit existing records.
 """)
 
 # Placeholder for cashflows
 if "cashflows" not in st.session_state:
     st.session_state.cashflows = []
 
-# Form to add new cashflow
-st.sidebar.header("Add New Cashflow")
+# Form to add or edit cashflows
+st.sidebar.header("Manage Cashflows")
 currency = st.sidebar.selectbox("Currency", ["EUR", "USD"], key="currency")
 amount = st.sidebar.number_input("Cashflow Amount", min_value=0.0, value=1000.0, step=100.0, key="amount")
 future_date = st.sidebar.date_input("Future Date", min_value=datetime.today(), key="future_date")
-domestic_rate = st.sidebar.slider("Domestic Interest Rate (%)", 0.0, 10.0, 5.0, step=0.5, key="domestic_rate") / 100
-foreign_rate = st.sidebar.slider("Foreign Interest Rate (%)", 0.0, 10.0, 3.0, step=0.5, key="foreign_rate") / 100
+domestic_rate = st.sidebar.slider("Domestic Interest Rate (%)", 0.0, 10.0, 5.0, step=0.25, key="domestic_rate") / 100
+foreign_rate = st.sidebar.slider("Foreign Interest Rate (%)", 0.0, 10.0, 3.0, step=0.25, key="foreign_rate") / 100
 
-# Button to add cashflow
+# Add or Edit Cashflow
 if st.sidebar.button("Add Cashflow"):
-    # Add record to session state
     st.session_state.cashflows.append({
         "Currency": currency,
         "Amount": amount,
@@ -43,32 +44,37 @@ if st.sidebar.button("Add Cashflow"):
         "Foreign Rate (%)": foreign_rate * 100,
     })
 
-# Display cashflows
 st.header("Cashflow Records")
 if len(st.session_state.cashflows) > 0:
     # Convert to DataFrame
     df = pd.DataFrame(st.session_state.cashflows)
     
+    # Editable Table
+    edited_df = st.experimental_data_editor(df, num_rows="dynamic", key="edited_df")
+    
+    # Update session state with edited data
+    st.session_state.cashflows = edited_df.to_dict("records")
+    
     # Calculate forward rate and PLN value for each record
     results = []
-    for i, row in df.iterrows():
+    for i, row in edited_df.iterrows():
         spot_rate = get_spot_rate(row["Currency"])
         days = (row["Future Date"] - datetime.today().date()).days
-        if days > 0:
-            forward_rate = calculate_forward_rate(
-                spot_rate, row["Domestic Rate (%)"] / 100, row["Foreign Rate (%)"] / 100, days
-            )
-            pln_value = forward_rate * row["Amount"]
-        else:
-            forward_rate = 0
-            pln_value = 0
-        results.append({"Forward Rate": forward_rate, "PLN Value": pln_value})
+        forward_rate = calculate_forward_rate(
+            spot_rate, row["Domestic Rate (%)"] / 100, row["Foreign Rate (%)"] / 100, days
+        )
+        pln_value = forward_rate * row["Amount"]
+        results.append({"Forward Rate": round(forward_rate, 4), "PLN Value": round(pln_value, 2)})
     
     # Add results to DataFrame
     results_df = pd.DataFrame(results)
-    final_df = pd.concat([df, results_df], axis=1)
+    final_df = pd.concat([edited_df, results_df], axis=1)
     
     # Display results table
     st.table(final_df)
 else:
-    st.info("No cashflow records added yet. Use the 'Add Cashflow' button to add records.")
+    st.info("No cashflow records added yet. Use the sidebar to add records.")
+
+# Footer
+st.markdown("---")
+st.caption("Developed using Streamlit")
