@@ -117,6 +117,25 @@ def calculate_gain_from_points(fixed_rate, forward_rates, maturity_dates, total_
 
     return df
 
+def calculate_client_pricing_table(fixed_rate, maturity_dates):
+    """Create a pricing table for the client with fixed rates."""
+    pricing_table = pd.DataFrame({
+        "Maturity Date": maturity_dates,
+        "Client Forward Price (PLN)": [fixed_rate] * len(maturity_dates)
+    })
+    return pricing_table
+
+def plot_client_pricing_chart(pricing_table):
+    """Plot the client's forward pricing as a line chart."""
+    fig, ax = plt.subplots()
+    ax.plot(pricing_table["Maturity Date"], pricing_table["Client Forward Price (PLN)"], marker="o", color="purple")
+    ax.set_xlabel("Maturity Date")
+    ax.set_ylabel("Client Forward Price (PLN)")
+    ax.set_title("Client Forward Pricing")
+    ax.tick_params(axis="x", rotation=45)
+    ax.grid(True)
+    return fig
+
 def calculate_average_rate_first_three(forward_rates):
     """Calculate the average rate for the first three forward rates."""
     return sum(forward_rates[:3]) / len(forward_rates[:3])
@@ -164,11 +183,11 @@ def main():
             bar_chart = plot_gain_bar_chart(gain_table)
             st.pyplot(bar_chart)
 
-            st.write("### Window Forward Rate Curve")
-            st.pyplot(forward_curve)
+            st.write("### Client Forward Pricing Table")
+            pricing_table = calculate_client_pricing_table(fixed_rate, forward_table["Maturity Date"].tolist())
+            st.dataframe(pricing_table)
 
-            st.write("### Window Forward Rates Table")
-            st.dataframe(forward_table)
+            pricing_chart = plot_client_pricing_chart(pricing_table)
+            st.pyplot(pricing_chart)
 
-if __name__ == "__main__":
-    main()
+            st.write("### Window
