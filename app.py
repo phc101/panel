@@ -190,4 +190,9 @@ def main():
             pricing_chart = plot_client_pricing_chart(pricing_table)
             st.pyplot(pricing_chart)
 
-            st.write("### Window
+            st.write("### Window Forward Rates Table")
+            st.pyplot(forward_curve)
+            st.dataframe(forward_table)
+
+if __name__ == "__main__":
+    main()
