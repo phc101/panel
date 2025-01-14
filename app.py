@@ -71,14 +71,21 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
     return fig, df, forward_rates, forward_points
 
 def plot_gain_bar_chart(gain_table):
-    """Plot a bar chart showing the gains over time."""
+    """Plot a bar chart showing the gains over time with losses in red and a total bar at the end."""
     gain_table = gain_table[gain_table["Maturity Date"] != "Total"]  # Exclude the total row
     fig, ax = plt.subplots()
-    ax.bar(gain_table["Maturity Date"], gain_table["Gain from Points (PLN)"], color="green")
+    colors = ["green" if x > 0 else "red" for x in gain_table["Gain from Points (PLN)"]]
+    ax.bar(gain_table["Maturity Date"], gain_table["Gain from Points (PLN)"], color=colors, alpha=0.7)
     ax.set_xlabel("Maturity Date")
     ax.set_ylabel("Gain from Points (PLN)")
     ax.set_title("Gain Analysis")
     ax.tick_params(axis="x", rotation=45)
+
+    # Add total bar
+    total_gain = gain_table["Gain from Points (PLN)"].sum()
+    ax.bar("Total", total_gain, color="blue", alpha=0.7)
+    ax.text("Total", total_gain, f"{total_gain:.2f}", ha="center", va="bottom", fontsize=10)
+
     return fig
 
 def calculate_gain_from_points(fixed_rate, forward_rates, maturity_dates, total_amount, monthly_closure):
