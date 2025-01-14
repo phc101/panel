@@ -1,9 +1,6 @@
 import streamlit as st
 from datetime import datetime
 import pandas as pd
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 # Function to calculate forward rate
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days):
@@ -18,48 +15,6 @@ def calculate_margin(days):
     base_margin = 0.002  # 0.20%
     additional_margin = 0.001 * months  # +0.10% per month
     return base_margin + additional_margin
-
-# Function to send email
-def send_email(subject, body, recipient):
-    sender_email = "your_email@gmail.com"  # Replace with your Gmail address
-    sender_password = "your_app_password"  # Replace with your Gmail app-specific password
-    smtp_server = "smtp.gmail.com"  # Gmail SMTP server
-    smtp_port = 587  # Port for TLS
-
-    # Create the email
-    msg = MIMEMultipart()
-    msg["From"] = sender_email
-    msg["To"] = recipient
-    msg["Subject"] = subject
-    msg.attach(MIMEText(body, "plain"))
-
-    try:
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()  # Secure the connection
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, recipient, msg.as_string())
-            return True
-    except Exception as e:
-        st.error(f"Failed to send email: {e}")
-        return False
-
-
-    # Create the email
-    msg = MIMEMultipart()
-    msg["From"] = sender_email
-    msg["To"] = recipient
-    msg["Subject"] = subject
-    msg.attach(MIMEText(body, "plain"))
-
-    try:
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()  # Secure connection
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, recipient, msg.as_string())
-            return True
-    except Exception as e:
-        st.error(f"Failed to send email: {e}")
-        return False
 
 # Initialize session state for monthly cashflows
 if "monthly_cashflows" not in st.session_state:
@@ -81,6 +36,8 @@ with st.sidebar:
     global_foreign_rate = st.slider("Global Foreign Interest Rate (%)", 0.0, 10.0, 3.0, step=0.25) / 100
 
 # Horizontal bookmarks for month navigation
+st.image("phc_logo.png", width=100)  # Add the logo at the top left
+st.title("FX Forward Rate Calculator")
 st.write("### Select Month to Plan Cashflows")
 selected_month = st.radio(
     "Months", MONTH_NAMES, index=st.session_state.selected_month - 1, horizontal=True
@@ -107,6 +64,67 @@ with st.sidebar:
             "Future Date": future_date,
             "Spot Rate": spot_rate,
         })
+
+# Display and edit cashflows for the selected month
+st.header(f"Cashflow Records for {selected_month}")
+if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
+    # Editable table simulation
+    edited_cashflows = []
+    for i, cashflow in enumerate(st.session_state.monthly_cashflows[st.session_state.selected_month]):
+        with st.expander(f"Edit Record {i + 1}"):
+            currency = st.selectbox(f"Currency for Record {i + 1}", ["EUR", "USD"], index=["EUR", "USD"].index(cashflow["Currency"]), key=f"currency_{i}")
+            amount = st.number_input(f"Amount for Record {i + 1}", value=cashflow["Amount"], step=100.0, key=f"amount_{i}")
+            future_date = st.date_input(f"Future Date for Record {i + 1}", value=cashflow["Future Date"], key=f"future_date_{i}")
+            spot_rate = st.number_input(f"Spot Rate for Record {i + 1}", value=cashflow["Spot Rate"], step=0.01, key=f"spot_rate_{i}")
+
+            # Delete button
+            if st.button(f"🗑 Delete Record {i + 1}", key=f"delete_{i}"):
+                st.session_state.monthly_cashflows[st.session_state.selected_month].pop(i)
+                st.experimental_set_query_params(refresh=True)  # Dynamic refresh
+                st.stop()  # Stop rendering after deletion
+
+            # Collect edited cashflows
+            edited_cashflows.append({
+                "Currency": currency,
+                "Amount": amount,
+                "Future Date": future_date,
+                "Spot Rate": spot_rate,
+            })
+
+    # Update session state with edited data
+    st.session_state.monthly_cashflows[st.session_state.selected_month] = edited_cashflows
+
+    # Calculate forward rate, PLN value, and profit for each record
+    results = []
+    total_profit = 0
+    for cashflow in st.session_state.monthly_cashflows[st.session_state.selected_month]:
+        days = (cashflow["Future Date"] - datetime.today().date()).days
+        forward_rate = calculate_forward_rate(
+            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days
+        )
+        margin = calculate_margin(days)
+        forward_rate_with_margin = forward_rate * (1 + margin)
+        pln_value = forward_rate_with_margin * cashflow["Amount"]
+        profit = (forward_rate_with_margin - forward_rate) * cashflow["Amount"]
+        total_profit += profit
+        results.append({
+            "Forward Rate": round(forward_rate, 4),
+            "Forward Rate (with Margin)": round(forward_rate_with_margin, 4),
+            "PLN Value": round(pln_value, 2),
+            "Profit from Margin": round(profit, 2),
+        })
+
+    # Add results to DataFrame and display
+    df = pd.DataFrame(st.session_state.monthly_cashflows[st.session_state.selected_month])
+    results_df = pd.DataFrame(results)
+    final_df = pd.concat([df, results_df], axis=1)
+    st.table(final_df)
+
+    # Display total profit for the selected month
+    st.header(f"Total Profit for {selected_month}")
+    st.success(f"Total Profit from Margins: PLN {round(total_profit, 2)}")
+else:
+    st.info(f"No cashflow records added for {selected_month}. Use the sidebar to add records.")
 
 # Aggregated view of all positions
 st.header("Aggregated Cashflow Summary")
@@ -137,17 +155,6 @@ for month, cashflows in st.session_state.monthly_cashflows.items():
 if all_results:
     aggregated_df = pd.DataFrame(all_results)
     st.table(aggregated_df)
-
-    # Button to send order to dealer
-    if st.button("Send it to Dealer"):
-        # Format the email content
-        email_body = aggregated_df.to_csv(index=False)
-        subject = "Forward Order"
-        recipient = "tomek@phc.com.pl"
-
-        # Send email
-        if send_email(subject, email_body, recipient):
-            st.success("Order sent successfully!")
 else:
     st.info("No cashflows added yet.")
 
