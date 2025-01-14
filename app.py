@@ -11,7 +11,6 @@ def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
     except Exception as e:
         st.error(f"Error in forward rate calculation: {e}")
         return None
-
 def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_start, window_end):
     """Plot forward rate curve for a window forward contract."""
     today = datetime.now().date()
