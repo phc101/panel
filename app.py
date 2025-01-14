@@ -141,6 +141,9 @@ def main():
     # Option to use average price on open
     use_average_rate = st.sidebar.checkbox("Average Price on Open", value=False)
 
+    # Option to add points to pricing
+    points_percentage = st.sidebar.selectbox("Add Points to Pricing (%)", [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+
     if st.sidebar.button("Generate Window Forward Curve"):
         if window_start >= window_end:
             st.error("Window End Date must be after Window Start Date.")
@@ -160,9 +163,13 @@ def main():
                 fixed_rate = forward_rates[0]  # Use the first forward rate as the fixed rate
                 st.write(f"Using First Forward Rate as Fixed Rate: {fixed_rate:.4f}")
 
-            # Gain analysis based on fixed rate
-            st.write(f"### Gain Analysis (Fixed Rate: {fixed_rate:.4f})")
-            gain_table = calculate_gain_from_points(fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
+            # Adjust fixed rate by adding points percentage
+            adjusted_fixed_rate = fixed_rate + (fixed_rate * points_percentage / 100)
+            st.write(f"Adjusted Fixed Rate (with {points_percentage}% points added): {adjusted_fixed_rate:.4f}")
+
+            # Gain analysis based on adjusted fixed rate
+            st.write(f"### Gain Analysis (Adjusted Fixed Rate: {adjusted_fixed_rate:.4f})")
+            gain_table = calculate_gain_from_points(adjusted_fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
             st.dataframe(gain_table)
 
 if __name__ == "__main__":
