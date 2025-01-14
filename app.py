@@ -2,14 +2,22 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
-import yfinance as yf
+import requests
+from bs4 import BeautifulSoup
 
-# Fetch current spot rate with fallback to default
-try:
-    spot_data = yf.download('EURPLN=X', period='1d', interval='1d')
-    DEFAULT_SPOT_RATE = round(spot_data['Close'].iloc[-1], 4) if not spot_data.empty else 4.5000
-except Exception:
-    DEFAULT_SPOT_RATE = 4.5000
+def fetch_google_finance_spot():
+    """Fetch the EUR/PLN spot rate from Google Finance."""
+    url = "https://www.google.com/finance/quote/EUR-PLN?hl=pl"
+    try:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        spot_rate = soup.find("div", class_="YMlKec fxKbKc").text
+        return round(float(spot_rate.replace(',', '')), 4)
+    except Exception as e:
+        st.warning("Failed to fetch live spot rate. Using default.")
+        return 4.5000  # Default fallback spot rate
+
+DEFAULT_SPOT_RATE = fetch_google_finance_spot()
 
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
     """Calculate forward rate based on interest rate parity."""
@@ -165,59 +173,4 @@ def main():
     spot_rate = st.sidebar.number_input("Spot Rate", value=DEFAULT_SPOT_RATE, step=0.0001, format="%.4f")
 
     # Domestic rate set to Poland interest rate
-    poland_rate = st.sidebar.number_input("Poland Interest Rate (%)", value=5.75, step=0.1) / 100
-
-    # Manual foreign interest rate input
-    foreign_rate = st.sidebar.number_input("Foreign Interest Rate (%)", value=3.0, step=0.1) / 100
-
-    # Window forward inputs
-    window_start = st.sidebar.date_input("Window Start Date", value=datetime.now().date())
-    window_end = st.sidebar.date_input("Window End Date", value=(datetime.now() + timedelta(days=90)).date())
-
-    total_amount = st.sidebar.number_input("Total Hedge Amount (EUR)", value=1000000, step=100000)
-    monthly_closure = st.sidebar.number_input("Monthly Closure Amount (EUR)", value=100000, step=10000)
-
-    # Option to use average price on open
-    use_average_rate = st.sidebar.checkbox("Average Price on Open", value=False)
-
-    # Option to add percentage of points to the fixed rate
-    points_percentage = st.sidebar.number_input("Add % of Points to Fixed Rate", value=0, step=1, min_value=-100, max_value=100) / 100
-
-    if st.sidebar.button("Generate Window Forward Curve"):
-        if window_start >= window_end:
-            st.error("Window End Date must be after Window Start Date.")
-        else:
-            st.write("### Gain Analysis")
-            forward_curve, forward_table, forward_rates, forward_points = plot_window_forward_curve(spot_rate, poland_rate, foreign_rate, window_start, window_end)
-
-            # Determine the fixed rate based on the option
-            if use_average_rate:
-                base_fixed_rate = calculate_average_rate_first_three(forward_rates)
-                st.write(f"Using Average Rate for First Three Forward Prices: {base_fixed_rate:.4f}")
-            else:
-                base_fixed_rate = forward_rates[0]  # Use the first forward rate as the fixed rate
-                st.write(f"Using First Forward Rate as Fixed Rate: {base_fixed_rate:.4f}")
-
-            # Adjust fixed rate by adding percentage of points
-            adjusted_fixed_rate = base_fixed_rate + (forward_points[0] * points_percentage)
-            st.write(f"Adjusted Fixed Rate (with {points_percentage * 100:.0f}% points added): {adjusted_fixed_rate:.4f}")
-
-            gain_table = calculate_gain_from_points(adjusted_fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
-            st.dataframe(gain_table)
-
-            bar_chart = plot_gain_bar_chart(gain_table)
-            st.pyplot(bar_chart)
-
-            st.write("### Client Forward Pricing Table")
-            pricing_table = calculate_client_pricing_table(adjusted_fixed_rate, forward_table["Maturity Date"].tolist())
-            st.dataframe(pricing_table)
-
-            pricing_chart = plot_client_pricing_chart(pricing_table)
-            st.pyplot(pricing_chart)
-
-            st.write("### Window Forward Rates Table")
-            st.pyplot(forward_curve)
-            st.dataframe(forward_table)
-
-if __name__ == "__main__":
-    main()
+    poland_rate = st.sidebar.number_input("Poland Interest Rate (%)", value=5.75, step=0.1
