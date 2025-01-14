@@ -165,7 +165,7 @@ def main():
     use_average_rate = st.sidebar.checkbox("Average Price on Open", value=False)
 
     # Option to add percentage of points to the fixed rate
-    points_percentage = st.sidebar.number_input("Add % of Points to Fixed Rate", value=0, step=1, min_value=0, max_value=100) / 100
+    points_percentage = st.sidebar.number_input("Add % of Points to Fixed Rate", value=0, step=1, min_value=-100, max_value=100) / 100
 
     if st.sidebar.button("Generate Window Forward Curve"):
         if window_start >= window_end:
