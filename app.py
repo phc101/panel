@@ -2,6 +2,10 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
+import yfinance as yf
+
+# Fetch current spot rate
+DEFAULT_SPOT_RATE = round(yf.download('EURPLN=X', period='1d', interval='1d')['Close'].iloc[-1], 4)
 
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
     """Calculate forward rate based on interest rate parity."""
@@ -18,7 +22,13 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
     start_tenor = (window_start - today).days / 365 if window_start > today else 0
 
     window_days = (window_end - window_start).days
-    days = [i for i in range(0, window_days + 1, 30)]  # Monthly intervals within the window
+    days = []
+    current_date = window_start
+    while current_date <= window_end:
+        if current_date.weekday() < 5:  # Exclude weekends
+            days.append((current_date - window_start).days)
+        current_date += timedelta(days=1)
+
     tenors = [(start_tenor + day / 365) for day in days]  # Adjust tenors based on start_tenor
 
     forward_rates = [
@@ -43,7 +53,7 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
 
     # Annotate forward rates and move points next to the red line
     for i, (rate, point) in enumerate(zip(forward_rates, forward_points)):
-        ax1.text(maturity_dates[i], rate, f"Rate: {rate:.4f}", 
+        ax1.text(maturity_dates[i], rate, f"Rate: {rate:.4f}".rstrip('0').rstrip('.'), 
                  ha="left", va="bottom", fontsize=7, color="blue")
 
     # Add secondary axis for forward points
@@ -54,7 +64,7 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
 
     # Annotate forward points
     for i, point in enumerate(forward_points):
-        ax2.text(maturity_dates[i], point, f"{point:.4f}", 
+        ax2.text(maturity_dates[i], point, f"{point:.4f}".rstrip('0').rstrip('.'), 
                  ha="right", va="bottom", fontsize=7, color="red")
 
     fig.suptitle("Window Forward Rate Curve")
@@ -86,7 +96,7 @@ def plot_gain_bar_chart(gain_table):
     # Add total bar
     total_gain = gain_table["Gain from Points (PLN)"].sum()
     ax.bar("Total", total_gain, color="blue", alpha=0.7)
-    ax.text("Total", total_gain, f"{total_gain:.4f}", ha="center", va="bottom", fontsize=10)
+    ax.text("Total", total_gain, f"{total_gain:.4f}".rstrip('0').rstrip('.'), ha="center", va="bottom", fontsize=10)
 
     return fig
 
@@ -148,7 +158,7 @@ def main():
     st.title("Window Forward Rate Calculator")
 
     st.sidebar.header("Inputs")
-    spot_rate = st.sidebar.number_input("Spot Rate", value=4.5, step=0.01)
+    spot_rate = st.sidebar.number_input("Spot Rate", value=DEFAULT_SPOT_RATE, step=0.0001, format="%.4f")
 
     # Domestic rate set to Poland interest rate
     poland_rate = st.sidebar.number_input("Poland Interest Rate (%)", value=5.75, step=0.1) / 100
