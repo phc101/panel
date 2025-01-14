@@ -80,8 +80,8 @@ def plot_gain_bar_chart(gain_table):
 
     return fig
 
-def calculate_gain_from_points(fixed_rate, forward_rates, maturity_dates, total_amount, monthly_closure, use_adjusted_rates=False):
-    """Calculate gain from points in PLN given a fixed rate or adjusted rates and monthly closures."""
+def calculate_gain_from_points(fixed_rate, forward_rates, maturity_dates, total_amount, monthly_closure):
+    """Calculate gain from points in PLN given a fixed rate and monthly closures."""
     remaining_amount = total_amount
     gains = []
 
@@ -90,11 +90,7 @@ def calculate_gain_from_points(fixed_rate, forward_rates, maturity_dates, total_
             break
 
         close_amount = min(monthly_closure, remaining_amount)
-
-        if use_adjusted_rates:
-            gain = (rate * (1 + fixed_rate)) * close_amount - fixed_rate * close_amount
-        else:
-            gain = (rate - fixed_rate) * close_amount
+        gain = (rate - fixed_rate) * close_amount
 
         gains.append({
             "Maturity Date": maturity_dates[i],
@@ -142,9 +138,6 @@ def main():
     # Option to add percentage of points to the fixed rate
     points_percentage = st.sidebar.number_input("Add % of Points to Fixed Rate", value=0, step=1, min_value=-100, max_value=100) / 100
 
-    # Option to apply percentage to average or all forwards
-    apply_to_average = st.sidebar.radio("Apply % of Points to:", ("Average Price on Open", "All Window Open Forwards"))
-
     if st.sidebar.button("Generate Window Forward Curve"):
         if window_start >= window_end:
             st.error("Window End Date must be after Window Start Date.")
@@ -161,19 +154,10 @@ def main():
                 st.write(f"Using First Forward Rate as Fixed Rate: {base_fixed_rate:.4f}")
 
             # Adjust fixed rate by adding percentage of points
-            if apply_to_average == "Average Price on Open":
-                adjusted_fixed_rate = base_fixed_rate + (base_fixed_rate * points_percentage)
-                st.write(f"Adjusted Fixed Rate (Average Price + {points_percentage * 100:.0f}%): {adjusted_fixed_rate:.4f}")
+            adjusted_fixed_rate = base_fixed_rate + (base_fixed_rate * points_percentage)
+            st.write(f"Adjusted Fixed Rate (Average Price + {points_percentage * 100:.0f}%): {adjusted_fixed_rate:.4f}")
 
-                gain_table = calculate_gain_from_points(adjusted_fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
-            else:
-                adjusted_forward_rates = [rate + (rate * points_percentage) for rate in forward_rates]
-                st.write(f"Adjusted Forward Rates (All Window Open + {points_percentage * 100:.0f}%):")
-                for i, rate in enumerate(adjusted_forward_rates):
-                    st.write(f"{forward_table['Maturity Date'][i]}: {rate:.4f}")
-
-                gain_table = calculate_gain_from_points(points_percentage, adjusted_forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure, use_adjusted_rates=True)
-
+            gain_table = calculate_gain_from_points(adjusted_fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
             st.dataframe(gain_table)
 
             bar_chart = plot_gain_bar_chart(gain_table)
