@@ -72,4 +72,67 @@ st.session_state.selected_month = MONTH_NAMES.index(selected_month) + 1
 # Sidebar for managing cashflows
 with st.sidebar:
     st.header(f"Add Cashflow for {selected_month}")
-    currency = st.selectbox("Currency", ["E
+    currency = st.selectbox("Currency", ["EUR", "USD"], key="currency")
+    amount = st.number_input("Cashflow Amount", min_value=0.0, value=1000.0, step=100.0, key="amount")
+    future_date = st.date_input("Future Date", min_value=datetime.today(), key="future_date")
+    spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.01, key="spot_rate")
+
+    # Automatically update the selected month based on future date
+    future_month = future_date.month
+    if st.session_state.selected_month != future_month:
+        st.session_state.selected_month = future_month
+
+    if st.button("Add Cashflow"):
+        st.session_state.monthly_cashflows[future_month].append({
+            "Currency": currency,
+            "Amount": amount,
+            "Future Date": future_date,
+            "Spot Rate": spot_rate,
+        })
+
+# Aggregated view of all positions
+st.header("Aggregated Cashflow Summary")
+all_results = []
+for month, cashflows in st.session_state.monthly_cashflows.items():
+    for cashflow in cashflows:
+        days = (cashflow["Future Date"] - datetime.today().date()).days
+        forward_rate = calculate_forward_rate(
+            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days
+        )
+        margin = calculate_margin(days)
+        forward_rate_with_margin = forward_rate * (1 + margin)
+        pln_value = forward_rate_with_margin * cashflow["Amount"]
+        profit = (forward_rate_with_margin - forward_rate) * cashflow["Amount"]
+        all_results.append({
+            "Month": MONTH_NAMES[month - 1],
+            "Currency": cashflow["Currency"],
+            "Amount": cashflow["Amount"],
+            "Future Date": cashflow["Future Date"],
+            "Spot Rate": cashflow["Spot Rate"],
+            "Forward Rate": round(forward_rate, 4),
+            "Forward Rate (with Margin)": round(forward_rate_with_margin, 4),
+            "PLN Value": round(pln_value, 2),
+            "Profit from Margin": round(profit, 2),
+        })
+
+# Display aggregated table
+if all_results:
+    aggregated_df = pd.DataFrame(all_results)
+    st.table(aggregated_df)
+
+    # Button to send order to dealer
+    if st.button("Send it to Dealer"):
+        # Format the email content
+        email_body = aggregated_df.to_csv(index=False)
+        subject = "Forward Order"
+        recipient = "tomek@phc.com.pl"
+
+        # Send email
+        if send_email(subject, email_body, recipient):
+            st.success("Order sent successfully!")
+else:
+    st.info("No cashflows added yet.")
+
+# Footer
+st.markdown("---")
+st.caption("Developed using Streamlit")
