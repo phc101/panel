@@ -63,8 +63,8 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
     data = {
         "Tenor (Days)": [int((start_tenor * 365) + day) for day in days],
         "Maturity Date": maturity_dates,
-        "Forward Rate": [f"{rate:.4f}" for rate in forward_rates],
-        "Forward Points": [f"{point:.4f}" for point in forward_points]
+        "Forward Rate": forward_rates,
+        "Forward Points": forward_points
     }
     df = pd.DataFrame(data)
 
@@ -107,13 +107,17 @@ def calculate_gain_from_points(fixed_rate, forward_rates, maturity_dates, total_
         remaining_amount -= close_amount
 
     df = pd.DataFrame(gains)
-    df.loc["Total"] = df[["Gain from Points (PLN)"]].sum(numeric_only=True)
+    df.loc["Total"] = df["Gain from Points (PLN)"].sum()
     df.loc["Total", "Maturity Date"] = "Total"
     df.loc["Total", "Remaining Amount (EUR)"] = "-"
     df.loc["Total", "Closure Amount (EUR)"] = "-"
     df.loc["Total", "Forward Rate"] = "-"
 
     return df
+
+def calculate_average_rate_first_three(forward_rates):
+    """Calculate the average rate for the first three forward rates."""
+    return sum(forward_rates[:3]) / len(forward_rates[:3])
 
 def main():
     st.title("Window Forward Rate Calculator")
@@ -145,9 +149,13 @@ def main():
             st.write("### Window Forward Rates Table")
             st.dataframe(forward_table)
 
-            fixed_rate = forward_rates[0]  # Assume fixed rate is the first forward rate in the window
-            st.write(f"### Gain Analysis (Fixed Rate: {fixed_rate:.4f})")
-            gain_table = calculate_gain_from_points(fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
+            # Calculate average rate for first three forward prices
+            average_rate = calculate_average_rate_first_three(forward_rates)
+            st.write(f"### Average Rate for First Three Forward Prices: {average_rate:.4f}")
+
+            # Gain analysis based on average rate
+            st.write(f"### Gain Analysis (Average Rate: {average_rate:.4f})")
+            gain_table = calculate_gain_from_points(average_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
             st.dataframe(gain_table)
 
 if __name__ == "__main__":
