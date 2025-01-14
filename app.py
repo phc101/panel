@@ -138,6 +138,9 @@ def main():
     total_amount = st.sidebar.number_input("Total Hedge Amount (EUR)", value=1000000, step=100000)
     monthly_closure = st.sidebar.number_input("Monthly Closure Amount (EUR)", value=100000, step=10000)
 
+    # Option to use average price on open
+    use_average_rate = st.sidebar.checkbox("Average Price on Open", value=False)
+
     if st.sidebar.button("Generate Window Forward Curve"):
         if window_start >= window_end:
             st.error("Window End Date must be after Window Start Date.")
@@ -149,13 +152,17 @@ def main():
             st.write("### Window Forward Rates Table")
             st.dataframe(forward_table)
 
-            # Calculate average rate for first three forward prices
-            average_rate = calculate_average_rate_first_three(forward_rates)
-            st.write(f"### Average Rate for First Three Forward Prices: {average_rate:.4f}")
+            # Determine the fixed rate based on the option
+            if use_average_rate:
+                fixed_rate = calculate_average_rate_first_three(forward_rates)
+                st.write(f"Using Average Rate for First Three Forward Prices: {fixed_rate:.4f}")
+            else:
+                fixed_rate = forward_rates[0]  # Use the first forward rate as the fixed rate
+                st.write(f"Using First Forward Rate as Fixed Rate: {fixed_rate:.4f}")
 
-            # Gain analysis based on average rate
-            st.write(f"### Gain Analysis (Average Rate: {average_rate:.4f})")
-            gain_table = calculate_gain_from_points(average_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
+            # Gain analysis based on fixed rate
+            st.write(f"### Gain Analysis (Fixed Rate: {fixed_rate:.4f})")
+            gain_table = calculate_gain_from_points(fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
             st.dataframe(gain_table)
 
 if __name__ == "__main__":
