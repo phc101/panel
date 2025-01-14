@@ -154,9 +154,13 @@ def main():
     # Manual foreign interest rate input
     foreign_rate = st.sidebar.number_input("Foreign Interest Rate (%)", value=3.0, step=0.1) / 100
 
-    # Window forward inputs
+    # Predefined tenors for quick selection
+    tenors = {"1M": 30, "2M": 60, "3M": 90, "6M": 180, "1Y": 365}
+    selected_tenor = st.sidebar.selectbox("Select Tenor", list(tenors.keys()), index=2)
+
     window_start = st.sidebar.date_input("Window Start Date", value=datetime.now().date())
-    window_end = st.sidebar.date_input("Window End Date", value=(datetime.now() + timedelta(days=90)).date())
+    window_end = window_start + timedelta(days=tenors[selected_tenor])
+    st.sidebar.write(f"Window End Date: {window_end}")
 
     total_amount = st.sidebar.number_input("Total Hedge Amount (EUR)", value=1000000, step=100000)
     monthly_closure = st.sidebar.number_input("Monthly Closure Amount (EUR)", value=100000, step=10000)
@@ -203,5 +207,3 @@ def main():
             st.pyplot(forward_curve)
             st.dataframe(forward_table)
 
-if __name__ == "__main__":
-    main()
