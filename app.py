@@ -173,4 +173,7 @@ def main():
     spot_rate = st.sidebar.number_input("Spot Rate", value=DEFAULT_SPOT_RATE, step=0.0001, format="%.4f")
 
     # Domestic rate set to Poland interest rate
-    poland_rate = st.sidebar.number_input("Poland Interest Rate (%)", value=5.75, step=0.1
+    poland_rate = st.sidebar.number_input("Poland Interest Rate (%)", value=5.75, step=0.1)
+
+    # Manual foreign interest rate input
+    foreign_rate = st.sidebar.number_input("Foreign Interest Rate (%)",
