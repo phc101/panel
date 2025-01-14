@@ -1,7 +1,6 @@
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime
 import pandas as pd
-import matplotlib.pyplot as plt
 
 # Function to calculate forward rate
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days):
@@ -51,11 +50,10 @@ with st.sidebar:
     future_date = st.date_input("Future Date", min_value=datetime.today(), key="future_date")
     spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.01, key="spot_rate")
 
-    # Automatically set month bookmark based on future date
+    # Automatically update the selected month based on future date
     future_month = future_date.month
     if st.session_state.selected_month != future_month:
         st.session_state.selected_month = future_month
-        st.experimental_rerun()
 
     if st.button("Add Cashflow"):
         st.session_state.monthly_cashflows[future_month].append({
