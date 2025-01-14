@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import datetime
 import pandas as pd
+from streamlit.components.v1 import html
 
 # Function to calculate forward rate
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days):
@@ -74,6 +75,10 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
             amount = st.number_input(f"Amount for Record {i + 1}", value=cashflow["Amount"], step=100.0, key=f"amount_{i}")
             future_date = st.date_input(f"Future Date for Record {i + 1}", value=cashflow["Future Date"], key=f"future_date_{i}")
             spot_rate = st.number_input(f"Spot Rate for Record {i + 1}", value=cashflow["Spot Rate"], step=0.01, key=f"spot_rate_{i}")
+            delete_key = f"delete_{selected_month}_{i}"
+            if st.button("🗑 Delete", key=delete_key):
+                del st.session_state.monthly_cashflows[st.session_state.selected_month][i]
+                st.experimental_rerun()  # Refresh the page after deletion
             edited_cashflows.append({
                 "Currency": currency,
                 "Amount": amount,
