@@ -164,7 +164,7 @@ def main():
                 st.write(f"Using First Forward Rate as Fixed Rate: {fixed_rate:.4f}")
 
             # Adjust fixed rate by adding points percentage
-            adjusted_fixed_rate = fixed_rate + (fixed_rate * points_percentage / 100)
+            adjusted_fixed_rate = fixed_rate + (forward_points[0] * points_percentage / 100)
             st.write(f"Adjusted Fixed Rate (with {points_percentage}% points added): {adjusted_fixed_rate:.4f}")
 
             # Gain analysis based on adjusted fixed rate
