@@ -3,13 +3,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 
-DEFAULT_SPOT_RATE = 4.3000  # Fixed default spot rate
-
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
     """Calculate forward rate based on interest rate parity."""
     try:
         forward_rate = spot_rate * (1 + domestic_rate * tenor) / (1 + foreign_rate * tenor)
-        return round(forward_rate, 4)
+        return forward_rate
     except Exception as e:
         st.error(f"Error in forward rate calculation: {e}")
         return None
@@ -20,13 +18,7 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
     start_tenor = (window_start - today).days / 365 if window_start > today else 0
 
     window_days = (window_end - window_start).days
-    days = []
-    current_date = window_start
-    while current_date <= window_end:
-        if current_date.weekday() < 5:  # Exclude weekends
-            days.append((current_date - window_start).days)
-        current_date += timedelta(days=1)
-
+    days = [i for i in range(0, window_days + 1, 30)]  # Monthly intervals within the window
     tenors = [(start_tenor + day / 365) for day in days]  # Adjust tenors based on start_tenor
 
     forward_rates = [
@@ -34,7 +26,7 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
     ]
 
     # Calculate forward points
-    forward_points = [round(rate - spot_rate, 4) for rate in forward_rates]
+    forward_points = [rate - spot_rate for rate in forward_rates]
 
     # Generate maturity dates
     maturity_dates = [(window_start + timedelta(days=day)).strftime("%Y-%m-%d") for day in days]
@@ -51,7 +43,7 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
 
     # Annotate forward rates and move points next to the red line
     for i, (rate, point) in enumerate(zip(forward_rates, forward_points)):
-        ax1.text(maturity_dates[i], rate, f"Rate: {rate:.4f}".rstrip('0').rstrip('.'), 
+        ax1.text(maturity_dates[i], rate, f"Rate: {rate:.4f}", 
                  ha="left", va="bottom", fontsize=7, color="blue")
 
     # Add secondary axis for forward points
@@ -62,7 +54,7 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
 
     # Annotate forward points
     for i, point in enumerate(forward_points):
-        ax2.text(maturity_dates[i], point, f"{point:.4f}".rstrip('0').rstrip('.'), 
+        ax2.text(maturity_dates[i], point, f"{point:.4f}", 
                  ha="right", va="bottom", fontsize=7, color="red")
 
     fig.suptitle("Window Forward Rate Curve")
@@ -94,7 +86,7 @@ def plot_gain_bar_chart(gain_table):
     # Add total bar
     total_gain = gain_table["Gain from Points (PLN)"].sum()
     ax.bar("Total", total_gain, color="blue", alpha=0.7)
-    ax.text("Total", total_gain, f"{total_gain:.4f}".rstrip('0').rstrip('.'), ha="center", va="bottom", fontsize=10)
+    ax.text("Total", total_gain, f"{total_gain:.2f}", ha="center", va="bottom", fontsize=10)
 
     return fig
 
@@ -108,24 +100,22 @@ def calculate_gain_from_points(fixed_rate, forward_rates, maturity_dates, total_
             break
 
         close_amount = min(monthly_closure, remaining_amount)
-        gain = round((rate - fixed_rate) * close_amount, 4)
+        gain = (rate - fixed_rate) * close_amount
         gains.append({
             "Maturity Date": maturity_dates[i],
-            "Remaining Amount (EUR)": round(remaining_amount, 4),
-            "Closure Amount (EUR)": round(close_amount, 4),
-            "Forward Rate": round(rate, 4),
+            "Remaining Amount (EUR)": remaining_amount,
+            "Closure Amount (EUR)": close_amount,
+            "Forward Rate": rate,
             "Gain from Points (PLN)": gain
         })
         remaining_amount -= close_amount
 
     df = pd.DataFrame(gains)
-    df.loc["Total"] = {
-        "Maturity Date": "Total",
-        "Remaining Amount (EUR)": "-",
-        "Closure Amount (EUR)": "-",
-        "Forward Rate": "-",
-        "Gain from Points (PLN)": round(df["Gain from Points (PLN)"].sum(), 4)
-    }
+    df.loc["Total"] = df["Gain from Points (PLN)"].sum()
+    df.loc["Total", "Maturity Date"] = "Total"
+    df.loc["Total", "Remaining Amount (EUR)"] = "-"
+    df.loc["Total", "Closure Amount (EUR)"] = "-"
+    df.loc["Total", "Forward Rate"] = "-"
 
     return df
 
@@ -133,7 +123,7 @@ def calculate_client_pricing_table(fixed_rate, maturity_dates):
     """Create a pricing table for the client with fixed rates."""
     pricing_table = pd.DataFrame({
         "Maturity Date": maturity_dates,
-        "Client Forward Price (PLN)": [round(fixed_rate, 4)] * len(maturity_dates)
+        "Client Forward Price (PLN)": [fixed_rate] * len(maturity_dates)
     })
     return pricing_table
 
@@ -150,19 +140,19 @@ def plot_client_pricing_chart(pricing_table):
 
 def calculate_average_rate_first_three(forward_rates):
     """Calculate the average rate for the first three forward rates."""
-    return round(sum(forward_rates[:3]) / len(forward_rates[:3]), 4)
+    return sum(forward_rates[:3]) / len(forward_rates[:3])
 
 def main():
     st.title("Window Forward Rate Calculator")
 
     st.sidebar.header("Inputs")
-    spot_rate = st.sidebar.number_input("Spot Rate", value=DEFAULT_SPOT_RATE, step=0.0001, format="%.4f")
+    spot_rate = st.sidebar.number_input("Spot Rate", value=4.5, step=0.01)
 
     # Domestic rate set to Poland interest rate
-    poland_rate = st.sidebar.number_input("Poland Interest Rate (%)", value=5.75, step=0.1)
+    poland_rate = st.sidebar.number_input("Poland Interest Rate (%)", value=5.75, step=0.1) / 100
 
     # Manual foreign interest rate input
-    foreign_rate = st.sidebar.number_input("Foreign Interest Rate (%)", value=3.0, step=0.1)
+    foreign_rate = st.sidebar.number_input("Foreign Interest Rate (%)", value=3.0, step=0.1) / 100
 
     # Window forward inputs
     window_start = st.sidebar.date_input("Window Start Date", value=datetime.now().date())
@@ -172,4 +162,46 @@ def main():
     monthly_closure = st.sidebar.number_input("Monthly Closure Amount (EUR)", value=100000, step=10000)
 
     # Option to use average price on open
-    use
+    use_average_rate = st.sidebar.checkbox("Average Price on Open", value=False)
+
+    # Option to add percentage of points to the fixed rate
+    points_percentage = st.sidebar.number_input("Add % of Points to Fixed Rate", value=0, step=1, min_value=-100, max_value=100) / 100
+
+    if st.sidebar.button("Generate Window Forward Curve"):
+        if window_start >= window_end:
+            st.error("Window End Date must be after Window Start Date.")
+        else:
+            st.write("### Gain Analysis")
+            forward_curve, forward_table, forward_rates, forward_points = plot_window_forward_curve(spot_rate, poland_rate, foreign_rate, window_start, window_end)
+
+            # Determine the fixed rate based on the option
+            if use_average_rate:
+                base_fixed_rate = calculate_average_rate_first_three(forward_rates)
+                st.write(f"Using Average Rate for First Three Forward Prices: {base_fixed_rate:.4f}")
+            else:
+                base_fixed_rate = forward_rates[0]  # Use the first forward rate as the fixed rate
+                st.write(f"Using First Forward Rate as Fixed Rate: {base_fixed_rate:.4f}")
+
+            # Adjust fixed rate by adding percentage of points
+            adjusted_fixed_rate = base_fixed_rate + (forward_points[0] * points_percentage)
+            st.write(f"Adjusted Fixed Rate (with {points_percentage * 100:.0f}% points added): {adjusted_fixed_rate:.4f}")
+
+            gain_table = calculate_gain_from_points(adjusted_fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
+            st.dataframe(gain_table)
+
+            bar_chart = plot_gain_bar_chart(gain_table)
+            st.pyplot(bar_chart)
+
+            st.write("### Client Forward Pricing Table")
+            pricing_table = calculate_client_pricing_table(adjusted_fixed_rate, forward_table["Maturity Date"].tolist())
+            st.dataframe(pricing_table)
+
+            pricing_chart = plot_client_pricing_chart(pricing_table)
+            st.pyplot(pricing_chart)
+
+            st.write("### Window Forward Rates Table")
+            st.pyplot(forward_curve)
+            st.dataframe(forward_table)
+
+if __name__ == "__main__":
+    main()
