@@ -164,6 +164,9 @@ def main():
     # Option to use average price on open
     use_average_rate = st.sidebar.checkbox("Average Price on Open", value=False)
 
+    # Option to add percentage of points to the fixed rate
+    points_percentage = st.sidebar.number_input("Add % of Points to Fixed Rate", value=0, step=1, min_value=0, max_value=100) / 100
+
     if st.sidebar.button("Generate Window Forward Curve"):
         if window_start >= window_end:
             st.error("Window End Date must be after Window Start Date.")
@@ -173,20 +176,24 @@ def main():
 
             # Determine the fixed rate based on the option
             if use_average_rate:
-                fixed_rate = calculate_average_rate_first_three(forward_rates)
-                st.write(f"Using Average Rate for First Three Forward Prices: {fixed_rate:.4f}")
+                base_fixed_rate = calculate_average_rate_first_three(forward_rates)
+                st.write(f"Using Average Rate for First Three Forward Prices: {base_fixed_rate:.4f}")
             else:
-                fixed_rate = forward_rates[0]  # Use the first forward rate as the fixed rate
-                st.write(f"Using First Forward Rate as Fixed Rate: {fixed_rate:.4f}")
+                base_fixed_rate = forward_rates[0]  # Use the first forward rate as the fixed rate
+                st.write(f"Using First Forward Rate as Fixed Rate: {base_fixed_rate:.4f}")
 
-            gain_table = calculate_gain_from_points(fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
+            # Adjust fixed rate by adding percentage of points
+            adjusted_fixed_rate = base_fixed_rate + (forward_points[0] * points_percentage)
+            st.write(f"Adjusted Fixed Rate (with {points_percentage * 100:.0f}% points added): {adjusted_fixed_rate:.4f}")
+
+            gain_table = calculate_gain_from_points(adjusted_fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
             st.dataframe(gain_table)
 
             bar_chart = plot_gain_bar_chart(gain_table)
             st.pyplot(bar_chart)
 
             st.write("### Client Forward Pricing Table")
-            pricing_table = calculate_client_pricing_table(fixed_rate, forward_table["Maturity Date"].tolist())
+            pricing_table = calculate_client_pricing_table(adjusted_fixed_rate, forward_table["Maturity Date"].tolist())
             st.dataframe(pricing_table)
 
             pricing_chart = plot_client_pricing_chart(pricing_table)
