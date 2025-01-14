@@ -31,35 +31,25 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
     # Generate maturity dates
     maturity_dates = [(window_start + timedelta(days=day)).strftime("%Y-%m-%d") for day in days]
 
-    fig, ax1 = plt.subplots()
+    fig, ax = plt.subplots()
 
-    # Plot forward rates
-    ax1.plot(maturity_dates, forward_rates, marker="o", label="Forward Rate", linewidth=1)
-    ax1.axhline(spot_rate, color="orange", linestyle="--", linewidth=1, label="Spot Rate")
-    ax1.set_xlabel("Maturity Date")
-    ax1.set_ylabel("Forward Rate", color="blue")
-    ax1.tick_params(axis="y", labelcolor="blue")
-    ax1.grid(True)
+    # Plot step chart for forward rates
+    ax.step(maturity_dates, forward_rates, where='post', label="Forward Rate", linewidth=1, color="blue")
 
-    # Annotate forward rates and move points next to the red line
-    for i, (rate, point) in enumerate(zip(forward_rates, forward_points)):
-        ax1.text(maturity_dates[i], rate, f"Rate: {rate:.4f}", 
-                 ha="left", va="bottom", fontsize=7, color="blue")
+    # Annotate forward rates
+    for i, rate in enumerate(forward_rates):
+        ax.text(maturity_dates[i], rate, f"{rate:.4f}", fontsize=8, ha="center", va="bottom", color="blue")
 
-    # Add secondary axis for forward points
-    ax2 = ax1.twinx()
-    ax2.plot(maturity_dates, forward_points, marker="x", color="red", label="Forward Points", linewidth=1)
-    ax2.set_ylabel("Forward Points", color="red")
-    ax2.tick_params(axis="y", labelcolor="red")
+    # Annotate maturity dates
+    for i, date in enumerate(maturity_dates):
+        ax.text(date, forward_rates[i], date, fontsize=8, ha="right", va="bottom", rotation=45, color="black")
 
-    # Annotate forward points
-    for i, point in enumerate(forward_points):
-        ax2.text(maturity_dates[i], point, f"{point:.4f}", 
-                 ha="right", va="bottom", fontsize=7, color="red")
-
-    fig.suptitle("Window Forward Rate Curve")
-    fig.legend(loc="upper left")
-    fig.autofmt_xdate(rotation=45)
+    ax.set_xlabel("Maturity Date")
+    ax.set_ylabel("Forward Rate")
+    ax.set_title("Step Chart of Forward Rates")
+    ax.grid(True)
+    plt.xticks(rotation=45)
+    plt.legend()
 
     # Create a DataFrame for the table
     data = {
@@ -119,25 +109,6 @@ def calculate_gain_from_points(fixed_rate, forward_rates, maturity_dates, total_
 
     return df
 
-def calculate_client_pricing_table(fixed_rate, maturity_dates):
-    """Create a pricing table for the client with fixed rates."""
-    pricing_table = pd.DataFrame({
-        "Maturity Date": maturity_dates,
-        "Client Forward Price (PLN)": [fixed_rate] * len(maturity_dates)
-    })
-    return pricing_table
-
-def plot_client_pricing_chart(pricing_table):
-    """Plot the client's forward pricing as a line chart."""
-    fig, ax = plt.subplots()
-    ax.plot(pricing_table["Maturity Date"], pricing_table["Client Forward Price (PLN)"], marker="o", color="purple", linewidth=1)
-    ax.set_xlabel("Maturity Date")
-    ax.set_ylabel("Client Forward Price (PLN)")
-    ax.set_title("Client Forward Pricing")
-    ax.tick_params(axis="x", rotation=45)
-    ax.grid(True)
-    return fig
-
 def calculate_average_rate_first_three(forward_rates):
     """Calculate the average rate for the first three forward rates."""
     return sum(forward_rates[:3]) / len(forward_rates[:3])
@@ -191,14 +162,7 @@ def main():
             bar_chart = plot_gain_bar_chart(gain_table)
             st.pyplot(bar_chart)
 
-            st.write("### Client Forward Pricing Table")
-            pricing_table = calculate_client_pricing_table(adjusted_fixed_rate, forward_table["Maturity Date"].tolist())
-            st.dataframe(pricing_table)
-
-            pricing_chart = plot_client_pricing_chart(pricing_table)
-            st.pyplot(pricing_chart)
-
-            st.write("### Window Forward Rates Table")
+            st.write("### Step Chart of Forward Rates")
             st.pyplot(forward_curve)
             st.dataframe(forward_table)
 
