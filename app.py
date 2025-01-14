@@ -86,28 +86,28 @@ def plot_loss_due_to_fixed_rate(fixed_rate, forward_rates, forward_points, matur
 
     return fig, losses
 
-def calculate_nominal_loss(fixed_rate, forward_rates, maturity_dates, total_amount, monthly_closure):
-    """Calculate nominal loss in PLN given a fixed rate and monthly closures."""
+def calculate_gain_from_points(fixed_rate, forward_rates, maturity_dates, total_amount, monthly_closure):
+    """Calculate gain from points in PLN given a fixed rate and monthly closures."""
     remaining_amount = total_amount
-    nominal_losses = []
+    gains = []
 
     for i, rate in enumerate(forward_rates):
         if remaining_amount <= 0:
             break
 
         close_amount = min(monthly_closure, remaining_amount)
-        loss = (fixed_rate - rate) * close_amount
-        nominal_losses.append({
+        gain = (rate - fixed_rate) * close_amount
+        gains.append({
             "Maturity Date": maturity_dates[i],
             "Remaining Amount (EUR)": remaining_amount,
             "Closure Amount (EUR)": close_amount,
             "Forward Rate": rate,
-            "Nominal Loss (PLN)": loss
+            "Gain from Points (PLN)": gain
         })
         remaining_amount -= close_amount
 
-    df = pd.DataFrame(nominal_losses)
-    df.loc["Total"] = df[["Nominal Loss (PLN)"]].sum(numeric_only=True)
+    df = pd.DataFrame(gains)
+    df.loc["Total"] = df[["Gain from Points (PLN)"]].sum(numeric_only=True)
     df.loc["Total", "Maturity Date"] = "Total"
     df.loc["Total", "Remaining Amount (EUR)"] = "-"
     df.loc["Total", "Closure Amount (EUR)"] = "-"
@@ -146,13 +146,9 @@ def main():
             st.dataframe(forward_table)
 
             fixed_rate = forward_rates[0]  # Assume fixed rate is the first forward rate in the window
-            st.write(f"### Loss Analysis (Fixed Rate: {fixed_rate:.4f})")
-            loss_curve, losses = plot_loss_due_to_fixed_rate(fixed_rate, forward_rates, forward_points, forward_table["Maturity Date"].tolist())
-            st.pyplot(loss_curve)
-
-            st.write("### Nominal Loss in PLN")
-            nominal_loss_table = calculate_nominal_loss(fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
-            st.dataframe(nominal_loss_table)
+            st.write(f"### Gain Analysis (Fixed Rate: {fixed_rate:.4f})")
+            gain_table = calculate_gain_from_points(fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
+            st.dataframe(gain_table)
 
 if __name__ == "__main__":
     main()
