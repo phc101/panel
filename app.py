@@ -7,7 +7,7 @@ def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
     """Calculate forward rate based on interest rate parity."""
     try:
         forward_rate = spot_rate * (1 + domestic_rate * tenor) / (1 + foreign_rate * tenor)
-        return forward_rate
+        return round(forward_rate, 4)
     except Exception as e:
         st.error(f"Error in forward rate calculation: {e}")
         return None
@@ -26,7 +26,7 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
     ]
 
     # Calculate forward points
-    forward_points = [rate - spot_rate for rate in forward_rates]
+    forward_points = [round(rate - spot_rate, 4) for rate in forward_rates]
 
     # Generate maturity dates
     maturity_dates = [(window_start + timedelta(days=day)).strftime("%Y-%m-%d") for day in days]
@@ -86,7 +86,7 @@ def plot_gain_bar_chart(gain_table):
     # Add total bar
     total_gain = gain_table["Gain from Points (PLN)"].sum()
     ax.bar("Total", total_gain, color="blue", alpha=0.7)
-    ax.text("Total", total_gain, f"{total_gain:.2f}", ha="center", va="bottom", fontsize=10)
+    ax.text("Total", total_gain, f"{total_gain:.4f}", ha="center", va="bottom", fontsize=10)
 
     return fig
 
@@ -100,22 +100,24 @@ def calculate_gain_from_points(fixed_rate, forward_rates, maturity_dates, total_
             break
 
         close_amount = min(monthly_closure, remaining_amount)
-        gain = (rate - fixed_rate) * close_amount
+        gain = round((rate - fixed_rate) * close_amount, 4)
         gains.append({
             "Maturity Date": maturity_dates[i],
-            "Remaining Amount (EUR)": remaining_amount,
-            "Closure Amount (EUR)": close_amount,
-            "Forward Rate": rate,
+            "Remaining Amount (EUR)": round(remaining_amount, 4),
+            "Closure Amount (EUR)": round(close_amount, 4),
+            "Forward Rate": round(rate, 4),
             "Gain from Points (PLN)": gain
         })
         remaining_amount -= close_amount
 
     df = pd.DataFrame(gains)
-    df.loc["Total"] = df["Gain from Points (PLN)"].sum()
-    df.loc["Total", "Maturity Date"] = "Total"
-    df.loc["Total", "Remaining Amount (EUR)"] = "-"
-    df.loc["Total", "Closure Amount (EUR)"] = "-"
-    df.loc["Total", "Forward Rate"] = "-"
+    df.loc["Total"] = {
+        "Maturity Date": "Total",
+        "Remaining Amount (EUR)": "-",
+        "Closure Amount (EUR)": "-",
+        "Forward Rate": "-",
+        "Gain from Points (PLN)": round(df["Gain from Points (PLN)"].sum(), 4)
+    }
 
     return df
 
@@ -123,7 +125,7 @@ def calculate_client_pricing_table(fixed_rate, maturity_dates):
     """Create a pricing table for the client with fixed rates."""
     pricing_table = pd.DataFrame({
         "Maturity Date": maturity_dates,
-        "Client Forward Price (PLN)": [fixed_rate] * len(maturity_dates)
+        "Client Forward Price (PLN)": [round(fixed_rate, 4)] * len(maturity_dates)
     })
     return pricing_table
 
@@ -140,7 +142,7 @@ def plot_client_pricing_chart(pricing_table):
 
 def calculate_average_rate_first_three(forward_rates):
     """Calculate the average rate for the first three forward rates."""
-    return sum(forward_rates[:3]) / len(forward_rates[:3])
+    return round(sum(forward_rates[:3]) / len(forward_rates[:3]), 4)
 
 def main():
     st.title("Window Forward Rate Calculator")
