@@ -157,11 +157,13 @@ def main():
 
             # Adjust fixed rate by adding percentage of points
             if apply_to_average == "Average Price on Open":
-                adjusted_fixed_rate = base_fixed_rate + (forward_points[0] * points_percentage)
-                st.write(f"Adjusted Fixed Rate (Average Price + {points_percentage * 100:.0f}% points): {adjusted_fixed_rate:.4f}")
+                adjusted_fixed_rate = base_fixed_rate + (base_fixed_rate * points_percentage)
+                st.write(f"Adjusted Fixed Rate (Average Price + {points_percentage * 100:.0f}%): {adjusted_fixed_rate:.4f}")
             else:
-                adjusted_fixed_rate = forward_rates[0] + (forward_points[0] * points_percentage)
-                st.write(f"Adjusted Fixed Rate (All Window Open + {points_percentage * 100:.0f}% points): {adjusted_fixed_rate:.4f}")
+                adjusted_forward_rates = [rate + (rate * points_percentage) for rate in forward_rates]
+                st.write(f"Adjusted Forward Rates (All Window Open + {points_percentage * 100:.0f}%):")
+                for i, rate in enumerate(adjusted_forward_rates):
+                    st.write(f"{forward_table['Maturity Date'][i]}: {rate:.4f}")
 
             gain_table = calculate_gain_from_points(adjusted_fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
             st.dataframe(gain_table)
