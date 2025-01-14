@@ -4,8 +4,12 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 import yfinance as yf
 
-# Fetch current spot rate
-DEFAULT_SPOT_RATE = round(yf.download('EURPLN=X', period='1d', interval='1d')['Close'].iloc[-1], 4)
+# Fetch current spot rate with fallback to default
+try:
+    spot_data = yf.download('EURPLN=X', period='1d', interval='1d')
+    DEFAULT_SPOT_RATE = round(spot_data['Close'].iloc[-1], 4) if not spot_data.empty else 4.5000
+except Exception:
+    DEFAULT_SPOT_RATE = 4.5000
 
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
     """Calculate forward rate based on interest rate parity."""
