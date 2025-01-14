@@ -116,6 +116,38 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
 else:
     st.info(f"No cashflow records added for {selected_month}. Use the sidebar to add records.")
 
+# Aggregated view of all positions
+st.header("Aggregated Cashflow Summary")
+all_results = []
+for month, cashflows in st.session_state.monthly_cashflows.items():
+    for cashflow in cashflows:
+        days = (cashflow["Future Date"] - datetime.today().date()).days
+        forward_rate = calculate_forward_rate(
+            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days
+        )
+        margin = calculate_margin(days)
+        forward_rate_with_margin = forward_rate * (1 + margin)
+        pln_value = forward_rate_with_margin * cashflow["Amount"]
+        profit = (forward_rate_with_margin - forward_rate) * cashflow["Amount"]
+        all_results.append({
+            "Month": MONTH_NAMES[month - 1],
+            "Currency": cashflow["Currency"],
+            "Amount": cashflow["Amount"],
+            "Future Date": cashflow["Future Date"],
+            "Spot Rate": cashflow["Spot Rate"],
+            "Forward Rate": round(forward_rate, 4),
+            "Forward Rate (with Margin)": round(forward_rate_with_margin, 4),
+            "PLN Value": round(pln_value, 2),
+            "Profit from Margin": round(profit, 2),
+        })
+
+# Display aggregated table
+if all_results:
+    aggregated_df = pd.DataFrame(all_results)
+    st.table(aggregated_df)
+else:
+    st.info("No cashflows added yet.")
+
 # Footer
 st.markdown("---")
 st.caption("Developed using Streamlit")
