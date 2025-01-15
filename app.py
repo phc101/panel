@@ -1,8 +1,9 @@
-=import streamlit as st
+import streamlit as st
 from datetime import datetime, timedelta
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+
 
 # Function to calculate forward rate
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days, margin):
