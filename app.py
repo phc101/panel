@@ -67,9 +67,9 @@ with st.sidebar:
         st.session_state.monthly_cashflows[st.session_state.selected_month].append({
             "Currency": currency,
             "Amount": amount,
-            "Window Open Date": window_open_date,
+            "Window Open Date": str(window_open_date),  # Convert to string to ensure persistence
             "Window Tenor (months)": window_tenor,
-            "Maturity Date": maturity_date,
+            "Maturity Date": str(maturity_date),  # Convert to string to ensure persistence
             "Spot Rate": spot_rate,
         })
 
@@ -146,8 +146,12 @@ st.header("Aggregated Cashflow Summary")
 all_results = []
 for month, cashflows in st.session_state.monthly_cashflows.items():
     for cashflow in cashflows:
-        days_window_open = (cashflow["Window Open Date"] - datetime.today()).days
-        days_maturity = (cashflow["Maturity Date"] - datetime.today()).days
+        # Convert dates to datetime for calculations
+        window_open_date = pd.to_datetime(cashflow["Window Open Date"])
+        maturity_date = pd.to_datetime(cashflow["Maturity Date"])
+        days_window_open = (window_open_date - datetime.today()).days
+        days_maturity = (maturity_date - datetime.today()).days
+
         forward_rate_window_open = calculate_forward_rate(
             cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days_window_open
         )
@@ -160,9 +164,9 @@ for month, cashflows in st.session_state.monthly_cashflows.items():
             "Month": MONTH_NAMES[month - 1],
             "Currency": cashflow["Currency"],
             "Amount": cashflow["Amount"],
-            "Window Open Date": cashflow["Window Open Date"],
+            "Window Open Date": window_open_date,
             "Window Tenor (months)": cashflow["Window Tenor (months)"],
-            "Maturity Date": cashflow["Maturity Date"],
+            "Maturity Date": maturity_date,
             "Spot Rate": cashflow["Spot Rate"],
             "Forward Rate (Window Open Date)": round(forward_rate_window_open, 4),
             "Forward Rate (Maturity Date)": round(forward_rate_maturity, 4),
