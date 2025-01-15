@@ -56,8 +56,9 @@ with st.sidebar:
     window_tenor = st.number_input("Window Tenor (in months)", min_value=1, value=1, step=1, key="window_tenor")
     spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.0001, key="spot_rate")
     points_adjustment = st.slider(
-        "Adjust Forward Points up to Window Open Date (%)", 0.0, 100.0, 100.0, step=1
-    ) / 100
+        "Adjust Forward Points up to Window Open Date (%)", 
+        0.0, 1.0, 1.0, step=0.01
+    )
 
     # Ensure the tab corresponds to the month of the Window Open Date
     if window_open_date.month != st.session_state.selected_month:
