@@ -60,17 +60,18 @@ with st.sidebar:
     currency = st.selectbox("Currency", ["EUR", "USD"], key="currency")
     amount = st.number_input("Cashflow Amount", min_value=0.0, value=1000.0, step=100.0, key="amount")
     window_open_date = st.date_input("Window Open Date", min_value=datetime.today(), key="window_open_date")
-    months_to_maturity = st.number_input("Maturity (in months)", min_value=1, value=1, step=1, key="months_to_maturity")
+    window_tenor = st.number_input("Window Tenor (in months)", min_value=1, value=1, step=1, key="window_tenor")
     spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.01, key="spot_rate")
 
     # Calculate maturity date
-    maturity_date = window_open_date + timedelta(days=30 * months_to_maturity)
+    maturity_date = window_open_date + timedelta(days=30 * window_tenor)
 
     if st.button("Add Cashflow"):
         st.session_state.monthly_cashflows[st.session_state.selected_month].append({
             "Currency": currency,
             "Amount": amount,
             "Window Open Date": window_open_date,
+            "Window Tenor (months)": window_tenor,
             "Maturity Date": maturity_date,
             "Spot Rate": spot_rate,
         })
@@ -99,13 +100,13 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
                 value=cashflow.get("Window Open Date", datetime.today()), 
                 key=f"window_open_date_{i}"
             )
-            months_to_maturity = st.number_input(
-                f"Maturity (in months) for Record {i + 1}", 
-                value=(cashflow.get("Maturity Date", datetime.today()) - cashflow.get("Window Open Date", datetime.today())).days // 30, 
+            window_tenor = st.number_input(
+                f"Window Tenor (in months) for Record {i + 1}", 
+                value=cashflow.get("Window Tenor (months)", 1), 
                 step=1, 
-                key=f"maturity_{i}"
+                key=f"window_tenor_{i}"
             )
-            maturity_date = window_open_date + timedelta(days=30 * months_to_maturity)
+            maturity_date = window_open_date + timedelta(days=30 * window_tenor)
             spot_rate = st.number_input(
                 f"Spot Rate for Record {i + 1}", 
                 value=cashflow.get("Spot Rate", 4.5), 
@@ -124,6 +125,7 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
                 "Currency": currency,
                 "Amount": amount,
                 "Window Open Date": window_open_date,
+                "Window Tenor (months)": window_tenor,
                 "Maturity Date": maturity_date,
                 "Spot Rate": spot_rate,
             })
@@ -181,6 +183,7 @@ for month, cashflows in st.session_state.monthly_cashflows.items():
             "Currency": cashflow["Currency"],
             "Amount": cashflow["Amount"],
             "Window Open Date": cashflow["Window Open Date"],
+            "Window Tenor (months)": cashflow["Window Tenor (months)"],
             "Maturity Date": cashflow["Maturity Date"],
             "Spot Rate": cashflow["Spot Rate"],
             "Forward Rate": round(forward_rate, 4),
