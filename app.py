@@ -82,12 +82,36 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
     edited_cashflows = []
     for i, cashflow in enumerate(st.session_state.monthly_cashflows[st.session_state.selected_month]):
         with st.expander(f"Edit Record {i + 1}"):
-            currency = st.selectbox(f"Currency for Record {i + 1}", ["EUR", "USD"], index=["EUR", "USD"].index(cashflow["Currency"]), key=f"currency_{i}")
-            amount = st.number_input(f"Amount for Record {i + 1}", value=cashflow["Amount"], step=100.0, key=f"amount_{i}")
-            window_open_date = st.date_input(f"Window Open Date for Record {i + 1}", value=cashflow["Window Open Date"], key=f"window_open_date_{i}")
-            months_to_maturity = st.number_input(f"Maturity (in months) for Record {i + 1}", value=(cashflow["Maturity Date"] - cashflow["Window Open Date"]).days // 30, step=1, key=f"maturity_{i}")
+            currency = st.selectbox(
+                f"Currency for Record {i + 1}", 
+                ["EUR", "USD"], 
+                index=["EUR", "USD"].index(cashflow.get("Currency", "EUR")),  # Default to "EUR"
+                key=f"currency_{i}"
+            )
+            amount = st.number_input(
+                f"Amount for Record {i + 1}", 
+                value=cashflow.get("Amount", 0.0), 
+                step=100.0, 
+                key=f"amount_{i}"
+            )
+            window_open_date = st.date_input(
+                f"Window Open Date for Record {i + 1}", 
+                value=cashflow.get("Window Open Date", datetime.today()), 
+                key=f"window_open_date_{i}"
+            )
+            months_to_maturity = st.number_input(
+                f"Maturity (in months) for Record {i + 1}", 
+                value=(cashflow.get("Maturity Date", datetime.today()) - cashflow.get("Window Open Date", datetime.today())).days // 30, 
+                step=1, 
+                key=f"maturity_{i}"
+            )
             maturity_date = window_open_date + timedelta(days=30 * months_to_maturity)
-            spot_rate = st.number_input(f"Spot Rate for Record {i + 1}", value=cashflow["Spot Rate"], step=0.01, key=f"spot_rate_{i}")
+            spot_rate = st.number_input(
+                f"Spot Rate for Record {i + 1}", 
+                value=cashflow.get("Spot Rate", 4.5), 
+                step=0.01, 
+                key=f"spot_rate_{i}"
+            )
 
             # Delete button
             if st.button(f"🗑 Delete Record {i + 1}", key=f"delete_{i}"):
@@ -174,4 +198,4 @@ else:
 
 # Footer
 st.markdown("---")
-st.caption("Developed by Premium Hedge Consulting")
+st.caption("Developed using Streamlit")
