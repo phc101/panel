@@ -55,6 +55,7 @@ with st.sidebar:
     window_open_date = st.date_input("Window Open Date", min_value=datetime.today(), key="window_open_date")
     window_tenor = st.number_input("Window Tenor (in months)", min_value=1, value=1, step=1, key="window_tenor")
     spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.0001, key="spot_rate")
+    points_percentage = st.slider("Forward Points up to Window Open Date (%)", 0, 100, 100, step=1) / 100
 
     # Ensure the tab corresponds to the month of the Window Open Date
     if window_open_date.month != st.session_state.selected_month:
@@ -71,6 +72,7 @@ with st.sidebar:
             "Window Tenor (months)": window_tenor,
             "Maturity Date": str(maturity_date),  # Convert to string to ensure persistence
             "Spot Rate": spot_rate,
+            "Points Percentage": points_percentage,
         })
 
 # Display and edit cashflows for the selected month
@@ -93,6 +95,7 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
             - Window Tenor: {cashflow['Window Tenor (months)']} months
             - Maturity Date: {cashflow['Maturity Date']}
             - Spot Rate: {cashflow['Spot Rate']}
+            - Forward Points Percentage: {cashflow['Points Percentage'] * 100:.2f}%
             """)
         with col2:
             if st.button("🗑", key=f"delete_{idx}"):
@@ -114,7 +117,7 @@ if all_cashflows:
         lambda row: calculate_forward_rate(
             row["Spot Rate"], global_domestic_rate, global_foreign_rate, 
             (row["Window Open Date"] - datetime.today()).days
-        ),
+        ) * row["Points Percentage"],
         axis=1
     )
     all_cashflows_df["Forward Rate (Maturity Date)"] = all_cashflows_df.apply(
@@ -125,6 +128,7 @@ if all_cashflows:
         axis=1
     )
     all_cashflows_df["Profit"] = all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Forward Rate (Window Open Date)"]
+    all_cashflows_df["PLN Profit"] = all_cashflows_df["Profit"] * all_cashflows_df["Amount"]
 
     # Plot window duration, forward rates, and profit
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -133,7 +137,7 @@ if all_cashflows:
             [row["Window Open Date"], row["Maturity Date"]],
             [row["Forward Rate (Maturity Date)"], row["Forward Rate (Maturity Date)"]],
             marker="o",
-            label=f"{row['Currency']} - {row['Amount']} (Profit: {row['Profit']:.4f} PLN)"
+            label=f"{row['Currency']} - {row['Amount']} (PLN Profit: {row['PLN Profit']:.2f})"
         )
     ax.set_title("Forward Windows, Rates, and Profit")
     ax.set_xlabel("Date")
@@ -154,11 +158,12 @@ for month, cashflows in st.session_state.monthly_cashflows.items():
 
         forward_rate_window_open = calculate_forward_rate(
             cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days_window_open
-        )
+        ) * cashflow["Points Percentage"]
         forward_rate_maturity = calculate_forward_rate(
             cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days_maturity
         )
         profit = forward_rate_maturity - forward_rate_window_open
+        pln_profit = profit * cashflow["Amount"]
         pln_value = forward_rate_maturity * cashflow["Amount"]
         all_results.append({
             "Month": MONTH_NAMES[month - 1],
@@ -171,6 +176,7 @@ for month, cashflows in st.session_state.monthly_cashflows.items():
             "Forward Rate (Window Open Date)": round(forward_rate_window_open, 4),
             "Forward Rate (Maturity Date)": round(forward_rate_maturity, 4),
             "Profit": round(profit, 4),
+            "PLN Profit": round(pln_profit, 2),
             "PLN Value": round(pln_value, 2),
         })
 
