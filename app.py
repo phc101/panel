@@ -129,36 +129,31 @@ if all_cashflows:
         ),
         axis=1
     )
-    all_cashflows_df["Forward Rate (Maturity Date)"] = all_cashflows_df.apply(
-        lambda row: calculate_forward_rate(
-            row["Spot Rate"], global_domestic_rate, global_foreign_rate,
-            (row["Maturity Date"] - datetime.today()).days
-        ),
-        axis=1
-    )
-    all_cashflows_df["Profit"] = (
-        all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Forward Rate (Window Open Date)"]
-    )
-    all_cashflows_df["PLN Profit"] = all_cashflows_df["Profit"] * all_cashflows_df["Amount"]
 
-    # Enhanced Chart
+    # Enhanced Chart: L-Shape for Forward Rates
     fig, ax = plt.subplots(figsize=(12, 6))
 
     for _, row in all_cashflows_df.iterrows():
-        # Plot forward rates between Window Open Date and Maturity Date
-        ax.plot(
-            [row["Window Open Date"], row["Maturity Date"]],
-            [row["Forward Rate (Window Open Date)"], row["Forward Rate (Maturity Date)"]],
-            color="blue", label="Forward Rates", alpha=0.7
+        # Plot the horizontal line for the forward rate between Window Open Date and Maturity Date
+        ax.hlines(
+            row["Forward Rate (Window Open Date)"], 
+            xmin=row["Window Open Date"], 
+            xmax=row["Maturity Date"], 
+            color="blue", label="Forward Rate", linewidth=2, alpha=0.7
         )
         # Add vertical line connecting Window Open Rate to x-axis
-        ax.axvline(x=row["Window Open Date"], color="gray", linestyle="--", alpha=0.5)
-        # Highlight key points
-        ax.scatter(row["Window Open Date"], row["Forward Rate (Window Open Date)"], color="orange", s=80)
-        ax.scatter(row["Maturity Date"], row["Forward Rate (Maturity Date)"], color="green", s=80)
+        ax.axvline(
+            x=row["Window Open Date"], 
+            color="gray", linestyle="--", alpha=0.5
+        )
+        # Highlight the starting point (Window Open Rate)
+        ax.scatter(
+            row["Window Open Date"], row["Forward Rate (Window Open Date)"], 
+            color="orange", s=80, label="Window Open Rate"
+        )
 
     # Chart styling
-    ax.set_title("Forward Windows with Enhanced Graphics", fontsize=16)
+    ax.set_title("Forward Windows with L-Shape Representation", fontsize=16)
     ax.set_xlabel("Date", fontsize=12)
     ax.set_ylabel("Forward Rate (PLN)", fontsize=12)
     ax.grid(color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
@@ -166,46 +161,10 @@ if all_cashflows:
     plt.tight_layout()
     st.pyplot(fig)
 
-# Display aggregated summary of all positions
-st.header("Aggregated Cashflow Summary")
-all_results = []
-for month, cashflows in st.session_state.monthly_cashflows.items():
-    for cashflow in cashflows:
-        # Convert dates to datetime for calculations
-        window_open_date = pd.to_datetime(cashflow["Window Open Date"])
-        maturity_date = pd.to_datetime(cashflow["Maturity Date"])
-        days_window_open = (window_open_date - datetime.today()).days
-        days_maturity = (maturity_date - datetime.today()).days
-
-        forward_rate_window_open = cashflow["Spot Rate"] + (
-            (calculate_forward_rate(
-                cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days_window_open
-            ) - cashflow["Spot Rate"]) * cashflow["Points Adjustment"]
-        )
-        forward_rate_maturity = calculate_forward_rate(
-            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days_maturity
-        )
-        profit = forward_rate_maturity - forward_rate_window_open
-        pln_profit = profit * cashflow["Amount"]
-        pln_value = forward_rate_maturity * cashflow["Amount"]
-        all_results.append({
-            "Month": MONTH_NAMES[month - 1],
-            "Currency": cashflow["Currency"],
-            "Amount": cashflow["Amount"],
-            "Window Open Date": window_open_date,
-            "Window Tenor (months)": cashflow["Window Tenor (months)"],
-            "Maturity Date": maturity_date,
-            "Spot Rate": cashflow["Spot Rate"],
-            "Forward Rate (Window Open Date)": round(forward_rate_window_open, 4),
-            "Forward Rate (Maturity Date)": round(forward_rate_maturity, 4),
-            "Profit": round(profit, 4),
-            "PLN Profit": round(pln_profit, 2),
-            "PLN Value": round(pln_value, 2),
-        })
-
 # Display aggregated table
-if all_results:
-    aggregated_df = pd.DataFrame(all_results)
+st.header("Aggregated Cashflow Summary")
+if all_cashflows:
+    aggregated_df = pd.DataFrame(all_cashflows)
     st.table(aggregated_df)
 else:
     st.info("No cashflows added yet.")
