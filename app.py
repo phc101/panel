@@ -12,14 +12,14 @@ def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
         st.error(f"Error in forward rate calculation: {e}")
         return None
 
-def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_start, window_end):
+def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_open_date, months):
     """Plot forward rate curve for a window forward contract."""
     today = datetime.now().date()
-    start_tenor = (window_start - today).days / 365 if window_start > today else 0
+    start_tenor = (window_open_date - today).days / 365 if window_open_date > today else 0
 
-    window_days = (window_end - window_start).days
-    days = [i for i in range(0, window_days + 1, 30)]  # Monthly intervals within the window
-    tenors = [(start_tenor + day / 365) for day in days]  # Adjust tenors based on start_tenor
+    # Generate maturity dates at monthly intervals
+    maturity_dates = [(window_open_date + timedelta(days=30 * i)).strftime("%Y-%m-%d") for i in range(months)]
+    tenors = [(start_tenor + i / 12) for i in range(months)]
 
     forward_rates = [
         calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor) for tenor in tenors
@@ -27,9 +27,6 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
 
     # Calculate forward points
     forward_points = [rate - spot_rate for rate in forward_rates]
-
-    # Generate maturity dates
-    maturity_dates = [(window_start + timedelta(days=day)).strftime("%Y-%m-%d") for day in days]
 
     fig, ax = plt.subplots()
 
@@ -53,7 +50,7 @@ def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_sta
 
     # Create a DataFrame for the table
     data = {
-        "Tenor (Days)": [int((start_tenor * 365) + day) for day in days],
+        "Tenor (Months)": [i + 1 for i in range(months)],
         "Maturity Date": maturity_dates,
         "Forward Rate": forward_rates,
         "Forward Points": forward_points
@@ -126,8 +123,8 @@ def main():
     # Manual foreign interest rate input
     foreign_rate = st.sidebar.number_input("Foreign Interest Rate (%)", value=3.0, step=0.1) / 100
 
-    window_start = st.sidebar.date_input("Window Start Date", value=datetime.now().date())
-    window_end = st.sidebar.date_input("Window End Date", value=(datetime.now() + timedelta(days=90)).date())
+    window_open_date = st.sidebar.date_input("Window Open Date", value=datetime.now().date())
+    months = st.sidebar.number_input("Number of Months", value=12, step=1, min_value=1)
 
     total_amount = st.sidebar.number_input("Total Hedge Amount (EUR)", value=1000000, step=100000)
     monthly_closure = st.sidebar.number_input("Monthly Closure Amount (EUR)", value=100000, step=10000)
@@ -139,41 +136,30 @@ def main():
     points_percentage = st.sidebar.number_input("Add % of Points to Fixed Rate", value=0, step=1, min_value=-100, max_value=100) / 100
 
     if st.sidebar.button("Generate Window Forward Curve"):
-        if window_start >= window_end:
-            st.error("Window End Date must be after Window Start Date.")
+        st.write("### Gain Analysis")
+        forward_curve, forward_table, forward_rates, forward_points = plot_window_forward_curve(spot_rate, poland_rate, foreign_rate, window_open_date, months)
+
+        # Determine the fixed rate based on the option
+        if use_average_rate:
+            base_fixed_rate = calculate_average_rate_first_three(forward_rates)
+            st.write(f"Using Average Rate for First Three Forward Prices: {base_fixed_rate:.4f}")
         else:
-            st.write("### Gain Analysis")
-            forward_curve, forward_table, forward_rates, forward_points = plot_window_forward_curve(spot_rate, poland_rate, foreign_rate, window_start, window_end)
+            base_fixed_rate = forward_rates[0]  # Use the first forward rate as the fixed rate
+            st.write(f"Using First Forward Rate as Fixed Rate: {base_fixed_rate:.4f}")
 
-            # Determine the fixed rate based on the option
-            if use_average_rate:
-                base_fixed_rate = calculate_average_rate_first_three(forward_rates)
-                st.write(f"Using Average Rate for First Three Forward Prices: {base_fixed_rate:.4f}")
-            else:
-                base_fixed_rate = forward_rates[0]  # Use the first forward rate as the fixed rate
-                st.write(f"Using First Forward Rate as Fixed Rate: {base_fixed_rate:.4f}")
+        # Adjust fixed rate by adding percentage of points
+        adjusted_fixed_rate = base_fixed_rate + (base_fixed_rate * points_percentage)
+        st.write(f"Adjusted Fixed Rate (Average Price + {points_percentage * 100:.0f}%): {adjusted_fixed_rate:.4f}")
 
-            # Adjust fixed rate by adding percentage of points
-            adjusted_fixed_rate = base_fixed_rate + (base_fixed_rate * points_percentage)
-            st.write(f"Adjusted Fixed Rate (Average Price + {points_percentage * 100:.0f}%): {adjusted_fixed_rate:.4f}")
+        gain_table = calculate_gain_from_points(adjusted_fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
+        st.dataframe(gain_table)
 
-            gain_table = calculate_gain_from_points(adjusted_fixed_rate, forward_rates, forward_table["Maturity Date"].tolist(), total_amount, monthly_closure)
-            st.dataframe(gain_table)
+        bar_chart = plot_gain_bar_chart(gain_table)
+        st.pyplot(bar_chart)
 
-            # Add delete button for gain table
-            if st.button("Delete Gain Table", key="delete_gain_table"):
-                st.write("Gain Table Deleted")
-
-            bar_chart = plot_gain_bar_chart(gain_table)
-            st.pyplot(bar_chart)
-
-            st.write("### Step Chart of Forward Rates")
-            st.pyplot(forward_curve)
-            st.dataframe(forward_table)
-
-            # Add delete button for forward table
-            if st.button("Delete Forward Table", key="delete_forward_table"):
-                st.write("Forward Table Deleted")
+        st.write("### Step Chart of Forward Rates")
+        st.pyplot(forward_curve)
+        st.dataframe(forward_table)
 
 if __name__ == "__main__":
     main()
