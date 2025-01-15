@@ -5,12 +5,11 @@ import matplotlib.pyplot as plt
 import os
 
 # Function to calculate forward rate
-def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days, forward_adjustment):
+def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days):
     if days <= 0:
         return 0
     years = days / 365
-    forward_adjustment_rate = spot_rate + forward_adjustment  # Add forward points adjustment
-    return forward_adjustment_rate * ((1 + domestic_rate) / (1 + foreign_rate)) ** years
+    return spot_rate * ((1 + domestic_rate) / (1 + foreign_rate)) ** years
 
 # Initialize session state for monthly cashflows
 if "monthly_cashflows" not in st.session_state:
@@ -56,17 +55,13 @@ with st.sidebar:
     window_open_date = st.date_input("Window Open Date", min_value=datetime.today(), key="window_open_date")
     window_tenor = st.number_input("Window Tenor (in months)", min_value=1, value=1, step=1, key="window_tenor")
     spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.0001, key="spot_rate")
-    forward_adjustment_points = st.number_input(
-        "Forward Adjustment (in %)", min_value=-10.0, max_value=10.0, value=0.0, step=0.0001, key="forward_adjustment"
-    ) / 100
 
     # Ensure the tab corresponds to the month of the Window Open Date
     if window_open_date.month != st.session_state.selected_month:
         st.session_state.selected_month = window_open_date.month
 
-    # Calculate maturity date and adjusted rate
+    # Calculate maturity date
     maturity_date = window_open_date + timedelta(days=30 * window_tenor)
-    adjusted_rate = spot_rate + forward_adjustment_points
 
     if st.button("Add Cashflow"):
         st.session_state.monthly_cashflows[st.session_state.selected_month].append({
@@ -76,8 +71,6 @@ with st.sidebar:
             "Window Tenor (months)": window_tenor,
             "Maturity Date": maturity_date,
             "Spot Rate": spot_rate,
-            "Forward Adjustment": forward_adjustment_points,
-            "Adjusted Rate": adjusted_rate,
         })
 
 # Display and edit cashflows for the selected month
@@ -100,8 +93,6 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
             - Window Tenor: {cashflow['Window Tenor (months)']} months
             - Maturity Date: {cashflow['Maturity Date']}
             - Spot Rate: {cashflow['Spot Rate']}
-            - Forward Adjustment: {cashflow['Forward Adjustment']}
-            - Adjusted Rate: {cashflow['Adjusted Rate']}
             """)
         with col2:
             if st.button("🗑", key=f"delete_{idx}"):
@@ -118,18 +109,35 @@ if all_cashflows:
     all_cashflows_df["Window Open Date"] = pd.to_datetime(all_cashflows_df["Window Open Date"])
     all_cashflows_df["Maturity Date"] = pd.to_datetime(all_cashflows_df["Maturity Date"])
 
-    # Plot window duration and forward rates
+    # Calculate forward rates and profit for visualization
+    all_cashflows_df["Forward Rate (Window Open Date)"] = all_cashflows_df.apply(
+        lambda row: calculate_forward_rate(
+            row["Spot Rate"], global_domestic_rate, global_foreign_rate, 
+            (row["Window Open Date"] - datetime.today()).days
+        ),
+        axis=1
+    )
+    all_cashflows_df["Forward Rate (Maturity Date)"] = all_cashflows_df.apply(
+        lambda row: calculate_forward_rate(
+            row["Spot Rate"], global_domestic_rate, global_foreign_rate, 
+            (row["Maturity Date"] - datetime.today()).days
+        ),
+        axis=1
+    )
+    all_cashflows_df["Profit"] = all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Forward Rate (Window Open Date)"]
+
+    # Plot window duration, forward rates, and profit
     fig, ax = plt.subplots(figsize=(12, 6))
     for _, row in all_cashflows_df.iterrows():
         ax.plot(
             [row["Window Open Date"], row["Maturity Date"]],
-            [row["Adjusted Rate"], row["Adjusted Rate"]],
+            [row["Forward Rate (Maturity Date)"], row["Forward Rate (Maturity Date)"]],
             marker="o",
-            label=f"{row['Currency']} - {row['Amount']} (Adjusted Rate: {row['Adjusted Rate']:.4f} PLN)"
+            label=f"{row['Currency']} - {row['Amount']} (Profit: {row['Profit']:.4f} PLN)"
         )
-    ax.set_title("Forward Windows and Rates")
+    ax.set_title("Forward Windows, Rates, and Profit")
     ax.set_xlabel("Date")
-    ax.set_ylabel("Adjusted Rate (PLN)")
+    ax.set_ylabel("Forward Rate (PLN)")
     ax.legend()
     st.pyplot(fig)
 
@@ -138,11 +146,16 @@ st.header("Aggregated Cashflow Summary")
 all_results = []
 for month, cashflows in st.session_state.monthly_cashflows.items():
     for cashflow in cashflows:
-        days = (cashflow["Maturity Date"] - cashflow["Window Open Date"]).days
-        forward_rate = calculate_forward_rate(
-            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days, cashflow["Forward Adjustment"]
+        days_window_open = (cashflow["Window Open Date"] - datetime.today()).days
+        days_maturity = (cashflow["Maturity Date"] - datetime.today()).days
+        forward_rate_window_open = calculate_forward_rate(
+            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days_window_open
         )
-        pln_value = forward_rate * cashflow["Amount"]
+        forward_rate_maturity = calculate_forward_rate(
+            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days_maturity
+        )
+        profit = forward_rate_maturity - forward_rate_window_open
+        pln_value = forward_rate_maturity * cashflow["Amount"]
         all_results.append({
             "Month": MONTH_NAMES[month - 1],
             "Currency": cashflow["Currency"],
@@ -151,8 +164,9 @@ for month, cashflows in st.session_state.monthly_cashflows.items():
             "Window Tenor (months)": cashflow["Window Tenor (months)"],
             "Maturity Date": cashflow["Maturity Date"],
             "Spot Rate": cashflow["Spot Rate"],
-            "Forward Adjustment": cashflow["Forward Adjustment"],
-            "Forward Rate": round(forward_rate, 4),
+            "Forward Rate (Window Open Date)": round(forward_rate_window_open, 4),
+            "Forward Rate (Maturity Date)": round(forward_rate_maturity, 4),
+            "Profit": round(profit, 4),
             "PLN Value": round(pln_value, 2),
         })
 
