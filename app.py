@@ -130,8 +130,13 @@ if all_cashflows:
         axis=1
     )
 
-    # Enhanced Chart: L-Shape for Forward Rates
+    # Enhanced Chart: L-Shape for Forward Rates with Custom Date Axis
     fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Collect all relevant dates for the x-axis
+    x_ticks = sorted(
+        set(all_cashflows_df["Window Open Date"].tolist() + all_cashflows_df["Maturity Date"].tolist())
+    )
 
     for _, row in all_cashflows_df.iterrows():
         # Plot the horizontal line for the forward rate between Window Open Date and Maturity Date
@@ -156,6 +161,8 @@ if all_cashflows:
     ax.set_title("Forward Windows with L-Shape Representation", fontsize=16)
     ax.set_xlabel("Date", fontsize=12)
     ax.set_ylabel("Forward Rate (PLN)", fontsize=12)
+    ax.set_xticks(x_ticks)  # Set x-axis ticks to relevant dates
+    ax.set_xticklabels([date.strftime('%Y-%m-%d') for date in x_ticks], rotation=45, fontsize=10)
     ax.grid(color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
     ax.legend(loc="upper left", fontsize=10)
     plt.tight_layout()
