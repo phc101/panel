@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import datetime, timedelta
 import pandas as pd
+import matplotlib.pyplot as plt
 import os
 
 # Function to calculate forward rate
@@ -63,6 +64,11 @@ with st.sidebar:
     window_tenor = st.number_input("Window Tenor (in months)", min_value=1, value=1, step=1, key="window_tenor")
     spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.01, key="spot_rate")
 
+    # Ensure the tab corresponds to the month of the Window Open Date
+    if window_open_date.month != st.session_state.selected_month:
+        st.session_state.selected_month = window_open_date.month
+        st.experimental_rerun()
+
     # Calculate maturity date
     maturity_date = window_open_date + timedelta(days=30 * window_tenor)
 
@@ -105,40 +111,25 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
                 st.session_state.monthly_cashflows[st.session_state.selected_month].pop(i)
                 st.experimental_rerun()
 
-    # Update session state with edited data
-    st.session_state.monthly_cashflows[st.session_state.selected_month] = edited_cashflows
+    # Generate a chart for all records
+    cashflows_df = pd.DataFrame(st.session_state.monthly_cashflows[st.session_state.selected_month])
+    if not cashflows_df.empty:
+        cashflows_df["Window Duration"] = (cashflows_df["Maturity Date"] - cashflows_df["Window Open Date"]).dt.days
 
-    # Calculate forward rate, PLN value, and profit for each record
-    results = []
-    total_profit = 0
-    for cashflow in st.session_state.monthly_cashflows[st.session_state.selected_month]:
-        days = (cashflow["Maturity Date"] - cashflow["Window Open Date"]).days
-        margin = calculate_margin(days)
-        forward_rate = calculate_forward_rate(
-            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days, margin
-        )
-        adjusted_spot_rate = cashflow["Spot Rate"] - (cashflow["Spot Rate"] * margin)
-        pln_value = forward_rate * cashflow["Amount"]
-        profit = (cashflow["Spot Rate"] - adjusted_spot_rate) * cashflow["Amount"]  # Profit from margin
-        total_profit += profit
-        results.append({
-            "Forward Rate": round(forward_rate, 4),
-            "Adjusted Spot Rate": round(adjusted_spot_rate, 4),
-            "PLN Value": round(pln_value, 2),
-            "Profit from Margin": round(profit, 2),
-        })
-
-    # Add results to DataFrame and display
-    df = pd.DataFrame(st.session_state.monthly_cashflows[st.session_state.selected_month])
-    results_df = pd.DataFrame(results)
-    final_df = pd.concat([df, results_df], axis=1)
-    st.table(final_df)
-
-    # Display total profit for the selected month
-    st.header(f"Total Profit for {selected_month}")
-    st.success(f"Total Profit from Margins: PLN {round(total_profit, 2)}")
-else:
-    st.info(f"No cashflow records added for {selected_month}. Use the sidebar to add records.")
+        # Plot window duration and forward rates
+        fig, ax = plt.subplots(figsize=(10, 5))
+        for _, row in cashflows_df.iterrows():
+            ax.plot(
+                [row["Window Open Date"], row["Maturity Date"]],
+                [row["Spot Rate"], row["Spot Rate"]],
+                marker="o",
+                label=f"{row['Currency']} - {row['Amount']} {row['Spot Rate']} PLN"
+            )
+        ax.set_title("Forward Windows")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Rate (PLN)")
+        ax.legend()
+        st.pyplot(fig)
 
 # Aggregated view of all positions
 st.header("Aggregated Cashflow Summary")
