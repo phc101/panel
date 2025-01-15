@@ -4,7 +4,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-
 # Function to calculate forward rate
 def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days, margin):
     if days <= 0:
@@ -111,6 +110,11 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
     # Generate a chart for all records
     cashflows_df = pd.DataFrame(st.session_state.monthly_cashflows[st.session_state.selected_month])
     if not cashflows_df.empty:
+        # Ensure 'Window Open Date' and 'Maturity Date' are datetime objects
+        cashflows_df["Window Open Date"] = pd.to_datetime(cashflows_df["Window Open Date"])
+        cashflows_df["Maturity Date"] = pd.to_datetime(cashflows_df["Maturity Date"])
+
+        # Calculate Window Duration in days
         cashflows_df["Window Duration"] = (cashflows_df["Maturity Date"] - cashflows_df["Window Open Date"]).dt.days
 
         # Plot window duration and forward rates
