@@ -113,13 +113,6 @@ if all_cashflows:
     all_cashflows_df["Maturity Date"] = pd.to_datetime(all_cashflows_df["Maturity Date"])
 
     # Calculate forward rates and profit for visualization
-    all_cashflows_df["Forward Rate (Window Open Date)"] = all_cashflows_df.apply(
-        lambda row: calculate_forward_rate(
-            row["Spot Rate"], global_domestic_rate, global_foreign_rate, 
-            (row["Window Open Date"] - datetime.today()).days
-        ) * row["Points Percentage"],
-        axis=1
-    )
     all_cashflows_df["Forward Rate (Maturity Date)"] = all_cashflows_df.apply(
         lambda row: calculate_forward_rate(
             row["Spot Rate"], global_domestic_rate, global_foreign_rate, 
@@ -127,7 +120,15 @@ if all_cashflows:
         ),
         axis=1
     )
-    all_cashflows_df["Profit"] = all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Forward Rate (Window Open Date)"]
+    all_cashflows_df["Total Forward Points"] = (
+        all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Spot Rate"]
+    )
+    all_cashflows_df["Forward Rate (Window Open Date)"] = all_cashflows_df["Spot Rate"] + (
+        all_cashflows_df["Total Forward Points"] * all_cashflows_df["Points Percentage"]
+    )
+    all_cashflows_df["Profit"] = (
+        all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Forward Rate (Window Open Date)"]
+    )
     all_cashflows_df["PLN Profit"] = all_cashflows_df["Profit"] * all_cashflows_df["Amount"]
 
     # Plot window duration, forward rates, and profit
