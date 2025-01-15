@@ -166,10 +166,46 @@ if all_cashflows:
     plt.tight_layout()
     st.pyplot(fig)
 
-# Display aggregated table
+# Display aggregated summary of all positions
 st.header("Aggregated Cashflow Summary")
-if all_cashflows:
-    aggregated_df = pd.DataFrame(all_cashflows)
+all_results = []
+for month, cashflows in st.session_state.monthly_cashflows.items():
+    for cashflow in cashflows:
+        # Convert dates to datetime for calculations
+        window_open_date = pd.to_datetime(cashflow["Window Open Date"])
+        maturity_date = pd.to_datetime(cashflow["Maturity Date"])
+        days_window_open = (window_open_date - datetime.today()).days
+        days_maturity = (maturity_date - datetime.today()).days
+
+        forward_rate_window_open = cashflow["Spot Rate"] + (
+            (calculate_forward_rate(
+                cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days_window_open
+            ) - cashflow["Spot Rate"]) * cashflow["Points Adjustment"]
+        )
+        forward_rate_maturity = calculate_forward_rate(
+            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days_maturity
+        )
+        profit = forward_rate_maturity - forward_rate_window_open
+        pln_profit = profit * cashflow["Amount"]
+        pln_value = forward_rate_maturity * cashflow["Amount"]
+        all_results.append({
+            "Month": MONTH_NAMES[month - 1],
+            "Currency": cashflow["Currency"],
+            "Amount": cashflow["Amount"],
+            "Window Open Date": window_open_date,
+            "Window Tenor (months)": cashflow["Window Tenor (months)"],
+            "Maturity Date": maturity_date,
+            "Spot Rate": cashflow["Spot Rate"],
+            "Forward Rate (Window Open Date)": round(forward_rate_window_open, 4),
+            "Forward Rate (Maturity Date)": round(forward_rate_maturity, 4),
+            "Profit": round(profit, 4),
+            "PLN Profit": round(pln_profit, 2),
+            "PLN Value": round(pln_value, 2),
+        })
+
+# Display aggregated table
+if all_results:
+    aggregated_df = pd.DataFrame(all_results)
     st.table(aggregated_df)
 else:
     st.info("No cashflows added yet.")
