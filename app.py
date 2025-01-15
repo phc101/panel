@@ -4,11 +4,12 @@ import pandas as pd
 import os
 
 # Function to calculate forward rate
-def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days):
+def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days, margin):
     if days <= 0:
         return 0
     years = days / 365
-    return spot_rate * ((1 + domestic_rate) / (1 + foreign_rate)) ** years
+    adjusted_spot_rate = spot_rate - (spot_rate * margin)  # Subtract margin from spot rate
+    return adjusted_spot_rate * ((1 + domestic_rate) / (1 + foreign_rate)) ** years
 
 # Function to calculate margin
 def calculate_margin(days):
@@ -108,17 +109,17 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
     total_profit = 0
     for cashflow in st.session_state.monthly_cashflows[st.session_state.selected_month]:
         days = (cashflow["Future Date"] - datetime.today().date()).days
-        forward_rate = calculate_forward_rate(
-            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days
-        )
         margin = calculate_margin(days)
-        forward_rate_with_margin = forward_rate * (1 + margin)
-        pln_value = forward_rate_with_margin * cashflow["Amount"]
-        profit = (forward_rate_with_margin - forward_rate) * cashflow["Amount"]
+        forward_rate = calculate_forward_rate(
+            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days, margin
+        )
+        adjusted_spot_rate = cashflow["Spot Rate"] - (cashflow["Spot Rate"] * margin)
+        pln_value = forward_rate * cashflow["Amount"]
+        profit = (cashflow["Spot Rate"] - adjusted_spot_rate) * cashflow["Amount"]  # Profit from margin
         total_profit += profit
         results.append({
             "Forward Rate": round(forward_rate, 4),
-            "Forward Rate (with Margin)": round(forward_rate_with_margin, 4),
+            "Adjusted Spot Rate": round(adjusted_spot_rate, 4),
             "PLN Value": round(pln_value, 2),
             "Profit from Margin": round(profit, 2),
         })
@@ -141,13 +142,13 @@ all_results = []
 for month, cashflows in st.session_state.monthly_cashflows.items():
     for cashflow in cashflows:
         days = (cashflow["Future Date"] - datetime.today().date()).days
-        forward_rate = calculate_forward_rate(
-            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days
-        )
         margin = calculate_margin(days)
-        forward_rate_with_margin = forward_rate * (1 + margin)
-        pln_value = forward_rate_with_margin * cashflow["Amount"]
-        profit = (forward_rate_with_margin - forward_rate) * cashflow["Amount"]
+        forward_rate = calculate_forward_rate(
+            cashflow["Spot Rate"], global_domestic_rate, global_foreign_rate, days, margin
+        )
+        adjusted_spot_rate = cashflow["Spot Rate"] - (cashflow["Spot Rate"] * margin)
+        pln_value = forward_rate * cashflow["Amount"]
+        profit = (cashflow["Spot Rate"] - adjusted_spot_rate) * cashflow["Amount"]
         all_results.append({
             "Month": MONTH_NAMES[month - 1],
             "Currency": cashflow["Currency"],
@@ -155,7 +156,7 @@ for month, cashflows in st.session_state.monthly_cashflows.items():
             "Future Date": cashflow["Future Date"],
             "Spot Rate": cashflow["Spot Rate"],
             "Forward Rate": round(forward_rate, 4),
-            "Forward Rate (with Margin)": round(forward_rate_with_margin, 4),
+            "Adjusted Spot Rate": round(adjusted_spot_rate, 4),
             "PLN Value": round(pln_value, 2),
             "Profit from Margin": round(profit, 2),
         })
