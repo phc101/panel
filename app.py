@@ -130,52 +130,22 @@ if all_cashflows:
         axis=1
     )
 
-    # Enhanced Chart: L-Shape for Forward Rates with Custom Date Axis
-    fig, ax = plt.subplots(figsize=(12, 6))
-
-    # Collect all relevant dates for the x-axis
-    x_ticks = sorted(
-        set(all_cashflows_df["Window Open Date"].tolist() + all_cashflows_df["Maturity Date"].tolist())
-    )
-
+    # Aggregated Table: Add Window Open Forward Rate
+    st.header("Aggregated Cashflow Summary")
+    aggregated_results = []
     for _, row in all_cashflows_df.iterrows():
-        # Plot the horizontal line for the forward rate between Window Open Date and Maturity Date
-        ax.hlines(
-            row["Forward Rate (Window Open Date)"], 
-            xmin=row["Window Open Date"], 
-            xmax=row["Maturity Date"], 
-            color="blue", label="Forward Rate", linewidth=2, alpha=0.7
-        )
-        # Add vertical line connecting Window Open Rate to x-axis
-        ax.axvline(
-            x=row["Window Open Date"], 
-            color="gray", linestyle="--", alpha=0.5
-        )
-        # Highlight the starting point (Window Open Rate)
-        ax.scatter(
-            row["Window Open Date"], row["Forward Rate (Window Open Date)"], 
-            color="orange", s=80, label="Window Open Rate"
-        )
-
-    # Chart styling
-    ax.set_title("Forward Windows with L-Shape Representation", fontsize=16)
-    ax.set_xlabel("Date", fontsize=12)
-    ax.set_ylabel("Forward Rate (PLN)", fontsize=12)
-    ax.set_xticks(x_ticks)  # Set x-axis ticks to relevant dates
-    ax.set_xticklabels([date.strftime('%Y-%m-%d') for date in x_ticks], rotation=45, fontsize=10)
-    ax.grid(color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
-    ax.legend(loc="upper left", fontsize=10)
-    plt.tight_layout()
-    st.pyplot(fig)
-
-# Display aggregated table
-st.header("Aggregated Cashflow Summary")
-if all_cashflows:
-    aggregated_df = pd.DataFrame(all_cashflows)
+        aggregated_results.append({
+            "Currency": row["Currency"],
+            "Amount": row["Amount"],
+            "Window Open Date": row["Window Open Date"].strftime("%Y-%m-%d"),
+            "Window Tenor (months)": row["Window Tenor (months)"],
+            "Maturity Date": row["Maturity Date"].strftime("%Y-%m-%d"),
+            "Spot Rate": row["Spot Rate"],
+            "Forward Rate (Window Open Date)": row["Forward Rate (Window Open Date)"],
+        })
+    aggregated_df = pd.DataFrame(aggregated_results)
     st.table(aggregated_df)
-else:
-    st.info("No cashflows added yet.")
 
 # Footer
 st.markdown("---")
-st.caption("Developed using Streamlit")
+st.caption("Developed by Premium Hedge")
