@@ -78,57 +78,32 @@ with st.sidebar:
 
 # Display and edit cashflows for the selected month
 st.header(f"Cashflow Records for {selected_month}")
+
 if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
-    # Editable table simulation
+    # Button to delete all records
+    if st.button("Delete All"):
+        st.session_state.monthly_cashflows[st.session_state.selected_month] = []
+        st.success("All cashflow records have been deleted.")
+        st.experimental_rerun()
+
+    # Editable table simulation with delete buttons
     edited_cashflows = []
     for i, cashflow in enumerate(st.session_state.monthly_cashflows[st.session_state.selected_month]):
-        with st.expander(f"Edit Record {i + 1}"):
-            currency = st.selectbox(
-                f"Currency for Record {i + 1}", 
-                ["EUR", "USD"], 
-                index=["EUR", "USD"].index(cashflow.get("Currency", "EUR")),  # Default to "EUR"
-                key=f"currency_{i}"
-            )
-            amount = st.number_input(
-                f"Amount for Record {i + 1}", 
-                value=cashflow.get("Amount", 0.0), 
-                step=100.0, 
-                key=f"amount_{i}"
-            )
-            window_open_date = st.date_input(
-                f"Window Open Date for Record {i + 1}", 
-                value=cashflow.get("Window Open Date", datetime.today()), 
-                key=f"window_open_date_{i}"
-            )
-            window_tenor = st.number_input(
-                f"Window Tenor (in months) for Record {i + 1}", 
-                value=cashflow.get("Window Tenor (months)", 1), 
-                step=1, 
-                key=f"window_tenor_{i}"
-            )
-            maturity_date = window_open_date + timedelta(days=30 * window_tenor)
-            spot_rate = st.number_input(
-                f"Spot Rate for Record {i + 1}", 
-                value=cashflow.get("Spot Rate", 4.5), 
-                step=0.01, 
-                key=f"spot_rate_{i}"
-            )
-
-            # Delete button
-            if st.button(f"🗑 Delete Record {i + 1}", key=f"delete_{i}"):
+        st.write(f"Record {i + 1}:")
+        col1, col2 = st.columns([9, 1])
+        with col1:
+            st.write(f"""
+            - Currency: {cashflow['Currency']}
+            - Amount: {cashflow['Amount']}
+            - Window Open Date: {cashflow['Window Open Date']}
+            - Window Tenor: {cashflow['Window Tenor (months)']} months
+            - Maturity Date: {cashflow['Maturity Date']}
+            - Spot Rate: {cashflow['Spot Rate']}
+            """)
+        with col2:
+            if st.button("🗑", key=f"delete_{i}"):
                 st.session_state.monthly_cashflows[st.session_state.selected_month].pop(i)
-                st.experimental_set_query_params(refresh=True)  # Dynamic refresh
-                st.stop()  # Stop rendering after deletion
-
-            # Collect edited cashflows
-            edited_cashflows.append({
-                "Currency": currency,
-                "Amount": amount,
-                "Window Open Date": window_open_date,
-                "Window Tenor (months)": window_tenor,
-                "Maturity Date": maturity_date,
-                "Spot Rate": spot_rate,
-            })
+                st.experimental_rerun()
 
     # Update session state with edited data
     st.session_state.monthly_cashflows[st.session_state.selected_month] = edited_cashflows
