@@ -1,4 +1,4 @@
-import streamlit as st
+=import streamlit as st
 from datetime import datetime, timedelta
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -67,7 +67,6 @@ with st.sidebar:
     # Ensure the tab corresponds to the month of the Window Open Date
     if window_open_date.month != st.session_state.selected_month:
         st.session_state.selected_month = window_open_date.month
-        st.experimental_rerun()
 
     # Calculate maturity date
     maturity_date = window_open_date + timedelta(days=30 * window_tenor)
@@ -89,8 +88,6 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
     # Button to delete all records
     if st.button("Delete All"):
         st.session_state.monthly_cashflows[st.session_state.selected_month] = []
-        st.success("All cashflow records have been deleted.")
-        st.experimental_rerun()
 
     # Editable table simulation with delete buttons
     edited_cashflows = []
@@ -109,7 +106,6 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
         with col2:
             if st.button("🗑", key=f"delete_{i}"):
                 st.session_state.monthly_cashflows[st.session_state.selected_month].pop(i)
-                st.experimental_rerun()
 
     # Generate a chart for all records
     cashflows_df = pd.DataFrame(st.session_state.monthly_cashflows[st.session_state.selected_month])
