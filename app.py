@@ -1,3 +1,5 @@
+
+
 import streamlit as st
 from datetime import datetime, timedelta
 import pandas as pd
@@ -55,7 +57,7 @@ with st.sidebar:
     window_open_date = st.date_input("Window Open Date", min_value=datetime.today(), key="window_open_date")
     window_tenor = st.number_input("Window Tenor (in months)", min_value=1, value=1, step=1, key="window_tenor")
     spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.0001, key="spot_rate")
-    points_percentage = st.slider("Forward Points up to Window Open Date (%)", 0, 100, 100, step=1) / 100
+    points_percentage = st.slider("Forward Points up to Window Open Date (%)", 0.0, 100.0, 100.0, step=0.01) / 10000  # Adjust for decimals
 
     # Ensure the tab corresponds to the month of the Window Open Date
     if window_open_date.month != st.session_state.selected_month:
@@ -95,7 +97,7 @@ if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
             - Window Tenor: {cashflow['Window Tenor (months)']} months
             - Maturity Date: {cashflow['Maturity Date']}
             - Spot Rate: {cashflow['Spot Rate']}
-            - Forward Points Percentage: {cashflow['Points Percentage'] * 100:.2f}%
+            - Forward Points Percentage: {cashflow['Points Percentage'] * 10000:.2f}%
             """)
         with col2:
             if st.button("🗑", key=f"delete_{idx}"):
