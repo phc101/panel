@@ -65,4 +65,12 @@ st.write(f"### Zysk inwestorów (nominalny): {zysk_inwestorow:,.2f} zł")
 st.write(f"### Zysk założycieli (nominalny): {zysk_zalozycieli:,.2f} zł")
 st.write(f"### Stopa zwrotu inwestorów (ROI): {roi_inwestorow:.2f}x")
 
+st.write(f"### Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów': {wartosc_biezaca / zysk_inwestorow if zysk_inwestorow > 0 else 'Nie można obliczyć'}")
+
+# Interpretacja wskaźnika
+if zysk_inwestorow > 0:
+    st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów' pokazuje, ile razy bieżąca wartość całej firmy przewyższa zysk nominalny inwestorów. **Wysoka wartość wskaźnika** oznacza, że inwestorzy uzyskują stosunkowo małą część wartości firmy, co może być korzystne dla założycieli. **Niska wartość wskaźnika** oznacza, że inwestorzy mają znaczący udział w wartości firmy w stosunku do swojego zysku nominalnego.</div>", unsafe_allow_html=True)
+else:
+    st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik nie został obliczony, ponieważ zysk inwestorów jest ujemny lub równy zeru. Może to oznaczać, że inwestycja nie generuje wystarczającego zwrotu w stosunku do wkładu inwestorów.</div>", unsafe_allow_html=True)
+
 st.write("### Użyj tego modelu, aby symulować różne scenariusze, zmieniając założenia!")
