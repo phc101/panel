@@ -105,7 +105,9 @@ st.line_chart(financial_data.set_index("Rok")["Zysk netto (zł)"], use_container
 # Wykres udziałów inwestorów i założycieli
 import matplotlib.pyplot as plt
 fig, ax = plt.subplots()
-ax.pie([udzial_zalozycieli, udzial_inwestorow], labels=["Założyciele", "Inwestorzy"], autopct="%1.1f%%", startangle=90)
+nowe_udzialy_procent = nowe_udzialy / (nowe_udzialy + 100)  # Zakładamy, że początkowo jest 100 udziałów
+zalozyciele_udzialy_procent = 1 - nowe_udzialy_procent
+ax.pie([zalozyciele_udzialy_procent, nowe_udzialy_procent], labels=["Założyciele (100 udziałów)", f"Inwestorzy ({nowe_udzialy:.0f} udziałów)"], autopct="%1.1f%%", startangle=90)
 ax.axis("equal")
 st.pyplot(fig)
 
