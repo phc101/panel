@@ -48,11 +48,21 @@ pozyskany_kapital = 3_700_000  # Ręczna kwota pozyskana od inwestorów w zamian
 udzial_zalozycieli = 1 - udzial_inwestorow  # Założyciele zachowują 70%
 
 # Wyświetlanie wyników
-st.header("Wyniki")
+st.header("Wyniki i stopy zwrotu")
 st.write(f"### Wycena firmy w roku 8: {wycena_rok_8:,.2f} zł")
 st.write(f"### Wartość bieżąca firmy: {wartosc_biezaca:,.2f} zł")
 st.write(f"### Pozyskany kapitał od inwestorów: {pozyskany_kapital:,.2f} zł")
 st.write(f"### Udział założycieli: {udzial_zalozycieli * 100:.2f}%")
 st.write(f"### Udział inwestorów: {udzial_inwestorow * 100:.2f}%")
+
+# Obliczenie stopy zwrotu (ROI) i zysków nominalnych
+zysk_inwestorow = wycena_rok_8 * udzial_inwestorow - pozyskany_kapital
+zysk_zalozycieli = wycena_rok_8 * udzial_zalozycieli
+roi_inwestorow = wycena_rok_8 * udzial_inwestorow / pozyskany_kapital
+
+# Wyświetlanie stóp zwrotu i zysków nominalnych
+st.write(f"### Zysk inwestorów (nominalny): {zysk_inwestorow:,.2f} zł")
+st.write(f"### Zysk założycieli (nominalny): {zysk_zalozycieli:,.2f} zł")
+st.write(f"### Stopa zwrotu inwestorów (ROI): {roi_inwestorow:.2f}x")
 
 st.write("### Użyj tego modelu, aby symulować różne scenariusze, zmieniając założenia!")
