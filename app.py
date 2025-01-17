@@ -58,7 +58,7 @@ zysk_zalozycieli = wycena_rok_8 * udzial_zalozycieli
 roi_inwestorow = wycena_rok_8 * udzial_inwestorow / pozyskany_kapital
 
 # Obliczenie wskaźnika zysk inwestora / wartość bieżąca firmy
-if wartosc_bieząca > 0:
+if wartosc_biezaca > 0:
     ratio_value = zysk_inwestorow / wartosc_bieząca
     ratio_value_rounded = round(ratio_value, 2)
     if ratio_value_rounded > 1:
