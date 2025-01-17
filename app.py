@@ -60,7 +60,7 @@ st.write(f"### Pozyskany kapitał: {pozyskany_kapital:,.2f} zł")
 
 # Obliczenia dla emisji nowych udziałów
 wartosc_nominalna_udzialu = st.number_input("Wartość nominalna jednego udziału (zł):", value=50, step=1)
-nowe_udzialy = pozyskany_kapital / wartosc_nominalna_udzialu
+nowe_udzialy = pozyskany_kapital / (udzial_inwestorow * 100 / (1 - udzial_inwestorow))
 # Obliczenie wartości emisyjnej, aby zachować 70% udziałów dla założycieli
 nowa_wartosc_emisyjna = pozyskany_kapital / (0.3 * 100 / 0.7)  # Pozwala na oddanie 30% udziałów inwestorom
 nowe_udzialy = pozyskany_kapital / nowa_wartosc_emisyjna
@@ -108,9 +108,10 @@ st.line_chart(financial_data.set_index("Rok")["Zysk netto (zł)"], use_container
 # Wykres udziałów inwestorów i założycieli
 import matplotlib.pyplot as plt
 fig, ax = plt.subplots()
-nowe_udzialy_procent = nowe_udzialy / (nowe_udzialy + 100)  # Zakładamy, że początkowo jest 100 udziałów
+nowe_udzialy_procent = nowe_udzialy / (nowe_udzialy + 100)
+zalozyciele_udzialy_procent = 1 - nowe_udzialy_procent  # Zakładamy, że początkowo jest 100 udziałów
 zalozyciele_udzialy_procent = 1 - nowe_udzialy_procent
-ax.pie([zalozyciele_udzialy_procent, nowe_udzialy_procent], labels=["Założyciele (100 udziałów)", f"Inwestorzy ({nowe_udzialy:.0f} udziałów)"], autopct="%1.1f%%", startangle=90)
+ax.pie([zalozyciele_udzialy_procent, nowe_udzialy_procent], labels=[f"Założyciele (100 udziałów - {zalozyciele_udzialy_procent * 100:.1f}%)", f"Inwestorzy ({nowe_udzialy:.0f} udziałów - {nowe_udzialy_procent * 100:.1f}%)"], autopct="%1.1f%%", startangle=90)
 ax.axis("equal")
 st.pyplot(fig)
 
