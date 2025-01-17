@@ -17,11 +17,11 @@ data = {
 # Tworzenie DataFrame
 financial_data = pd.DataFrame(data)
 financial_data["Zysk netto (zł)"] = financial_data["Przychody netto (zł)"] - financial_data["Koszty (zł)"]
-financial_data["% wzrost zysku netto"] = financial_data["Zysk netto (zł)"].pct_change().fillna(0) * 100
+financial_data["Oczekiwana marża netto (%)"] = (financial_data["Zysk netto (zł)"] / financial_data["Przychody netto (zł)"]).fillna(0) * 100
 
 # Wyświetlanie danych finansowych
 st.subheader("Prognozowane dane finansowe")
-st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Tabela pokazuje prognozowane przychody, koszty oraz wynikowy zysk netto dla każdego roku. Dane te są podstawą do dalszych obliczeń w modelu.</div>", unsafe_allow_html=True)
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Tabela pokazuje prognozowane przychody, koszty, zysk netto oraz oczekiwaną marżę netto dla każdego roku. Dane te są podstawą do dalszych obliczeń w modelu.</div>", unsafe_allow_html=True)
 st.write(financial_data)
 
 # Założenia
@@ -47,7 +47,7 @@ udzial_zalozycieli = 1 - udzial_inwestorow
 # Wyświetlanie wyników
 st.header("Wyniki i stopy zwrotu")
 st.write(f"### Wycena firmy w roku 8: {wycena_rok_8:,.2f} zł")
-st.write(f"### Wartość bieżąca firmy: {wartosc_biezaca:,.2f} zł")
+st.write(f"### Wartość bieżąca firmy: {wartosc_bieząca:,.2f} zł")
 st.write(f"### Pozyskany kapitał od inwestorów: {pozyskany_kapital:,.2f} zł")
 st.write(f"### Udział założycieli: {udzial_zalozycieli * 100:.2f}%")
 st.write(f"### Udział inwestorów: {udzial_inwestorow * 100:.2f}%")
@@ -58,8 +58,8 @@ zysk_zalozycieli = wycena_rok_8 * udzial_zalozycieli
 roi_inwestorow = wycena_rok_8 * udzial_inwestorow / pozyskany_kapital
 
 # Obliczenie wskaźnika zysk inwestora / wartość bieżąca firmy
-if wartosc_biezaca > 0:
-    ratio_value = zysk_inwestorow / wartosc_biezaca
+if wartosc_bieząca > 0:
+    ratio_value = zysk_inwestorow / wartosc_bieząca
     ratio_value_rounded = round(ratio_value, 2)
     if ratio_value_rounded > 1:
         ratio_interpretation = "Inwestycja jest bardzo opłacalna dla inwestorów."
