@@ -61,6 +61,9 @@ st.write(f"### Pozyskany kapitał: {pozyskany_kapital:,.2f} zł")
 # Obliczenia dla emisji nowych udziałów
 wartosc_nominalna_udzialu = st.number_input("Wartość nominalna jednego udziału (zł):", value=50, step=1)
 nowe_udzialy = pozyskany_kapital / wartosc_nominalna_udzialu
+# Obliczenie wartości emisyjnej, aby zachować 70% udziałów dla założycieli
+nowa_wartosc_emisyjna = pozyskany_kapital / (0.3 * 100 / 0.7)  # Pozwala na oddanie 30% udziałów inwestorom
+nowe_udzialy = pozyskany_kapital / nowa_wartosc_emisyjna
 st.write(f"### Liczba nowych udziałów do emisji: {nowe_udzialy:.0f}")
 st.write(f"### Nowy całkowity kapitał zakładowy: {pozyskany_kapital + wycena_pre_money:,.2f} zł")
 st.write(f"### Wycena post-money: {wycena_post_money:,.2f} zł")
