@@ -65,7 +65,8 @@ st.write(f"### Stopa zwrotu inwestorów (ROI): {roi_inwestorow:.2f}x")
 if roi_inwestorow >= 2:
     interpretation = "Bardzo wysoka stopa zwrotu dla inwestorów. Inwestycja jest wysoce opłacalna."
 elif 1 <= roi_inwestorow < 2:
-    interpretation = "Dobra stopa zwrotu. Inwestycja jest atrakcyjna, ale nie spektakularna."\else:
+    interpretation = "Dobra stopa zwrotu. Inwestycja jest atrakcyjna, ale nie spektakularna."
+else:
     interpretation = "Niska stopa zwrotu. Inwestycja może nie spełnić oczekiwań."
 
 st.write(f"### Interpretacja stopy zwrotu: {interpretation}")
