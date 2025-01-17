@@ -88,6 +88,7 @@ st.line_chart(financial_data.set_index("Rok")["Zysk netto (zł)"], use_container
 
 # Wykres udziałów inwestorów i założycieli
 fig, ax = plt.subplots()
+nowe_udzialy = pozyskany_kapital / (pozyskany_kapital / (100 * udzial_inwestorow))
 nowe_udzialy_procent = nowe_udzialy / (nowe_udzialy + 100)
 zalozyciele_udzialy_procent = 1 - nowe_udzialy_procent  # Zakładamy, że początkowo jest 100 udziałów
 zalozyciele_udzialy_procent = 1 - nowe_udzialy_procent
