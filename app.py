@@ -54,6 +54,7 @@ st.write(f"### Wycena w roku 8: {wycena_rok_8:,.2f} zł")
 st.write(f"### Wartość bieżąca: {wartosc_biezaca:,.2f} zł")
 st.write(f"### Pozyskany kapitał: {pozyskany_kapital:,.2f} zł")
 st.write(f"### Wycena post-money: {wycena_post_money:,.2f} zł")
+st.write("Wycena post-money to wartość firmy po zakończeniu rundy inwestycyjnej. Obejmuje pozyskany kapitał i określa całkowitą wartość firmy w momencie zakończenia inwestycji. Jest kluczowa dla wyznaczenia udziałów założycieli i inwestorów.")
 st.write(f"### Wycena pre-money: {wycena_pre_money:,.2f} zł")
 
 # Podział udziałów
