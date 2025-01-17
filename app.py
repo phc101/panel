@@ -44,6 +44,11 @@ wycena_rok_8 = zysk_rok_8 * pe_multiple  # Wycena firmy w roku 8 = Zysk netto w 
 czynnik_dyskontowy = (1 + discount_rate) ** 8
 wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy  # Dyskontowanie wartości przyszłej wyceny do wartości bieżącej
 
+# Definicje udziałów i kapitału
+udzial_inwestorow = 0.3  # Inwestorzy otrzymują 30% udziałów
+pozyskany_kapital = przychody_rok_8 * udzial_inwestorow  # Kwota zainwestowana przez inwestorów
+udzial_zalozycieli = 1 - udzial_inwestorow  # Założyciele zachowują 70%
+
 # Zysk inwestorów i założycieli dla różnych P/E
 st.header("Zysk nominalny inwestorów i założycieli dla różnych P/E")
 pe_values = [10, 15, 20, 25]  # Różne wskaźniki P/E
