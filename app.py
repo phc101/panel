@@ -42,8 +42,8 @@ czynnik_dyskontowy = (1 + discount_rate) ** 8
 wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy  # Dyskontowanie wartości przyszłej wyceny do wartości bieżącej
 
 # Wymagania finansowe i udział
-st.header("Wymagania finansowe")
-st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>W tej sekcji obliczamy, ile kapitału musisz pozyskać, aby pokryć koszty działalności w pierwszych trzech latach. Uwzględniamy również oferowany udział inwestorów.</div>", unsafe_allow_html=True)  # Wyjaśnia, ile kapitału jest potrzebne
+st.header("Wymagania finansowe i emisja nowych udziałów")
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>W tej sekcji obliczamy, ile kapitału musisz pozyskać, aby pokryć koszty działalności w pierwszych trzech latach. Możesz również obliczyć, ile nowych udziałów należy wyemitować, aby uzyskać potrzebną kwotę.</div>", unsafe_allow_html=True)  # Wyjaśnia, ile kapitału jest potrzebne
 koszty_pierwsze_3_lata = financial_data[financial_data["Rok"] <= 2027]["Koszty (zł)"].sum()
 udzial_inwestorow = st.slider("Oferowany udział inwestorów (%):", 10, 50, 25) / 100
 pozyskany_kapital = koszty_pierwsze_3_lata / udzial_inwestorow
@@ -57,6 +57,12 @@ st.write(f"### Łączne koszty (pierwsze 3 lata): {koszty_pierwsze_3_lata:,.2f} 
 st.write(f"### Wycena w roku 8: {wycena_rok_8:,.2f} zł")
 st.write(f"### Wartość bieżąca: {wartosc_biezaca:,.2f} zł")
 st.write(f"### Pozyskany kapitał: {pozyskany_kapital:,.2f} zł")
+
+# Obliczenia dla emisji nowych udziałów
+wartosc_nominalna_udzialu = st.number_input("Wartość nominalna jednego udziału (zł):", value=50, step=1)
+nowe_udzialy = pozyskany_kapital / wartosc_nominalna_udzialu
+st.write(f"### Liczba nowych udziałów do emisji: {nowe_udzialy:.0f}")
+st.write(f"### Nowy całkowity kapitał zakładowy: {pozyskany_kapital + wycena_pre_money:,.2f} zł")
 st.write(f"### Wycena post-money: {wycena_post_money:,.2f} zł")
 st.write("Wycena post-money to wartość firmy po zakończeniu rundy inwestycyjnej. Obejmuje pozyskany kapitał i określa całkowitą wartość firmy w momencie zakończenia inwestycji. Jest kluczowa dla wyznaczenia udziałów założycieli i inwestorów.")
 st.write(f"### Wycena pre-money: {wycena_pre_money:,.2f} zł")
