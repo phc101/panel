@@ -28,6 +28,7 @@ st.header("Kluczowe założenia")
 profit_margin = st.slider("Oczekiwana marża zysku (rok 8, %):", 10, 80, 20) / 100
 pe_multiple = st.slider("Wskaźnik cena/zysk (P/E):", 5, 25, 15)
 discount_rate = st.slider("Stopa dyskontowa (%):", 10, 50, 30) / 100
+udzial_inwestorow = st.slider("Udział inwestorów (%):", 5, 95, 30) / 100
 
 # Obliczenie wyceny w roku 8
 przychody_rok_8 = financial_data[financial_data["Rok"] == 2032]["Przychody netto (zł)"].values[0]
@@ -39,7 +40,6 @@ czynnik_dyskontowy = (1 + discount_rate) ** 8
 wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy
 
 # Definicje udziałów i kapitału
-udzial_inwestorow = 0.3
 pozyskany_kapital = 3_700_000
 udzial_zalozycieli = 1 - udzial_inwestorow
 
