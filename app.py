@@ -83,7 +83,7 @@ zysk_nominalny_inwestora = wycena_rok_8 * udzial_inwestorow - pozyskany_kapital
 zysk_procentowy_inwestora = (zysk_nominalny_inwestora / pozyskany_kapital) * 100
 
 st.subheader("Zysk inwestorów")
-st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Obliczamy zwrot z inwestycji (ROI) dla inwestorów w nominalnych wartościach oraz procentach. Zysk ten zależy od wyceny firmy w roku 8 i początkowej inwestycji.</div>", unsafe_allow_html=True)
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Obliczamy zwrot z inwestycji (ROI) dla inwestorów w nominalnych wartościach oraz procentach. Zysk nominalny oznacza czystą kwotę zysku, jaką inwestorzy uzyskają ponad zainwestowaną kwotę, a ROI pokazuje, ile razy zwróciła się inwestycja. Ostateczny wynik zależy od wyceny firmy w roku 8 i udziału inwestorów w spółce.</div>", unsafe_allow_html=True)
 st.write(f"### Zwrot z inwestycji (ROI): {roi_inwestora:.2f}x")
 st.write(f"### Zysk inwestorów (nominalny): {zysk_nominalny_inwestora:,.2f} zł")
 st.write(f"### Zysk inwestorów (%): {zysk_procentowy_inwestora:.2f}%")
