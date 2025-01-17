@@ -1,7 +1,5 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
 
 # Tytuł strony
 st.title("Model Finansowania i Wyceny Startupu")  # Tytuł aplikacji
@@ -46,54 +44,15 @@ wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy  # Dyskontowanie wartości p
 
 # Definicje udziałów i kapitału
 udzial_inwestorow = 0.3  # Inwestorzy otrzymują 30% udziałów
-pozyskany_kapital = przychody_rok_8 * udzial_inwestorow  # Kwota zainwestowana przez inwestorów
+pozyskany_kapital = 3_700_000  # Ręczna kwota pozyskana od inwestorów w zamian za 30% udziałów  # Kwota zainwestowana przez inwestorów
 udzial_zalozycieli = 1 - udzial_inwestorow  # Założyciele zachowują 70%
 
-# Zysk inwestorów i założycieli dla różnych P/E
-st.header("Zysk nominalny inwestorów i założycieli dla różnych P/E")
-pe_values = [10, 15, 20, 25]  # Różne wskaźniki P/E
-data_pe = []
-
-for pe in pe_values:
-    wycena = zysk_rok_8 * pe
-    zysk_inwestorow = wycena * udzial_inwestorow - pozyskany_kapital
-    zysk_zalozycieli = wycena * udzial_zalozycieli
-    data_pe.append({
-        "P/E": pe,
-        "Zysk inwestorów (zł)": zysk_inwestorow,
-        "Zysk założycieli (zł)": zysk_zalozycieli
-    })
-
-# Tworzenie wykresu
-pe_df = pd.DataFrame(data_pe)
-st.write(pe_df)
-st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wykres pokazuje, jak zmieniają się zyski nominalne inwestorów i założycieli w zależności od różnych wskaźników P/E w roku 8.</div>", unsafe_allow_html=True)
-
-fig, ax = plt.subplots()
-ax.plot(pe_df["P/E"], pe_df["Zysk inwestorów (zł)"], label="Zysk inwestorów")
-ax.plot(pe_df["P/E"], pe_df["Zysk założycieli (zł)"], label="Zysk założycieli")
-ax.set_xlabel("Wskaźnik P/E")
-ax.set_ylabel("Zysk nominalny (zł)")
-ax.set_title("Zysk nominalny inwestorów i założycieli przy różnych P/E")
-ax.legend()
-st.pyplot(fig)
-
-# Wizualizacje
-st.header("Wizualizacje")
-st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wizualizacje przedstawiają przychody netto, zyski netto oraz podział udziałów założycieli i inwestorów w firmie.</div>", unsafe_allow_html=True)  # Wyjaśnia, że poniżej znajdują się wykresy
-
-# Wykresy przychodów i zysków
-st.line_chart(financial_data.set_index("Rok")["Przychody netto (zł)"], use_container_width=True)
-st.line_chart(financial_data.set_index("Rok")["Zysk netto (zł)"], use_container_width=True)
-
-# Wykres udziałów inwestorów i założycieli
-fig, ax = plt.subplots()
-nowe_udzialy = pozyskany_kapital / (pozyskany_kapital / (100 * udzial_inwestorow))
-nowe_udzialy_procent = nowe_udzialy / (nowe_udzialy + 100)
-zalozyciele_udzialy_procent = 1 - nowe_udzialy_procent  # Zakładamy, że początkowo jest 100 udziałów
-zalozyciele_udzialy_procent = 1 - nowe_udzialy_procent
-ax.pie([zalozyciele_udzialy_procent, nowe_udzialy_procent], labels=[f"Założyciele (100 udziałów - {zalozyciele_udzialy_procent * 100:.1f}%)", f"Inwestorzy ({nowe_udzialy:.0f} udziałów - {nowe_udzialy_procent * 100:.1f}%)"], autopct="%1.1f%%", startangle=90)
-ax.axis("equal")
-st.pyplot(fig)
+# Wyświetlanie wyników
+st.header("Wyniki")
+st.write(f"### Wycena firmy w roku 8: {wycena_rok_8:,.2f} zł")
+st.write(f"### Wartość bieżąca firmy: {wartosc_biezaca:,.2f} zł")
+st.write(f"### Pozyskany kapitał od inwestorów: {pozyskany_kapital:,.2f} zł")
+st.write(f"### Udział założycieli: {udzial_zalozycieli * 100:.2f}%")
+st.write(f"### Udział inwestorów: {udzial_inwestorow * 100:.2f}%")
 
 st.write("### Użyj tego modelu, aby symulować różne scenariusze, zmieniając założenia!")
