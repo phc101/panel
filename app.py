@@ -56,21 +56,22 @@ zysk_inwestorow = wycena_rok_8 * udzial_inwestorow - pozyskany_kapital
 zysk_zalozycieli = wycena_rok_8 * udzial_zalozycieli
 roi_inwestorow = wycena_rok_8 * udzial_inwestorow / pozyskany_kapital
 
-# Obliczenie wskaźnika wartość bieżąca firmy / zysk inwestora
-if zysk_inwestorow > 0:
-    ratio_value = wartosc_biezaca / zysk_inwestorow
-    if ratio_value > 3:
-        ratio_interpretation = "Bardzo korzystna wartość dla inwestorów."
-    elif 1.5 <= ratio_value <= 3:
-        ratio_interpretation = "Umiarkowanie korzystna wartość dla inwestorów."
+# Obliczenie wskaźnika zysk inwestora / wartość bieżąca firmy
+if wartosc_biezaca > 0:
+    ratio_value = zysk_inwestorow / wartosc_biezaca
+    ratio_value_rounded = round(ratio_value, 2)
+    if ratio_value_rounded > 0.5:
+        ratio_interpretation = "Inwestycja jest bardzo opłacalna dla inwestorów."
+    elif 0.3 <= ratio_value_rounded <= 0.5:
+        ratio_interpretation = "Inwestycja jest umiarkowanie opłacalna dla inwestorów."
     else:
-        ratio_interpretation = "Mało korzystna wartość dla inwestorów."
+        ratio_interpretation = "Inwestycja jest mało opłacalna dla inwestorów."
 else:
-    ratio_value = "Nie można obliczyć"
-    ratio_interpretation = "Zysk inwestorów jest ujemny lub równy zeru."
+    ratio_value_rounded = "Nie można obliczyć"
+    ratio_interpretation = "Wartość bieżąca firmy jest równa zeru lub ujemna."
 
 # Wyświetlanie wskaźnika i interpretacji
-st.write(f"### Wskaźnik wartość bieżąca firmy / zysk inwestora: {ratio_value}")
+st.write(f"### Wskaźnik zysk inwestora / wartość bieżąca firmy: {ratio_value_rounded}")
 st.write(f"### Interpretacja wskaźnika: {ratio_interpretation}")
 
 # Wyświetlanie stóp zwrotu i zysków nominalnych
