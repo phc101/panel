@@ -22,10 +22,12 @@ financial_data["Zysk netto (zł)"] = financial_data["Przychody netto (zł)"] - f
 
 # Wyświetlanie danych finansowych
 st.subheader("Prognozowane dane finansowe")
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Tabela pokazuje prognozowane przychody, koszty oraz wynikowy zysk netto dla każdego roku. Dane te są podstawą do dalszych obliczeń w modelu.</div>", unsafe_allow_html=True)
 st.write(financial_data)  # Wyświetla tabelę z prognozami finansowymi
 
 # Założenia
-st.header("Kluczowe założenia")  # Wyjaśnia, że poniżej można zmieniać założenia modelu
+st.header("Kluczowe założenia")
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Założenia pozwalają dostosować model do rzeczywistości biznesowej. Możesz zmienić oczekiwaną marżę zysku, wskaźnik cena/zysk (P/E) oraz stopę dyskontową, które wpływają na wycenę firmy.</div>", unsafe_allow_html=True)  # Wyjaśnia, że poniżej można zmieniać założenia modelu
 profit_margin = st.slider("Oczekiwana marża zysku (rok 8, %):", 10, 50, 20) / 100  # Oczekiwana marża zysku
 pe_multiple = st.slider("Wskaźnik cena/zysk (P/E):", 5, 25, 15)  # Współczynnik wyceny
 discount_rate = st.slider("Stopa dyskontowa (%):", 10, 50, 30) / 100  # Stopa dyskontowa do obliczenia wartości bieżącej
@@ -40,7 +42,8 @@ czynnik_dyskontowy = (1 + discount_rate) ** 8
 wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy  # Dyskontowanie wartości przyszłej wyceny do wartości bieżącej
 
 # Wymagania finansowe i udział
-st.header("Wymagania finansowe")  # Wyjaśnia, ile kapitału jest potrzebne
+st.header("Wymagania finansowe")
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>W tej sekcji obliczamy, ile kapitału musisz pozyskać, aby pokryć koszty działalności w pierwszych trzech latach. Uwzględniamy również oferowany udział inwestorów.</div>", unsafe_allow_html=True)  # Wyjaśnia, ile kapitału jest potrzebne
 koszty_pierwsze_3_lata = financial_data[financial_data["Rok"] <= 2027]["Koszty (zł)"].sum()
 udzial_inwestorow = st.slider("Oferowany udział inwestorów (%):", 10, 50, 25) / 100
 pozyskany_kapital = koszty_pierwsze_3_lata / udzial_inwestorow
@@ -49,6 +52,7 @@ wycena_pre_money = wycena_post_money - pozyskany_kapital
 
 # Wyświetlanie obliczeń
 st.subheader("Wyniki")
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wyniki zawierają kluczowe wskaźniki finansowe, takie jak całkowite koszty, wycena firmy w roku 8, wartość bieżąca, a także pozyskany kapitał i wyceny pre-money oraz post-money.</div>", unsafe_allow_html=True)
 st.write(f"### Łączne koszty (pierwsze 3 lata): {koszty_pierwsze_3_lata:,.2f} zł")
 st.write(f"### Wycena w roku 8: {wycena_rok_8:,.2f} zł")
 st.write(f"### Wartość bieżąca: {wartosc_biezaca:,.2f} zł")
@@ -60,6 +64,7 @@ st.write(f"### Wycena pre-money: {wycena_pre_money:,.2f} zł")
 # Podział udziałów
 udzial_zalozycieli = 1 - udzial_inwestorow
 st.subheader("Podział udziałów")
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Pokazujemy, jak udziały w firmie są podzielone między założycieli i inwestorów po zakończeniu rundy inwestycyjnej.</div>", unsafe_allow_html=True)
 st.write(f"- Założyciele: {udzial_zalozycieli * 100:.2f}%")
 st.write(f"- Inwestorzy: {udzial_inwestorow * 100:.2f}%")
 
@@ -69,12 +74,14 @@ zysk_nominalny_inwestora = wycena_rok_8 * udzial_inwestorow - pozyskany_kapital
 zysk_procentowy_inwestora = (zysk_nominalny_inwestora / pozyskany_kapital) * 100
 
 st.subheader("Zysk inwestorów")
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Obliczamy zwrot z inwestycji (ROI) dla inwestorów w nominalnych wartościach oraz procentach. Zysk ten zależy od wyceny firmy w roku 8 i początkowej inwestycji.</div>", unsafe_allow_html=True)
 st.write(f"### Zwrot z inwestycji (ROI): {roi_inwestora:.2f}x")
 st.write(f"### Zysk inwestorów (nominalny): {zysk_nominalny_inwestora:,.2f} zł")
 st.write(f"### Zysk inwestorów (%): {zysk_procentowy_inwestora:.2f}%")
 
 # Wizualizacje
-st.header("Wizualizacje")  # Wyjaśnia, że poniżej znajdują się wykresy
+st.header("Wizualizacje")
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wizualizacje przedstawiają przychody netto, zyski netto oraz podział udziałów założycieli i inwestorów w firmie.</div>", unsafe_allow_html=True)  # Wyjaśnia, że poniżej znajdują się wykresy
 
 # Wykresy przychodów i zysków
 st.line_chart(financial_data.set_index("Rok")["Przychody netto (zł)"], use_container_width=True)
