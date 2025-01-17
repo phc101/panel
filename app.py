@@ -2,88 +2,88 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# Page Title
-st.title("Startup Funding and Valuation Model")
+# Tytuł strony
+st.title("Model Finansowania i Wyceny Startupu")  # Tytuł aplikacji
 
-# Input Section
-st.header("Input Your Revenue and Costs")
+# Sekcja wejściowa
+st.header("Wprowadź swoje dane o przychodach i kosztach")  # Wyjaśnia, że użytkownik wprowadza swoje dane finansowe
 
-# Revenue and Cost Inputs
+# Dane o przychodach i kosztach
+# Tabela danych do uzupełnienia
 data = {
-    "Year": [2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032],
-    "Net Revenue (zł)": [0, 771875, 2253875, 4106375, 5958875, 7811375, 9663875, 11516375],
-    "Costs (zł)": [850800, 1357200, 1568400, 1568400, 1568400, 1568400, 1568400, 1568400],
+    "Rok": [2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032],
+    "Przychody netto (zł)": [0, 771875, 2253875, 4106375, 5958875, 7811375, 9663875, 11516375],
+    "Koszty (zł)": [850800, 1357200, 1568400, 1568400, 1568400, 1568400, 1568400, 1568400],
 }
 
-# Create DataFrame
+# Tworzenie DataFrame
 financial_data = pd.DataFrame(data)
-financial_data["Net Profit (zł)"] = financial_data["Net Revenue (zł)"] - financial_data["Costs (zł)"]
+financial_data["Zysk netto (zł)"] = financial_data["Przychody netto (zł)"] - financial_data["Koszty (zł)"]
 
-# Display Financial Data
-st.subheader("Projected Financial Data")
-st.write(financial_data)
+# Wyświetlanie danych finansowych
+st.subheader("Prognozowane dane finansowe")
+st.write(financial_data)  # Wyświetla tabelę z prognozami finansowymi
 
-# Assumptions
-st.header("Key Assumptions")
-profit_margin = st.slider("Expected Profit Margin (Year 8, %):", 10, 50, 20) / 100
-pe_multiple = st.slider("Price-to-Earnings (P/E) Multiple:", 5, 25, 15)
-discount_rate = st.slider("Discount Rate (%):", 10, 50, 30) / 100
+# Założenia
+st.header("Kluczowe założenia")  # Wyjaśnia, że poniżej można zmieniać założenia modelu
+profit_margin = st.slider("Oczekiwana marża zysku (rok 8, %):", 10, 50, 20) / 100  # Oczekiwana marża zysku
+pe_multiple = st.slider("Wskaźnik cena/zysk (P/E):", 5, 25, 15)  # Współczynnik wyceny
+discount_rate = st.slider("Stopa dyskontowa (%):", 10, 50, 30) / 100  # Stopa dyskontowa do obliczenia wartości bieżącej
 
-year_8_revenue = financial_data[financial_data["Year"] == 2032]["Net Revenue (zł)"].values[0]
+# Obliczenie wyceny w roku 8
+przychody_rok_8 = financial_data[financial_data["Rok"] == 2032]["Przychody netto (zł)"].values[0]
+zysk_rok_8 = przychody_rok_8 * profit_margin
+wycena_rok_8 = zysk_rok_8 * pe_multiple
 
-# Calculate Year 8 Valuation
-year_8_profit = year_8_revenue * profit_margin
-year_8_valuation = year_8_profit * pe_multiple
+# Dyskontowanie do wartości bieżącej
+czynnik_dyskontowy = (1 + discount_rate) ** 8
+wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy
 
-# Discount to Present Value
-discount_factor = (1 + discount_rate) ** 8
-present_value = year_8_valuation / discount_factor
+# Wymagania finansowe i udział
+st.header("Wymagania finansowe")  # Wyjaśnia, ile kapitału jest potrzebne
+koszty_pierwsze_3_lata = financial_data[financial_data["Rok"] <= 2027]["Koszty (zł)"].sum()
+udzial_inwestorow = st.slider("Oferowany udział inwestorów (%):", 10, 50, 25) / 100
+pozyskany_kapital = koszty_pierwsze_3_lata / udzial_inwestorow
+wycena_post_money = pozyskany_kapital / udzial_inwestorow
+wycena_pre_money = wycena_post_money - pozyskany_kapital
 
-# Funding Requirements and Equity
-st.header("Funding Requirements")
-total_costs = financial_data[financial_data["Year"] <= 2027]["Costs (zł)"].sum()
-equity_offered = st.slider("Equity Offered (%):", 10, 50, 25) / 100
-capital_raised = total_costs / equity_offered
-post_money_valuation = capital_raised / equity_offered
-pre_money_valuation = post_money_valuation - capital_raised
+# Wyświetlanie obliczeń
+st.subheader("Wyniki")
+st.write(f"### Łączne koszty (pierwsze 3 lata): {koszty_pierwsze_3_lata:,.2f} zł")
+st.write(f"### Wycena w roku 8: {wycena_rok_8:,.2f} zł")
+st.write(f"### Wartość bieżąca: {wartosc_biezaca:,.2f} zł")
+st.write(f"### Pozyskany kapitał: {pozyskany_kapital:,.2f} zł")
+st.write(f"### Wycena post-money: {wycena_post_money:,.2f} zł")
+st.write(f"### Wycena pre-money: {wycena_pre_money:,.2f} zł")
 
-# Display Calculations
-st.subheader("Results")
-st.write(f"### Total Costs (First 3 Years): {total_costs:,.2f} zł")
-st.write(f"### Year 8 Valuation: {year_8_valuation:,.2f} zł")
-st.write(f"### Discounted Present Value: {present_value:,.2f} zł")
-st.write(f"### Capital Raised: {capital_raised:,.2f} zł")
-st.write(f"### Post-Money Valuation: {post_money_valuation:,.2f} zł")
-st.write(f"### Pre-Money Valuation: {pre_money_valuation:,.2f} zł")
+# Podział udziałów
+udzial_zalozycieli = 1 - udzial_inwestorow
+st.subheader("Podział udziałów")
+st.write(f"- Założyciele: {udzial_zalozycieli * 100:.2f}%")
+st.write(f"- Inwestorzy: {udzial_inwestorow * 100:.2f}%")
 
-# Equity Ownership
-founder_equity = 1 - equity_offered
-st.subheader("Ownership Breakdown")
-st.write(f"- Founders: {founder_equity * 100:.2f}%")
-st.write(f"- Investors: {equity_offered * 100:.2f}%")
+# Zysk inwestorów
+roi_inwestora = wycena_rok_8 * udzial_inwestorow / pozyskany_kapital
+zysk_nominalny_inwestora = wycena_rok_8 * udzial_inwestorow - pozyskany_kapital
+zysk_procentowy_inwestora = (zysk_nominalny_inwestora / pozyskany_kapital) * 100
 
-# ROI for Investors
-investor_roi = year_8_valuation * equity_offered / capital_raised
-investor_nominal_profit = year_8_valuation * equity_offered - capital_raised
-investor_percentage_profit = (investor_nominal_profit / capital_raised) * 100
+st.subheader("Zysk inwestorów")
+st.write(f"### Zwrot z inwestycji (ROI): {roi_inwestora:.2f}x")
+st.write(f"### Zysk inwestorów (nominalny): {zysk_nominalny_inwestora:,.2f} zł")
+st.write(f"### Zysk inwestorów (%): {zysk_procentowy_inwestora:.2f}%")
 
-st.subheader("Investor ROI")
-st.write(f"### ROI Multiple: {investor_roi:.2f}x")
-st.write(f"### Investor Profit (Nominal): {investor_nominal_profit:,.2f} zł")
-st.write(f"### Investor Profit (%): {investor_percentage_profit:.2f}%")
+# Wizualizacje
+st.header("Wizualizacje")  # Wyjaśnia, że poniżej znajdują się wykresy
 
-# Visualizations
-st.header("Visualization")
+# Wykresy przychodów i zysków
+st.line_chart(financial_data.set_index("Rok")["Przychody netto (zł)"], use_container_width=True)
+st.line_chart(financial_data.set_index("Rok")["Zysk netto (zł)"], use_container_width=True)
 
-# Revenue and Profit Chart
-st.line_chart(financial_data.set_index("Year")["Net Revenue (zł)"], use_container_width=True)
-st.line_chart(financial_data.set_index("Year")["Net Profit (zł)"], use_container_width=True)
-
-# Capital Breakdown Pie Chart
+# Wykres udziałów inwestorów i założycieli
 import matplotlib.pyplot as plt
 fig, ax = plt.subplots()
-ax.pie([founder_equity, equity_offered], labels=["Founders", "Investors"], autopct="%1.1f%%", startangle=90)
+ax.pie([udzial_zalozycieli, udzial_inwestorow], labels=["Założyciele", "Inwestorzy"], autopct="%1.1f%%", startangle=90)
 ax.axis("equal")
 st.pyplot(fig)
 
-st.write("### Use this model to simulate various scenarios by adjusting inputs!")
+st.write("### Użyj tego modelu, aby symulować różne scenariusze, zmieniając założenia!")
