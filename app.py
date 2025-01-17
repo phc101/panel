@@ -79,6 +79,15 @@ st.write(f"### Zwrot z inwestycji (ROI): {roi_inwestora:.2f}x")
 st.write(f"### Zysk inwestorów (nominalny): {zysk_nominalny_inwestora:,.2f} zł")
 st.write(f"### Zysk inwestorów (%): {zysk_procentowy_inwestora:.2f}%")
 
+# Zysk założycieli
+zysk_nominalny_zalozycieli = wycena_rok_8 * udzial_zalozycieli
+zysk_procentowy_zalozycieli = (zysk_nominalny_zalozycieli / wycena_post_money) * 100
+
+st.subheader("Zysk założycieli")
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Pokazujemy wartość zysku założycieli w oparciu o ich udziały oraz prognozowaną wycenę firmy w roku 8. Zysk ten jest obliczany w wartościach nominalnych i procentowych.</div>", unsafe_allow_html=True)
+st.write(f"### Zysk założycieli (nominalny): {zysk_nominalny_zalozycieli:,.2f} zł")
+st.write(f"### Zysk założycieli (%): {zysk_procentowy_zalozycieli:.2f}%")
+
 # Wizualizacje
 st.header("Wizualizacje")
 st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wizualizacje przedstawiają przychody netto, zyski netto oraz podział udziałów założycieli i inwestorów w firmie.</div>", unsafe_allow_html=True)  # Wyjaśnia, że poniżej znajdują się wykresy
