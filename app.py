@@ -17,6 +17,7 @@ data = {
 # Tworzenie DataFrame
 financial_data = pd.DataFrame(data)
 financial_data["Zysk netto (zł)"] = financial_data["Przychody netto (zł)"] - financial_data["Koszty (zł)"]
+financial_data["% wzrost zysku netto"] = financial_data["Zysk netto (zł)"].pct_change().fillna(0) * 100
 
 # Wyświetlanie danych finansowych
 st.subheader("Prognozowane dane finansowe")
