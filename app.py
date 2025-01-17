@@ -60,9 +60,11 @@ roi_inwestorow = wycena_rok_8 * udzial_inwestorow / pozyskany_kapital
 if wartosc_biezaca > 0:
     ratio_value = zysk_inwestorow / wartosc_biezaca
     ratio_value_rounded = round(ratio_value, 2)
-    if ratio_value_rounded > 0.5:
+    if ratio_value_rounded > 1:
         ratio_interpretation = "Inwestycja jest bardzo opłacalna dla inwestorów."
-    elif 0.3 <= ratio_value_rounded <= 0.5:
+    elif 0.8 <= ratio_value_rounded <= 1:
+        ratio_interpretation = "Inwestycja jest uczciwie wyważona między zyskami a wartością firmy."
+    elif 0.5 <= ratio_value_rounded < 0.8:
         ratio_interpretation = "Inwestycja jest umiarkowanie opłacalna dla inwestorów."
     else:
         ratio_interpretation = "Inwestycja jest mało opłacalna dla inwestorów."
