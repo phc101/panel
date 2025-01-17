@@ -47,7 +47,7 @@ udzial_zalozycieli = 1 - udzial_inwestorow
 # Wyświetlanie wyników
 st.header("Wyniki i stopy zwrotu")
 st.write(f"### Wycena firmy w roku 8: {wycena_rok_8:,.2f} zł")
-st.write(f"### Wartość bieżąca firmy: {wartosc_bieząca:,.2f} zł")
+st.write(f"### Wartość bieżąca firmy: {wartosc_biezaca:,.2f} zł")
 st.write(f"### Pozyskany kapitał od inwestorów: {pozyskany_kapital:,.2f} zł")
 st.write(f"### Udział założycieli: {udzial_zalozycieli * 100:.2f}%")
 st.write(f"### Udział inwestorów: {udzial_inwestorow * 100:.2f}%")
