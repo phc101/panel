@@ -32,12 +32,12 @@ discount_rate = st.slider("Stopa dyskontowa (%):", 10, 50, 30) / 100  # Stopa dy
 
 # Obliczenie wyceny w roku 8
 przychody_rok_8 = financial_data[financial_data["Rok"] == 2032]["Przychody netto (zł)"].values[0]
-zysk_rok_8 = przychody_rok_8 * profit_margin
-wycena_rok_8 = zysk_rok_8 * pe_multiple
+zysk_rok_8 = przychody_rok_8 * profit_margin  # Zysk netto w roku 8 = Przychody netto w roku 8 x Marża zysku (założona jako %)
+wycena_rok_8 = zysk_rok_8 * pe_multiple  # Wycena firmy w roku 8 = Zysk netto w roku 8 x Wskaźnik cena/zysk (P/E)
 
 # Dyskontowanie do wartości bieżącej
 czynnik_dyskontowy = (1 + discount_rate) ** 8
-wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy
+wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy  # Dyskontowanie wartości przyszłej wyceny do wartości bieżącej
 
 # Wymagania finansowe i udział
 st.header("Wymagania finansowe")  # Wyjaśnia, ile kapitału jest potrzebne
