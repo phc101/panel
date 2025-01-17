@@ -1,144 +1,84 @@
-", 0.0, 10.0, 3.0, step=0.25) / 100
+import streamlit as st
+import pandas as pd
+import numpy as np
 
-# Horizontal bookmarks for month navigation
-selected_month = st.radio(
-    "Months", MONTH_NAMES, index=st.session_state.selected_month - 1, horizontal=True
-)
-st.session_state.selected_month = MONTH_NAMES.index(selected_month) + 1
+# Page Title
+st.title("Startup Funding and Valuation Model")
 
-# Sidebar for managing cashflows
-with st.sidebar:
-    st.header(f"Add Cashflow for {selected_month}")
-    currency = st.selectbox("Currency", ["EUR", "USD"], key="currency")
-    amount = st.number_input("Cashflow Amount", min_value=0.0, value=1000.0, step=100.0, key="amount")
-    window_open_date = st.date_input("Window Open Date", min_value=datetime.today(), key="window_open_date")
-    window_tenor = st.number_input("Window Tenor (in months)", min_value=1, value=1, step=1, key="window_tenor")
-    spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.0001, key="spot_rate")
-    points_adjustment = st.slider(
-        "Adjust Forward Points up to Window Open Date (%)", 
-        0.0, 1.0, 1.0, step=0.01
-    )
+# Input Section
+st.header("Input Your Revenue and Costs")
 
-    # Ensure the tab corresponds to the month of the Window Open Date
-    if window_open_date.month != st.session_state.selected_month:
-        st.session_state.selected_month = window_open_date.month
+# Revenue and Cost Inputs
+data = {
+    "Year": [2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032],
+    "Net Revenue (zł)": [-850800, -585325, 685475, 2537975, 4390475, 6242975, 8095475, 9947975],
+    "Costs (zł)": [-850800, -1357200, -1568400, 0, 0, 0, 0, 0],
+}
 
-    # Calculate maturity date
-    maturity_date = window_open_date + timedelta(days=30 * window_tenor)
+# Create DataFrame
+financial_data = pd.DataFrame(data)
+financial_data["Net Profit (zł)"] = financial_data["Net Revenue (zł)"] - financial_data["Costs (zł)"]
 
-    if st.button("Add Cashflow"):
-        st.session_state.monthly_cashflows[st.session_state.selected_month].append({
-            "Currency": currency,
-            "Amount": amount,
-            "Window Open Date": str(window_open_date),  # Convert to string to ensure persistence
-            "Window Tenor (months)": window_tenor,
-            "Maturity Date": str(maturity_date),  # Convert to string to ensure persistence
-            "Spot Rate": spot_rate,
-            "Points Adjustment": points_adjustment,  # Save the points adjustment
-        })
+# Display Financial Data
+st.subheader("Projected Financial Data")
+st.write(financial_data)
 
-# Display and edit cashflows for the selected month
-st.header(f"Cashflow Records for {selected_month}")
+# Assumptions
+st.header("Key Assumptions")
+profit_margin = st.slider("Expected Profit Margin (Year 8, %):", 10, 50, 20) / 100
+pe_multiple = st.slider("Price-to-Earnings (P/E) Multiple:", 5, 25, 15)
+discount_rate = st.slider("Discount Rate (%):", 10, 50, 30) / 100
 
-if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
-    # Button to delete all records
-    if st.button("Delete All"):
-        st.session_state.monthly_cashflows[st.session_state.selected_month] = []
+year_8_revenue = financial_data[financial_data["Year"] == 2032]["Net Revenue (zł)"].values[0]
 
-    # Editable table simulation with delete buttons
-    for idx, cashflow in enumerate(st.session_state.monthly_cashflows[st.session_state.selected_month], start=1):
-        st.write(f"Record {idx}:")
-        col1, col2 = st.columns([9, 1])
-        with col1:
-            st.write(f"""
-            - Currency: {cashflow['Currency']}
-            - Amount: {cashflow['Amount']}
-            - Window Open Date: {cashflow['Window Open Date']}
-            - Window Tenor: {cashflow['Window Tenor (months)']} months
-            - Maturity Date: {cashflow['Maturity Date']}
-            - Spot Rate: {cashflow['Spot Rate']}
-            - Forward Points Adjustment: {cashflow['Points Adjustment'] * 100:.2f}%
-            """)
-        with col2:
-            if st.button("🗑", key=f"delete_{idx}"):
-                st.session_state.monthly_cashflows[st.session_state.selected_month].pop(idx - 1)
+# Calculate Year 8 Valuation
+year_8_profit = year_8_revenue * profit_margin
+year_8_valuation = year_8_profit * pe_multiple
 
-# Generate a chart for all records across months
-st.header("Forward Window Overview")
-all_cashflows = [
-    cashflow for cashflows in st.session_state.monthly_cashflows.values() for cashflow in cashflows
-]
-if all_cashflows:
-    all_cashflows_df = pd.DataFrame(all_cashflows)
-    # Ensure 'Window Open Date' and 'Maturity Date' are datetime objects
-    all_cashflows_df["Window Open Date"] = pd.to_datetime(all_cashflows_df["Window Open Date"])
-    all_cashflows_df["Maturity Date"] = pd.to_datetime(all_cashflows_df["Maturity Date"])
+# Discount to Present Value
+discount_factor = (1 + discount_rate) ** 8
+present_value = year_8_valuation / discount_factor
 
-    # Calculate forward rates
-    all_cashflows_df["Forward Rate (Window Open Date)"] = all_cashflows_df.apply(
-        lambda row: row["Spot Rate"] + (
-            (calculate_forward_rate(
-                row["Spot Rate"], global_domestic_rate, global_foreign_rate,
-                (row["Window Open Date"] - datetime.today()).days
-            ) - row["Spot Rate"]) * row["Points Adjustment"]
-        ),
-        axis=1
-    )
+# Funding Requirements and Equity
+st.header("Funding Requirements")
+total_costs = financial_data[financial_data["Year"] <= 2027]["Costs (zł)"].sum()
+equity_offered = st.slider("Equity Offered (%):", 10, 50, 25) / 100
+capital_raised = total_costs / equity_offered
+post_money_valuation = capital_raised / equity_offered
+pre_money_valuation = post_money_valuation - capital_raised
 
-    # Enhanced Chart: L-Shape for Forward Rates with Custom Date Axis
-    fig, ax = plt.subplots(figsize=(12, 6))
+# Display Calculations
+st.subheader("Results")
+st.write(f"### Total Costs (First 3 Years): {total_costs:,.2f} zł")
+st.write(f"### Year 8 Valuation: {year_8_valuation:,.2f} zł")
+st.write(f"### Discounted Present Value: {present_value:,.2f} zł")
+st.write(f"### Capital Raised: {capital_raised:,.2f} zł")
+st.write(f"### Post-Money Valuation: {post_money_valuation:,.2f} zł")
+st.write(f"### Pre-Money Valuation: {pre_money_valuation:,.2f} zł")
 
-    # Collect all relevant dates for the x-axis
-    x_ticks = sorted(
-        set(all_cashflows_df["Window Open Date"].tolist() + all_cashflows_df["Maturity Date"].tolist())
-    )
+# Equity Ownership
+founder_equity = 1 - equity_offered
+st.subheader("Ownership Breakdown")
+st.write(f"- Founders: {founder_equity * 100:.2f}%")
+st.write(f"- Investors: {equity_offered * 100:.2f}%")
 
-    for _, row in all_cashflows_df.iterrows():
-        # Plot the horizontal line for the forward rate between Window Open Date and Maturity Date
-        ax.hlines(
-            row["Forward Rate (Window Open Date)"], 
-            xmin=row["Window Open Date"], 
-            xmax=row["Maturity Date"], 
-            color="blue", label="Forward Rate", linewidth=2, alpha=0.7
-        )
-        # Add vertical line connecting Window Open Rate to x-axis
-        ax.axvline(
-            x=row["Window Open Date"], 
-            color="gray", linestyle="--", alpha=0.5
-        )
-        # Highlight the starting point (Window Open Rate)
-        ax.scatter(
-            row["Window Open Date"], row["Forward Rate (Window Open Date)"], 
-            color="orange", s=80, label="Window Open Rate"
-        )
+# ROI for Investors
+investor_roi = year_8_valuation * equity_offered / capital_raised
+st.subheader("Investor ROI")
+st.write(f"### ROI Multiple: {investor_roi:.2f}x")
 
-    # Chart styling
-    ax.set_title("Forward Windows with L-Shape Representation", fontsize=16)
-    ax.set_xlabel("Date", fontsize=12)
-    ax.set_ylabel("Forward Rate (PLN)", fontsize=12)
-    ax.set_xticks(x_ticks)  # Set x-axis ticks to relevant dates
-    ax.set_xticklabels([date.strftime('%Y-%m-%d') for date in x_ticks], rotation=45, fontsize=10)
-    ax.grid(color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
-    ax.legend(loc="upper left", fontsize=10)
-    plt.tight_layout()
-    st.pyplot(fig)
+# Visualizations
+st.header("Visualization")
 
-    # Aggregated Table: Add Window Open Forward Rate
-    st.header("Aggregated Cashflow Summary")
-    aggregated_results = []
-    for _, row in all_cashflows_df.iterrows():
-        aggregated_results.append({
-            "Currency": row["Currency"],
-            "Amount": row["Amount"],
-            "Window Open Date": row["Window Open Date"].strftime("%Y-%m-%d"),
-            "Window Tenor (months)": row["Window Tenor (months)"],
-            "Maturity Date": row["Maturity Date"].strftime("%Y-%m-%d"),
-            "Spot Rate": row["Spot Rate"],
-            "Forward Rate (Window Open Date)": row["Forward Rate (Window Open Date)"],
-        })
-    aggregated_df = pd.DataFrame(aggregated_results)
-    st.table(aggregated_df)
+# Revenue and Profit Chart
+st.line_chart(financial_data.set_index("Year")["Net Revenue (zł)"], use_container_width=True)
+st.line_chart(financial_data.set_index("Year")["Net Profit (zł)"], use_container_width=True)
 
-# Footer
-st.markdown("---")
-st.caption("Developed using Streamlit")
+# Capital Breakdown Pie Chart
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots()
+ax.pie([founder_equity, equity_offered], labels=["Founders", "Investors"], autopct="%1.1f%%", startangle=90)
+ax.axis("equal")
+st.pyplot(fig)
+
+st.write("### Use this model to simulate various scenarios by adjusting inputs!")
