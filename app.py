@@ -12,7 +12,7 @@ st.header("Input Your Revenue and Costs")
 data = {
     "Year": [2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032],
     "Net Revenue (zł)": [0, 771875, 2253875, 4106375, 5958875, 7811375, 9663875, 11516375],
-    "Costs (zł)": [-850800, -1357200, -1568400, -1568400, -1568400, -1568400, -1568400, -1568400],
+    "Costs (zł)": [850800, 1357200, 1568400, 1568400, 1568400, 1568400, 1568400, 1568400],
 }
 
 # Create DataFrame
@@ -64,8 +64,13 @@ st.write(f"- Investors: {equity_offered * 100:.2f}%")
 
 # ROI for Investors
 investor_roi = year_8_valuation * equity_offered / capital_raised
+investor_nominal_profit = year_8_valuation * equity_offered - capital_raised
+investor_percentage_profit = (investor_nominal_profit / capital_raised) * 100
+
 st.subheader("Investor ROI")
 st.write(f"### ROI Multiple: {investor_roi:.2f}x")
+st.write(f"### Investor Profit (Nominal): {investor_nominal_profit:,.2f} zł")
+st.write(f"### Investor Profit (%): {investor_percentage_profit:.2f}%")
 
 # Visualizations
 st.header("Visualization")
