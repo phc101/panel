@@ -56,12 +56,29 @@ zysk_inwestorow = wycena_rok_8 * udzial_inwestorow - pozyskany_kapital
 zysk_zalozycieli = wycena_rok_8 * udzial_zalozycieli
 roi_inwestorow = wycena_rok_8 * udzial_inwestorow / pozyskany_kapital
 
+# Obliczenie wskaźnika wartość bieżąca firmy / zysk inwestora
+if zysk_inwestorow > 0:
+    ratio_value = wartosc_biezaca / zysk_inwestorow
+    if ratio_value > 3:
+        ratio_interpretation = "Bardzo korzystna wartość dla inwestorów."
+    elif 1.5 <= ratio_value <= 3:
+        ratio_interpretation = "Umiarkowanie korzystna wartość dla inwestorów."
+    else:
+        ratio_interpretation = "Mało korzystna wartość dla inwestorów."
+else:
+    ratio_value = "Nie można obliczyć"
+    ratio_interpretation = "Zysk inwestorów jest ujemny lub równy zeru."
+
+# Wyświetlanie wskaźnika i interpretacji
+st.write(f"### Wskaźnik wartość bieżąca firmy / zysk inwestora: {ratio_value}")
+st.write(f"### Interpretacja wskaźnika: {ratio_interpretation}")
+
 # Wyświetlanie stóp zwrotu i zysków nominalnych
 st.write(f"### Zysk inwestorów (nominalny): {zysk_inwestorow:,.2f} zł")
 st.write(f"### Zysk założycieli (nominalny): {zysk_zalozycieli:,.2f} zł")
 st.write(f"### Stopa zwrotu inwestorów (ROI): {roi_inwestorow:.2f}x")
 
-# Interpretacja wskaźnika
+# Interpretacja wskaźnika ROI
 if roi_inwestorow >= 2:
     interpretation = "Bardzo wysoka stopa zwrotu dla inwestorów. Inwestycja jest wysoce opłacalna."
 elif 1 <= roi_inwestorow < 2:
