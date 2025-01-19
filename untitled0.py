@@ -4,8 +4,8 @@ import streamlit as st
 import matplotlib.pyplot as plt
 
 # Title and description
-st.title("EUR/PLN and USD/PLN Z-Score Signal Generator")
-st.write("This app calculates Z-scores based on the last 20 days of close prices and generates buy/sell signals with multiple settlement strategies, including a combined strategy.")
+st.title("EUR/PLN Z-Score Sell Strategy")
+st.write("This app calculates Z-scores based on the last 20 days of close prices and evaluates the sell strategy with settlement periods of 30, 60, and 90 days.")
 
 # Load data from uploaded file
 def load_data(file_path):
@@ -24,7 +24,7 @@ def load_data(file_path):
         return pd.DataFrame()
 
 # Function to process and visualize data
-def process_and_visualize(data, pair):
+def process_and_visualize(data):
     # Data preparation
     data = data.sort_values(by='date')
 
@@ -40,87 +40,50 @@ def process_and_visualize(data, pair):
     data['z_score'] = data['z_score'].replace([np.inf, -np.inf], np.nan).fillna(0)
 
     # Signal generation based on Z-Score
-    data['signal'] = np.where(data['z_score'] < -2, 'Buy',
-                              np.where(data['z_score'] > 2, 'Sell', 'Hold'))
+    data['signal'] = np.where(data['z_score'] > 2, 'Sell', 'Hold')
 
-    # Backtesting strategies
+    # Backtesting sell strategy
+    sell_data = data[data['signal'] == 'Sell'].copy()
     for days in [30, 60, 90]:
         settlement_col = f'settlement_close_{days}'
         return_col = f'return_{days}'
 
-        data[f'settlement_date_{days}'] = data['date'].shift(-days)
-        data[settlement_col] = data['close'].shift(-days)
+        sell_data[f'settlement_date_{days}'] = sell_data['date'].shift(-days)
+        sell_data[settlement_col] = sell_data['close'].shift(-days)
 
-        data[return_col] = np.where(data['signal'] == 'Buy',
-                                     (data[settlement_col] - data['close']) / data['close'],
-                                     np.where(data['signal'] == 'Sell',
-                                              (data['close'] - data[settlement_col]) / data['close'],
-                                              0))
+        sell_data[return_col] = (sell_data['close'] - sell_data[settlement_col]) / sell_data['close']
 
-    # Combined strategy: Open positions for 30, 60, and 90 days simultaneously
-    data['combined_return'] = (
-        data['return_30'] + data['return_60'] + data['return_90']) / 3
-    data['combined_cumulative'] = (1 + data['combined_return']).cumprod()
+    # Calculate total annual returns and drawdowns
+    sell_data['year'] = sell_data['date'].dt.year
+    annual_returns = sell_data.groupby('year')[[f'return_{days}' for days in [30, 60, 90]]].sum()
 
-    # Separate Buy and Sell strategies for combined
-    buy_combined = data[data['signal'] == 'Buy'][['date', 'combined_return']].copy()
-    sell_combined = data[data['signal'] == 'Sell'][['date', 'combined_return']].copy()
-    buy_combined['cumulative'] = (1 + buy_combined['combined_return']).cumprod()
-    sell_combined['cumulative'] = (1 + sell_combined['combined_return']).cumprod()
+    # Calculate drawdowns
+    sell_data['cumulative_return'] = (1 + sell_data['return_30']).cumprod()
+    sell_data['drawdown'] = sell_data['cumulative_return'] / sell_data['cumulative_return'].cummax() - 1
 
-    # Risk assessment
-    strategies = ['return_30', 'return_60', 'return_90', 'combined_return']
-    assessments = []
-    for strategy in strategies:
-        avg_drawdown = data[data['signal'] != 'Hold'].groupby('signal')[strategy].apply(lambda x: (x[x < 0]).mean())
-        avg_gain_loss = data[data['signal'] != 'Hold'].groupby('signal')[strategy].mean()
-        num_positive = data[data['signal'] != 'Hold'].groupby('signal')[strategy].apply(lambda x: (x > 0).sum())
-        num_negative = data[data['signal'] != 'Hold'].groupby('signal')[strategy].apply(lambda x: (x < 0).sum())
-        assessments.append(pd.DataFrame({
-            'Strategy': strategy,
-            'Avg Drawdown': avg_drawdown,
-            'Avg Gain/Loss': avg_gain_loss,
-            'Num Positive Trades': num_positive,
-            'Num Negative Trades': num_negative
-        }))
-
-    combined_assessment = pd.concat(assessments)
-    st.subheader(f"Risk Assessment for {pair}")
-    st.write(combined_assessment)
-
-    # Visualize cumulative returns
-    st.subheader(f"Cumulative Returns of {pair} Strategy")
-    plt.figure(figsize=(10, 6))
+    # Visualization of annual returns with drawdowns
+    st.subheader("Annual Returns and Drawdowns")
+    plt.figure(figsize=(12, 6))
     for days in [30, 60, 90]:
-        cumulative_col = f'cumulative_return_{days}'
-        data[cumulative_col] = (1 + data[f'return_{days}']).cumprod()
-        plt.plot(data['date'], data[cumulative_col], label=f'{days} Days')
-    plt.plot(data['date'], data['combined_cumulative'], label='Combined Strategy', linewidth=2, linestyle='--', color='black')
-    plt.title(f"Cumulative Returns for {pair}")
+        plt.bar(annual_returns.index, annual_returns[f'return_{days}'], label=f'{days}-Day Returns', alpha=0.7)
+    plt.plot(sell_data['year'], sell_data.groupby('year')['drawdown'].min(), label='Max Drawdown', color='red', linestyle='--')
+    plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
+    plt.title("Annual Returns and Maximum Drawdowns")
+    plt.xlabel("Year")
+    plt.ylabel("Returns / Drawdowns")
     plt.legend()
     plt.grid()
     st.pyplot(plt)
 
-    # Separate plots for Buy and Sell combined strategies
-    st.subheader(f"Buy Combined Strategy Cumulative Returns for {pair}")
-    plt.figure(figsize=(10, 6))
-    plt.plot(buy_combined['date'], buy_combined['cumulative'], label='Buy Combined', color='green')
-    plt.title(f"Buy Combined Strategy Cumulative Returns for {pair}")
-    plt.legend()
-    plt.grid()
-    st.pyplot(plt)
+    # Display data
+    st.subheader("Sell Strategy Data")
+    st.write(sell_data[['date', 'close', 'z_score', 'signal', 'cumulative_return', 'drawdown'] + \
+                       [f'return_{days}' for days in [30, 60, 90]]])
 
-    st.subheader(f"Sell Combined Strategy Cumulative Returns for {pair}")
-    plt.figure(figsize=(10, 6))
-    plt.plot(sell_combined['date'], sell_combined['cumulative'], label='Sell Combined', color='red')
-    plt.title(f"Sell Combined Strategy Cumulative Returns for {pair}")
-    plt.legend()
-    plt.grid()
-    st.pyplot(plt)
-
-    st.subheader(f"Download Results for {pair}")
-    csv = data.to_csv(index=False)
-    st.download_button(f"Download CSV for {pair}", data=csv, file_name=f"zscore_strategy_results_{pair}.csv", mime="text/csv")
+    # Download data
+    st.subheader("Download Sell Strategy Data")
+    csv = sell_data.to_csv(index=False)
+    st.download_button("Download CSV", data=csv, file_name="sell_strategy_results.csv", mime="text/csv")
 
 # Load and process EUR/PLN data
 st.subheader("Upload EUR/PLN Data")
@@ -128,12 +91,4 @@ eurpln_file = st.file_uploader("Upload EUR/PLN Excel file:", type=["xlsx"])
 if eurpln_file:
     eurpln_data = load_data(eurpln_file)
     if not eurpln_data.empty:
-        process_and_visualize(eurpln_data, "EUR/PLN")
-
-# Load and process USD/PLN data
-st.subheader("Upload USD/PLN Data")
-usdpln_file = st.file_uploader("Upload USD/PLN Excel file:", type=["xlsx"])
-if usdpln_file:
-    usdpln_data = load_data(usdpln_file)
-    if not usdpln_data.empty:
-        process_and_visualize(usdpln_data, "USD/PLN")
+        process_and_visualize(eurpln_data)
