@@ -51,41 +51,26 @@ if api_key:
         data['Signal'] = np.where(data['Z_Score'] < -2, 'Buy',
                                   np.where(data['Z_Score'] > 2, 'Sell', 'Hold'))
 
-        # Calculate returns
-        data['Next_Close'] = data['Close'].shift(-1)
-        data['Forward_Return'] = (data['Next_Close'] - data['Close']) / data['Close']
+        # Calculate returns for 3-month settlement
+        data['Settlement_Date'] = data['Date'].shift(-63)  # Approx. 3 months or 63 trading days
+        data['Settlement_Close'] = data['Close'].shift(-63)
 
-        # Track strategy performance
-        data['Strategy_Return'] = 0.0
-        open_position = None
-        open_price = None
-
-        for i in range(len(data)):
-            if data.iloc[i]['Signal'] == 'Buy' and open_position is None:
-                open_position = 'Buy'
-                open_price = data.iloc[i]['Close']
-            elif data.iloc[i]['Signal'] == 'Sell' and open_position is None:
-                open_position = 'Sell'
-                open_price = data.iloc[i]['Close']
-            elif open_position == 'Buy' and (i >= len(data) - 1 or data.iloc[i]['Signal'] == 'Sell'):
-                data.at[i, 'Strategy_Return'] = (data.iloc[i]['Close'] - open_price) / open_price
-                open_position = None
-                open_price = None
-            elif open_position == 'Sell' and (i >= len(data) - 1 or data.iloc[i]['Signal'] == 'Buy'):
-                data.at[i, 'Strategy_Return'] = (open_price - data.iloc[i]['Close']) / open_price
-                open_position = None
-                open_price = None
+        data['Return'] = np.where(data['Signal'] == 'Buy',
+                                  (data['Settlement_Close'] - data['Close']) / data['Close'],
+                                  np.where(data['Signal'] == 'Sell',
+                                           (data['Close'] - data['Settlement_Close']) / data['Close'],
+                                           0))
 
         # Calculate cumulative returns
-        data['Cumulative_Return'] = (1 + data['Strategy_Return']).cumprod()
+        data['Cumulative_Return'] = (1 + data['Return']).cumprod()
 
         # Display results
         st.subheader("Data Preview")
-        st.write(data[['Date', 'Close', 'Mean_20', 'Std_20', 'Z_Score', 'Signal', 'Forward_Return', 'Strategy_Return', 'Cumulative_Return']])
+        st.write(data[['Date', 'Close', 'Mean_20', 'Std_20', 'Z_Score', 'Signal', 'Settlement_Date', 'Settlement_Close', 'Return', 'Cumulative_Return']])
 
         # Display signals as a table
         st.subheader("Buy and Sell Signals")
-        signal_data = data[data['Signal'].isin(['Buy', 'Sell'])][['Date', 'Close', 'Signal']]
+        signal_data = data[data['Signal'].isin(['Buy', 'Sell'])][['Date', 'Close', 'Signal', 'Settlement_Date', 'Settlement_Close', 'Return']]
         st.write(signal_data)
 
         # Visualization
