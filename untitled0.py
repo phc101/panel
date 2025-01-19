@@ -41,17 +41,9 @@ def process_and_visualize(data, pair):
     data['Z_Score'] = (data['Close'] - data['Mean_20']) / data['Std_20']
     data['Z_Score'] = data['Z_Score'].replace([np.inf, -np.inf], np.nan).fillna(0)
 
-    # Debug: Display Z-Score distribution
-    st.subheader(f"Z-Score Distribution for {pair}")
-    st.write(data[['Date', 'Close', 'Z_Score']].tail(20))
-
     # Signal generation based on Z-Score
-    data['Signal'] = np.where(data['Z_Score'] < -1.5, 'Buy',  # Lowered threshold for debugging
-                              np.where(data['Z_Score'] > 1.5, 'Sell', 'Hold'))
-
-    # Debug: Display signals
-    st.subheader(f"Signals Generated for {pair}")
-    st.write(data[['Date', 'Close', 'Z_Score', 'Signal']].tail(20))
+    data['Signal'] = np.where(data['Z_Score'] < -2, 'Buy',
+                              np.where(data['Z_Score'] > 2, 'Sell', 'Hold'))
 
     # Backtesting strategies for Buy and Sell signals separately
     results = {}
