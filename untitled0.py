@@ -57,6 +57,33 @@ def process_and_visualize(data, pair):
                                               (data['close'] - data[settlement_col]) / data['close'],
                                               0))
 
+    # Risk assessment calculations
+    annual_results = data.groupby(data['date'].dt.year).agg({
+        'return_30': 'sum',
+        'return_60': 'sum',
+        'return_90': 'sum'
+    })
+    annual_results.columns = ['Total Return 30 Days', 'Total Return 60 Days', 'Total Return 90 Days']
+    annual_results['Max Drawdown'] = data.groupby(data['date'].dt.year).apply(
+        lambda x: ((x['close'] / x['close'].cummax()) - 1).min()
+    )
+
+    # Rank by gains and losses
+    annual_results['Max Gain'] = annual_results[['Total Return 30 Days', 'Total Return 60 Days', 'Total Return 90 Days']].max(axis=1)
+    annual_results['Max Loss'] = annual_results[['Total Return 30 Days', 'Total Return 60 Days', 'Total Return 90 Days']].min(axis=1)
+    ranked_by_gain = annual_results.sort_values(by='Max Gain', ascending=False)
+    ranked_by_loss = annual_results.sort_values(by='Max Loss')
+
+    # Display results
+    st.subheader(f"Annual Risk Assessment for {pair}")
+    st.write(annual_results)
+
+    st.subheader(f"Ranked by Maximum Gains for {pair}")
+    st.write(ranked_by_gain)
+
+    st.subheader(f"Ranked by Maximum Losses for {pair}")
+    st.write(ranked_by_loss)
+
     # Visualization of cumulative returns for all strategies
     st.subheader(f"Signals and Returns for {pair}")
     st.write(data[['date', 'close', 'z_score', 'signal', 'settlement_date_30', 'settlement_close_30', 'return_30',
