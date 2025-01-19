@@ -41,6 +41,11 @@ if uploaded_file:
             st.subheader("Data Preview")
             st.write(data.tail())
 
+            # Display signals as a table
+            st.subheader("Buy and Sell Signals")
+            signal_data = data[data['Signal'].isin(['Buy', 'Sell'])][['Date', 'Close', 'Signal']]
+            st.write(signal_data)
+
             # Visualization
             st.subheader("Z-Score and Signals")
             plt.figure(figsize=(10, 6))
