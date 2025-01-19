@@ -14,12 +14,21 @@ def fetch_live_data(api_key, from_symbol, to_symbol):
     url = f"https://www.alphavantage.co/query?function=FX_DAILY&from_symbol={from_symbol}&to_symbol={to_symbol}&apikey={api_key}&outputsize=full&datatype=csv"
     response = requests.get(url)
     if response.status_code == 200:
-        data = pd.read_csv(io.StringIO(response.text))
-        data = data.rename(columns={"timestamp": "Date", "close": "Close"})
-        data['Date'] = pd.to_datetime(data['Date'])
-        return data[['Date', 'Close']]
+        try:
+            data = pd.read_csv(io.StringIO(response.text))
+            st.write("API Response Preview:", data.head())  # Debugging: Show API response
+            if 'timestamp' in data.columns and 'close' in data.columns:
+                data = data.rename(columns={"timestamp": "Date", "close": "Close"})
+                data['Date'] = pd.to_datetime(data['Date'])
+                return data[['Date', 'Close']]
+            else:
+                st.error("Expected columns not found in API response.")
+                return pd.DataFrame()
+        except Exception as e:
+            st.error(f"Error parsing API response: {e}")
+            return pd.DataFrame()
     else:
-        st.error(f"Failed to fetch live data for {from_symbol}/{to_symbol}. Please check your API key or try again later.")
+        st.error(f"Failed to fetch live data for {from_symbol}/{to_symbol}. HTTP Status Code: {response.status_code}")
         return pd.DataFrame()
 
 # Function to process and visualize data with multiple settlement strategies
