@@ -37,9 +37,16 @@ if uploaded_file:
             data['Signal'] = np.where((data['Z_Score'] < -2) & (data['Up_Probability'] > 0.95), 'Buy',
                                       np.where((data['Z_Score'] > 2) & (data['Down_Probability'] > 0.95), 'Sell', 'Hold'))
 
+            # Debugging: Check column H (Up_Probability)
+            st.subheader("Debugging Column H (Up_Probability)")
+            st.write("Up_Probability Summary:")
+            st.write(data['Up_Probability'].describe())
+            st.write("Signals Generated:")
+            st.write(data[['Date', 'Close', 'Z_Score', 'Up_Probability', 'Down_Probability', 'Signal']].tail(20))
+
             # Display results
             st.subheader("Data Preview")
-            st.write(data.tail())
+            st.write(data[['Date', 'Close', 'Mean_20', 'Std_20', 'Z_Score', 'Up_Probability', 'Down_Probability', 'Signal']].tail(20))
 
             # Display signals as a table
             st.subheader("Buy and Sell Signals")
