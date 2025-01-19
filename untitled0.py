@@ -11,11 +11,13 @@ st.write("This app calculates Z-scores based on the last 20 days of close prices
 def load_data(file_path):
     try:
         data = pd.read_excel(file_path)
-        if 'Date' in data.columns and 'Close' in data.columns:
-            data['Date'] = pd.to_datetime(data['Date'])
-            return data[['Date', 'Close']]
+        data.columns = data.columns.str.strip().str.lower()  # Normalize column names
+        if 'date' in data.columns and 'close' in data.columns:
+            data['date'] = pd.to_datetime(data['date'])
+            return data[['date', 'close']]
         else:
             st.error("The uploaded file must contain 'Date' and 'Close' columns.")
+            st.write("Detected columns:", data.columns.tolist())  # Debugging output
             return pd.DataFrame()
     except Exception as e:
         st.error(f"Error loading data: {e}")
@@ -24,43 +26,43 @@ def load_data(file_path):
 # Function to process and visualize data with multiple settlement strategies
 def process_and_visualize(data, pair):
     # Data preparation
-    data = data.sort_values(by='Date')
+    data = data.sort_values(by='date')
 
     # Keep only the last 12 months of data
     data = data.tail(252).reset_index(drop=True)  # Approx. 252 trading days in a year
 
     # Rolling calculations
-    data['Mean_20'] = data['Close'].rolling(window=20).mean()
-    data['Std_20'] = data['Close'].rolling(window=20).std()
+    data['mean_20'] = data['close'].rolling(window=20).mean()
+    data['std_20'] = data['close'].rolling(window=20).std()
 
     # Filter rows with valid rolling calculations
-    data = data[data['Mean_20'].notna() & data['Std_20'].notna()]
+    data = data[data['mean_20'].notna() & data['std_20'].notna()]
 
     # Calculate Z-Score
-    data['Z_Score'] = (data['Close'] - data['Mean_20']) / data['Std_20']
-    data['Z_Score'] = data['Z_Score'].replace([np.inf, -np.inf], np.nan).fillna(0)
+    data['z_score'] = (data['close'] - data['mean_20']) / data['std_20']
+    data['z_score'] = data['z_score'].replace([np.inf, -np.inf], np.nan).fillna(0)
 
     # Signal generation based on Z-Score
-    data['Signal'] = np.where(data['Z_Score'] < -2, 'Buy',
-                              np.where(data['Z_Score'] > 2, 'Sell', 'Hold'))
+    data['signal'] = np.where(data['z_score'] < -2, 'Buy',
+                              np.where(data['z_score'] > 2, 'Sell', 'Hold'))
 
     # Backtesting strategies for Buy and Sell signals separately
     results = {}
     for strategy in ['Buy', 'Sell']:
-        strategy_data = data[data['Signal'] == strategy].copy()
+        strategy_data = data[data['signal'] == strategy].copy()
         strategy_results = {}
         for days in [30, 60, 90]:
-            settlement_col = f'Settlement_Close_{days}'
-            return_col = f'Return_{days}'
-            cumulative_col = f'Cumulative_Return_{days}'
+            settlement_col = f'settlement_close_{days}'
+            return_col = f'return_{days}'
+            cumulative_col = f'cumulative_return_{days}'
 
-            strategy_data[f'Settlement_Date_{days}'] = strategy_data['Date'].shift(-days)
-            strategy_data[settlement_col] = strategy_data['Close'].shift(-days)
+            strategy_data[f'settlement_date_{days}'] = strategy_data['date'].shift(-days)
+            strategy_data[settlement_col] = strategy_data['close'].shift(-days)
 
             if strategy == 'Buy':
-                strategy_data[return_col] = (strategy_data[settlement_col] - strategy_data['Close']) / strategy_data['Close']
+                strategy_data[return_col] = (strategy_data[settlement_col] - strategy_data['close']) / strategy_data['close']
             elif strategy == 'Sell':
-                strategy_data[return_col] = (strategy_data['Close'] - strategy_data[settlement_col]) / strategy_data['Close']
+                strategy_data[return_col] = (strategy_data['close'] - strategy_data[settlement_col]) / strategy_data['close']
 
             strategy_data[cumulative_col] = (1 + strategy_data[return_col]).cumprod()
             strategy_results[days] = strategy_data[cumulative_col].iloc[-1] if not strategy_data[cumulative_col].empty else 1
@@ -79,9 +81,9 @@ def process_and_visualize(data, pair):
     for strategy in ['Buy', 'Sell']:
         for days in [30, 60, 90]:
             label = f'{strategy} {days} Days'
-            cumulative_col = f'Cumulative_Return_{days}'
+            cumulative_col = f'cumulative_return_{days}'
             if cumulative_col in data.columns:
-                plt.plot(data['Date'], data[cumulative_col], label=label)
+                plt.plot(data['date'], data[cumulative_col], label=label)
     plt.title(f"Cumulative Returns for {pair}")
     plt.legend()
     plt.grid()
