@@ -7,7 +7,7 @@ import io
 
 # Title and description
 st.title("EUR/PLN and USD/PLN Z-Score Signal Generator")
-st.write("This app calculates Z-scores based on the last 20 days of close prices and generates buy/sell signals.")
+st.write("This app calculates Z-scores based on the last 20 days of close prices and generates buy/sell signals with multiple settlement strategies.")
 
 # Fetch live data from Alpha Vantage
 def fetch_live_data(api_key, from_symbol, to_symbol):
@@ -22,7 +22,7 @@ def fetch_live_data(api_key, from_symbol, to_symbol):
         st.error(f"Failed to fetch live data for {from_symbol}/{to_symbol}. Please check your API key or try again later.")
         return pd.DataFrame()
 
-# Function to process and visualize data
+# Function to process and visualize data with multiple settlement strategies
 def process_and_visualize(data, pair):
     # Data preparation
     data = data.sort_values(by='Date')
@@ -45,26 +45,38 @@ def process_and_visualize(data, pair):
     data['Signal'] = np.where(data['Z_Score'] < -2, 'Buy',
                               np.where(data['Z_Score'] > 2, 'Sell', 'Hold'))
 
-    # Calculate returns for 3-month settlement
-    data['Settlement_Date'] = data['Date'].shift(-63)  # Approx. 3 months or 63 trading days
-    data['Settlement_Close'] = data['Close'].shift(-63)
+    # Calculate returns for different settlement periods
+    for days in [30, 60, 90]:
+        settlement_col = f'Settlement_Close_{days}'
+        return_col = f'Return_{days}'
+        cumulative_col = f'Cumulative_Return_{days}'
 
-    data['Return'] = np.where(data['Signal'] == 'Buy',
-                              (data['Settlement_Close'] - data['Close']) / data['Close'],
-                              np.where(data['Signal'] == 'Sell',
-                                       (data['Close'] - data['Settlement_Close']) / data['Close'],
-                                       0))
+        data[f'Settlement_Date_{days}'] = data['Date'].shift(-days)
+        data[settlement_col] = data['Close'].shift(-days)
 
-    # Calculate cumulative returns
-    data['Cumulative_Return'] = (1 + data['Return']).cumprod()
+        data[return_col] = np.where(data['Signal'] == 'Buy',
+                                     (data[settlement_col] - data['Close']) / data['Close'],
+                                     np.where(data['Signal'] == 'Sell',
+                                              (data['Close'] - data[settlement_col]) / data['Close'],
+                                              0))
+
+        data[cumulative_col] = (1 + data[return_col]).cumprod()
 
     # Display results
     st.subheader(f"Data Preview for {pair}")
-    st.write(data[['Date', 'Close', 'Mean_20', 'Std_20', 'Z_Score', 'Signal', 'Settlement_Date', 'Settlement_Close', 'Return', 'Cumulative_Return']])
+    columns_to_display = ['Date', 'Close', 'Mean_20', 'Std_20', 'Z_Score', 'Signal'] + \
+                         [f'Settlement_Date_{days}' for days in [30, 60, 90]] + \
+                         [f'Settlement_Close_{days}' for days in [30, 60, 90]] + \
+                         [f'Return_{days}' for days in [30, 60, 90]] + \
+                         [f'Cumulative_Return_{days}' for days in [30, 60, 90]]
+    st.write(data[columns_to_display])
 
     # Display signals as a table
     st.subheader(f"Buy and Sell Signals for {pair}")
-    signal_data = data[data['Signal'].isin(['Buy', 'Sell'])][['Date', 'Close', 'Signal', 'Settlement_Date', 'Settlement_Close', 'Return']]
+    signal_data = data[data['Signal'].isin(['Buy', 'Sell'])][['Date', 'Close', 'Signal'] + \
+                                                             [f'Settlement_Date_{days}' for days in [30, 60, 90]] + \
+                                                             [f'Settlement_Close_{days}' for days in [30, 60, 90]] + \
+                                                             [f'Return_{days}' for days in [30, 60, 90]]]
     st.write(signal_data)
 
     # Visualization
@@ -84,10 +96,11 @@ def process_and_visualize(data, pair):
     plt.grid()
     st.pyplot(plt)
 
-    # Plot cumulative returns
+    # Plot cumulative returns for each strategy
     st.subheader(f"Cumulative Returns of {pair} Strategy")
     plt.figure(figsize=(10, 6))
-    plt.plot(data['Date'], data['Cumulative_Return'], label='Cumulative Return', color='blue')
+    for days in [30, 60, 90]:
+        plt.plot(data['Date'], data[f'Cumulative_Return_{days}'], label=f'Cumulative Return {days} Days')
     plt.title(f"Cumulative Returns for {pair}")
     plt.legend()
     plt.grid()
