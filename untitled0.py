@@ -45,62 +45,44 @@ def process_and_visualize(data, pair):
     data['Signal'] = np.where(data['Z_Score'] < -2, 'Buy',
                               np.where(data['Z_Score'] > 2, 'Sell', 'Hold'))
 
-    # Calculate returns for different settlement periods
-    for days in [30, 60, 90]:
-        settlement_col = f'Settlement_Close_{days}'
-        return_col = f'Return_{days}'
-        cumulative_col = f'Cumulative_Return_{days}'
+    # Backtesting strategies for Buy and Sell signals separately
+    results = {}
+    for strategy in ['Buy', 'Sell']:
+        strategy_data = data[data['Signal'] == strategy].copy()
+        strategy_results = {}
+        for days in [30, 60, 90]:
+            settlement_col = f'Settlement_Close_{days}'
+            return_col = f'Return_{days}'
+            cumulative_col = f'Cumulative_Return_{days}'
 
-        data[f'Settlement_Date_{days}'] = data['Date'].shift(-days)
-        data[settlement_col] = data['Close'].shift(-days)
+            strategy_data[f'Settlement_Date_{days}'] = strategy_data['Date'].shift(-days)
+            strategy_data[settlement_col] = strategy_data['Close'].shift(-days)
 
-        data[return_col] = np.where(data['Signal'] == 'Buy',
-                                     (data[settlement_col] - data['Close']) / data['Close'],
-                                     np.where(data['Signal'] == 'Sell',
-                                              (data['Close'] - data[settlement_col]) / data['Close'],
-                                              0))
+            if strategy == 'Buy':
+                strategy_data[return_col] = (strategy_data[settlement_col] - strategy_data['Close']) / strategy_data['Close']
+            elif strategy == 'Sell':
+                strategy_data[return_col] = (strategy_data['Close'] - strategy_data[settlement_col]) / strategy_data['Close']
 
-        data[cumulative_col] = (1 + data[return_col]).cumprod()
+            strategy_data[cumulative_col] = (1 + strategy_data[return_col]).cumprod()
+            strategy_results[days] = strategy_data[cumulative_col].iloc[-1] if not strategy_data[cumulative_col].empty else 1
 
-    # Display results
-    st.subheader(f"Data Preview for {pair}")
-    columns_to_display = ['Date', 'Close', 'Mean_20', 'Std_20', 'Z_Score', 'Signal'] + \
-                         [f'Settlement_Date_{days}' for days in [30, 60, 90]] + \
-                         [f'Settlement_Close_{days}' for days in [30, 60, 90]] + \
-                         [f'Return_{days}' for days in [30, 60, 90]] + \
-                         [f'Cumulative_Return_{days}' for days in [30, 60, 90]]
-    st.write(data[columns_to_display])
+        results[strategy] = strategy_results
 
-    # Display signals as a table
-    st.subheader(f"Buy and Sell Signals for {pair}")
-    signal_data = data[data['Signal'].isin(['Buy', 'Sell'])][['Date', 'Close', 'Signal'] + \
-                                                             [f'Settlement_Date_{days}' for days in [30, 60, 90]] + \
-                                                             [f'Settlement_Close_{days}' for days in [30, 60, 90]] + \
-                                                             [f'Return_{days}' for days in [30, 60, 90]]]
-    st.write(signal_data)
+    # Display performance rankings
+    rankings = pd.DataFrame(results)
+    rankings.index = ["30 Days", "60 Days", "90 Days"]
+    st.subheader(f"Performance Rankings for {pair}")
+    st.write(rankings)
 
-    # Visualization
-    st.subheader(f"{pair} Close Price and Strategy Performance")
-    plt.figure(figsize=(10, 6))
-    for i in range(len(data) - 1):
-        if data.iloc[i]['Signal'] == 'Buy':
-            plt.plot(data['Date'][i:i + 2], data['Close'][i:i + 2], color='green')
-        elif data.iloc[i]['Signal'] == 'Sell':
-            plt.plot(data['Date'][i:i + 2], data['Close'][i:i + 2], color='red')
-        else:
-            plt.plot(data['Date'][i:i + 2], data['Close'][i:i + 2], color='gray', alpha=0.5)
-    plt.scatter(data['Date'][data['Signal'] == 'Buy'], data['Close'][data['Signal'] == 'Buy'], label='Buy Signal', color='green', marker='^')
-    plt.scatter(data['Date'][data['Signal'] == 'Sell'], data['Close'][data['Signal'] == 'Sell'], label='Sell Signal', color='red', marker='v')
-    plt.title(f"{pair} Close Price and Signals")
-    plt.legend()
-    plt.grid()
-    st.pyplot(plt)
-
-    # Plot cumulative returns for each strategy
+    # Visualization of cumulative returns for all strategies
     st.subheader(f"Cumulative Returns of {pair} Strategy")
     plt.figure(figsize=(10, 6))
-    for days in [30, 60, 90]:
-        plt.plot(data['Date'], data[f'Cumulative_Return_{days}'], label=f'Cumulative Return {days} Days')
+    for strategy in ['Buy', 'Sell']:
+        for days in [30, 60, 90]:
+            label = f'{strategy} {days} Days'
+            cumulative_col = f'Cumulative_Return_{days}'
+            if cumulative_col in data.columns:
+                plt.plot(data['Date'], data[cumulative_col], label=label)
     plt.title(f"Cumulative Returns for {pair}")
     plt.legend()
     plt.grid()
