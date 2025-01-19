@@ -33,8 +33,8 @@ if api_key:
         # Data preparation
         data = data.sort_values(by='Date')
 
-        # Keep only the last 20 days
-        data = data.tail(20).reset_index(drop=True)
+        # Keep only the last 6 months of data
+        data = data.tail(180).reset_index(drop=True)
 
         # Rolling calculations
         data['Mean_20'] = data['Close'].rolling(window=20).mean()
@@ -63,7 +63,7 @@ if api_key:
         st.write(signal_data)
 
         # Visualization
-        st.subheader("Z-Score and Signals")
+        st.subheader("EUR/PLN Close Price and Signals (Last 6 Months)")
         plt.figure(figsize=(10, 6))
         plt.plot(data['Date'], data['Close'], label='Close Price', alpha=0.7)
         plt.scatter(data['Date'][data['Signal'] == 'Buy'], data['Close'][data['Signal'] == 'Buy'], label='Buy Signal', color='green', marker='^')
