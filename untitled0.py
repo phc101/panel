@@ -11,7 +11,7 @@ st.write("This app calculates Z-scores based on the last 20 days of EUR/PLN clos
 
 # Fetch live data from Alpha Vantage
 def fetch_live_data(api_key):
-    url = f"https://www.alphavantage.co/query?function=FX_DAILY&from_symbol=EUR&to_symbol=PLN&apikey={api_key}&datatype=csv"
+    url = f"https://www.alphavantage.co/query?function=FX_DAILY&from_symbol=EUR&to_symbol=PLN&apikey={api_key}&outputsize=full&datatype=csv"
     response = requests.get(url)
     if response.status_code == 200:
         data = pd.read_csv(io.StringIO(response.text))
@@ -33,8 +33,8 @@ if api_key:
         # Data preparation
         data = data.sort_values(by='Date')
 
-        # Keep only the last 2 years of data
-        data = data.tail(504).reset_index(drop=True)  # Approx. 252 trading days per year
+        # Keep only the last 12 months of data
+        data = data.tail(252).reset_index(drop=True)  # Approx. 252 trading days in a year
 
         # Rolling calculations
         data['Mean_20'] = data['Close'].rolling(window=20).mean()
