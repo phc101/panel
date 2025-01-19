@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 # Title and description
 st.title("EUR/PLN and USD/PLN Z-Score Signal Generator")
-st.write("This app calculates Z-scores based on the last 20 days of close prices and generates buy/sell signals with multiple settlement strategies.")
+st.write("This app calculates Z-scores based on the last 20 days of close prices and generates buy/sell signals with multiple settlement strategies, including a combined strategy.")
 
 # Load data from uploaded file
 def load_data(file_path):
@@ -57,46 +57,50 @@ def process_and_visualize(data, pair):
                                               (data['close'] - data[settlement_col]) / data['close'],
                                               0))
 
-    # Risk assessment calculations
-    annual_results = data.groupby(data['date'].dt.year).agg({
-        'return_30': 'sum',
-        'return_60': 'sum',
-        'return_90': 'sum'
-    })
-    annual_results.columns = ['Total Return 30 Days', 'Total Return 60 Days', 'Total Return 90 Days']
-    annual_results['Max Drawdown'] = data.groupby(data['date'].dt.year).apply(
-        lambda x: ((x['close'] / x['close'].cummax()) - 1).min()
-    )
+    # Combined strategy: Open positions for 30, 60, and 90 days simultaneously
+    data['combined_return'] = (
+        data['return_30'] + data['return_60'] + data['return_90']) / 3
+    data['combined_cumulative'] = (1 + data['combined_return']).cumprod()
 
-    # Rank by gains and losses
-    annual_results['Max Gain'] = annual_results[['Total Return 30 Days', 'Total Return 60 Days', 'Total Return 90 Days']].max(axis=1)
-    annual_results['Max Loss'] = annual_results[['Total Return 30 Days', 'Total Return 60 Days', 'Total Return 90 Days']].min(axis=1)
-    ranked_by_gain = annual_results.sort_values(by='Max Gain', ascending=False)
-    ranked_by_loss = annual_results.sort_values(by='Max Loss')
+    # Separate Buy and Sell strategies for combined
+    buy_combined = data[data['signal'] == 'Buy'][['date', 'combined_return']].copy()
+    sell_combined = data[data['signal'] == 'Sell'][['date', 'combined_return']].copy()
+    buy_combined['cumulative'] = (1 + buy_combined['combined_return']).cumprod()
+    sell_combined['cumulative'] = (1 + sell_combined['combined_return']).cumprod()
 
     # Display results
-    st.subheader(f"Annual Risk Assessment for {pair}")
-    st.write(annual_results)
-
-    st.subheader(f"Ranked by Maximum Gains for {pair}")
-    st.write(ranked_by_gain)
-
-    st.subheader(f"Ranked by Maximum Losses for {pair}")
-    st.write(ranked_by_loss)
-
-    # Visualization of cumulative returns for all strategies
     st.subheader(f"Signals and Returns for {pair}")
     st.write(data[['date', 'close', 'z_score', 'signal', 'settlement_date_30', 'settlement_close_30', 'return_30',
                    'settlement_date_60', 'settlement_close_60', 'return_60',
-                   'settlement_date_90', 'settlement_close_90', 'return_90']])
+                   'settlement_date_90', 'settlement_close_90', 'return_90',
+                   'combined_return', 'combined_cumulative']])
 
+    # Visualize cumulative returns
     st.subheader(f"Cumulative Returns of {pair} Strategy")
     plt.figure(figsize=(10, 6))
     for days in [30, 60, 90]:
         cumulative_col = f'cumulative_return_{days}'
         data[cumulative_col] = (1 + data[f'return_{days}']).cumprod()
         plt.plot(data['date'], data[cumulative_col], label=f'{days} Days')
+    plt.plot(data['date'], data['combined_cumulative'], label='Combined Strategy', linewidth=2, linestyle='--', color='black')
     plt.title(f"Cumulative Returns for {pair}")
+    plt.legend()
+    plt.grid()
+    st.pyplot(plt)
+
+    # Separate plots for Buy and Sell combined strategies
+    st.subheader(f"Buy Combined Strategy Cumulative Returns for {pair}")
+    plt.figure(figsize=(10, 6))
+    plt.plot(buy_combined['date'], buy_combined['cumulative'], label='Buy Combined', color='green')
+    plt.title(f"Buy Combined Strategy Cumulative Returns for {pair}")
+    plt.legend()
+    plt.grid()
+    st.pyplot(plt)
+
+    st.subheader(f"Sell Combined Strategy Cumulative Returns for {pair}")
+    plt.figure(figsize=(10, 6))
+    plt.plot(sell_combined['date'], sell_combined['cumulative'], label='Sell Combined', color='red')
+    plt.title(f"Sell Combined Strategy Cumulative Returns for {pair}")
     plt.legend()
     plt.grid()
     st.pyplot(plt)
