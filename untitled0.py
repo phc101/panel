@@ -29,8 +29,10 @@ else:
     # Rolling calculations
     data['Mean_20'] = data['Close'].rolling(window=20).mean()
     data['Std_20'] = data['Close'].rolling(window=20).std()
-    data['Z_Score'] = (data['Close'] - data['Mean_20']) / data['Std_20']
-    data['Up_Probability'] = 1 - (1 - np.abs(data['Z_Score']).map(lambda x: min(0.5 + 0.5 * np.tanh(x / 2), 1)))
+
+    # Avoid NaN values for Z-Score calculation
+    data['Z_Score'] = np.where(data['Std_20'] > 0, (data['Close'] - data['Mean_20']) / data['Std_20'], np.nan)
+    data['Up_Probability'] = np.where(data['Z_Score'].notna(), 1 - (1 - np.abs(data['Z_Score']).map(lambda x: min(0.5 + 0.5 * np.tanh(x / 2), 1))), np.nan)
 
     # Signal generation
     data['Signal'] = np.where((data['Z_Score'] < -2) & (data['Up_Probability'] > 0.95), 'Buy',
