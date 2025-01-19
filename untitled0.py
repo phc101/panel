@@ -33,20 +33,16 @@ else:
     data['Mean_20'] = data['Close'].rolling(window=20).mean()
     data['Std_20'] = data['Close'].rolling(window=20).std()
 
-    # Debug: Check rolling calculations
-    st.write("Rolling Calculations Preview:")
+    # Filter rows with valid rolling calculations
+    data = data[data['Mean_20'].notna() & data['Std_20'].notna() & (data['Std_20'] > 0)]
+
+    # Debug: Check for problematic rows
+    st.write("Rolling Calculations Preview (Last 20 Rows):")
     st.write(data[['Date', 'Close', 'Mean_20', 'Std_20']].tail(20))
-
-    # Filter rows with sufficient data for rolling calculations
-    data = data[data['Mean_20'].notna() & data['Std_20'].notna()]
-
-    # Avoid division by zero or invalid operations
-    data = data[data['Std_20'] > 0]
 
     # Calculate Z-Score and probabilities
     data['Z_Score'] = (data['Close'] - data['Mean_20']) / data['Std_20']
-    data['Z_Score'].replace([np.inf, -np.inf], np.nan, inplace=True)
-    data['Z_Score'].fillna(0, inplace=True)
+    data['Z_Score'] = data['Z_Score'].replace([np.inf, -np.inf], np.nan).fillna(0)
 
     data['Up_Probability'] = 1 - (1 - np.abs(data['Z_Score']).map(lambda x: min(0.5 + 0.5 * np.tanh(x / 2), 1)))
 
@@ -56,7 +52,7 @@ else:
 
     # Debugging: Check Z-Score and Signal columns
     st.subheader("Debugging Z-Score and Signals")
-    st.write("Z-Score and Signal Preview:")
+    st.write("Z-Score and Signal Preview (Last 20 Rows):")
     st.write(data[['Date', 'Close', 'Z_Score', 'Up_Probability', 'Signal']].tail(20))
 
     # Display results
