@@ -61,16 +61,27 @@ def process_and_visualize(data):
     sell_data['cumulative_return'] = (1 + sell_data['return_30']).cumprod()
     annual_drawdowns = sell_data.groupby('year')['cumulative_return'].apply(lambda x: (x / x.cummax() - 1).min())
 
-    # Visualization of annual returns with drawdowns
-    st.subheader("Annual Returns and Drawdowns")
+    # Visualization of annual returns
+    st.subheader("Annual Returns")
     plt.figure(figsize=(12, 6))
     for days in [30, 60, 90]:
         plt.bar(annual_returns.index, annual_returns[f'return_{days}'], label=f'{days}-Day Returns', alpha=0.7)
+    plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
+    plt.title("Annual Returns")
+    plt.xlabel("Year")
+    plt.ylabel("Returns")
+    plt.legend()
+    plt.grid()
+    st.pyplot(plt)
+
+    # Visualization of drawdowns
+    st.subheader("Maximum Drawdowns")
+    plt.figure(figsize=(12, 6))
     plt.plot(annual_drawdowns.index, annual_drawdowns.values, label='Max Drawdown', color='red', linestyle='--')
     plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
-    plt.title("Annual Returns and Maximum Drawdowns")
+    plt.title("Maximum Drawdowns")
     plt.xlabel("Year")
-    plt.ylabel("Returns / Drawdowns")
+    plt.ylabel("Drawdowns")
     plt.legend()
     plt.grid()
     st.pyplot(plt)
