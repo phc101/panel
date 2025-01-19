@@ -4,8 +4,8 @@ import streamlit as st
 import matplotlib.pyplot as plt
 
 # Title and description
-st.title("EUR/PLN Z-Score Sell Strategy")
-st.write("This app calculates Z-scores based on the last 20 days of close prices and evaluates the sell strategy with settlement periods of 30, 60, and 90 days.")
+st.title("EUR/PLN Z-Score Strategy Comparison")
+st.write("This app calculates Z-scores based on the last 20 days of close prices and compares buy, sell, and combined strategies with settlement periods of 30, 60, and 90 days.")
 
 # Load data from uploaded file
 def load_data(file_path):
@@ -40,61 +40,85 @@ def process_and_visualize(data):
     data['z_score'] = data['z_score'].replace([np.inf, -np.inf], np.nan).fillna(0)
 
     # Signal generation based on Z-Score
-    data['signal'] = np.where(data['z_score'] > 2, 'Sell', 'Hold')
+    data['signal'] = np.where(data['z_score'] < -2, 'Buy',
+                              np.where(data['z_score'] > 2, 'Sell', 'Hold'))
 
-    # Backtesting sell strategy
-    sell_data = data[data['signal'] == 'Sell'].copy()
-    for days in [30, 60, 90]:
-        settlement_col = f'settlement_close_{days}'
-        return_col = f'return_{days}'
+    # Backtesting buy, sell, and combined strategies
+    strategies = {'Buy': data[data['signal'] == 'Buy'].copy(),
+                  'Sell': data[data['signal'] == 'Sell'].copy()}
 
-        sell_data[f'settlement_date_{days}'] = sell_data['date'].shift(-days)
-        sell_data[settlement_col] = sell_data['close'].shift(-days)
+    for strategy, strategy_data in strategies.items():
+        for days in [30, 60, 90]:
+            settlement_col = f'settlement_close_{days}'
+            return_col = f'return_{days}'
 
-        sell_data[return_col] = (sell_data['close'] - sell_data[settlement_col]) / sell_data['close']
+            strategy_data[f'settlement_date_{days}'] = strategy_data['date'].shift(-days)
+            strategy_data[settlement_col] = strategy_data['close'].shift(-days)
 
-    # Calculate total annual returns and drawdowns
-    sell_data['year'] = sell_data['date'].dt.year
-    annual_returns = sell_data.groupby('year')[[f'return_{days}' for days in [30, 60, 90]]].sum()
+            if strategy == 'Buy':
+                strategy_data[return_col] = (strategy_data[settlement_col] - strategy_data['close']) / strategy_data['close']
+            elif strategy == 'Sell':
+                strategy_data[return_col] = (strategy_data['close'] - strategy_data[settlement_col]) / strategy_data['close']
 
-    # Calculate drawdowns
-    sell_data['cumulative_return'] = (1 + sell_data['return_30']).cumprod()
-    annual_drawdowns = sell_data.groupby('year')['cumulative_return'].apply(lambda x: (x / x.cummax() - 1).min())
+        strategies[strategy] = strategy_data
 
-    # Visualization of annual returns
-    st.subheader("Annual Returns")
+    # Combined strategy
+    combined_data = pd.concat([strategies['Buy'], strategies['Sell']]).sort_values(by='date')
+    combined_data['combined_return'] = (
+        combined_data['return_30'] + combined_data['return_60'] + combined_data['return_90']) / 3
+    combined_data['combined_cumulative'] = (1 + combined_data['combined_return']).cumprod()
+
+    # Cumulative returns for visualization
+    for strategy, strategy_data in strategies.items():
+        strategy_data['cumulative_return'] = (1 + strategy_data['return_30']).cumprod()
+
+    # Visualization of cumulative returns
+    st.subheader("Cumulative Returns")
     plt.figure(figsize=(12, 6))
-    for days in [30, 60, 90]:
-        plt.bar(annual_returns.index, annual_returns[f'return_{days}'], label=f'{days}-Day Returns', alpha=0.7)
-    plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
-    plt.title("Annual Returns")
-    plt.xlabel("Year")
-    plt.ylabel("Returns")
+    plt.plot(strategies['Buy']['date'], strategies['Buy']['cumulative_return'], label='Buy Strategy', color='green')
+    plt.plot(strategies['Sell']['date'], strategies['Sell']['cumulative_return'], label='Sell Strategy', color='red')
+    plt.plot(combined_data['date'], combined_data['combined_cumulative'], label='Combined Strategy', color='blue', linestyle='--')
+    plt.title("Cumulative Returns: Buy, Sell, and Combined Strategies")
+    plt.xlabel("Date")
+    plt.ylabel("Cumulative Return")
     plt.legend()
     plt.grid()
     st.pyplot(plt)
 
-    # Visualization of drawdowns
-    st.subheader("Maximum Drawdowns")
-    plt.figure(figsize=(12, 6))
-    plt.plot(annual_drawdowns.index, annual_drawdowns.values, label='Max Drawdown', color='red', linestyle='--')
-    plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
-    plt.title("Maximum Drawdowns")
-    plt.xlabel("Year")
-    plt.ylabel("Drawdowns")
-    plt.legend()
-    plt.grid()
-    st.pyplot(plt)
+    # Annual returns and drawdowns for all strategies
+    st.subheader("Annual Returns and Drawdowns")
+    for strategy_name, strategy_data in strategies.items():
+        strategy_data['year'] = strategy_data['date'].dt.year
+        annual_returns = strategy_data.groupby('year')[[f'return_{days}' for days in [30, 60, 90]]].sum()
 
-    # Display data
-    st.subheader("Sell Strategy Data")
-    st.write(sell_data[['date', 'close', 'z_score', 'signal', 'cumulative_return'] + \
-                       [f'return_{days}' for days in [30, 60, 90]]])
+        strategy_data['drawdown'] = strategy_data['cumulative_return'] / strategy_data['cumulative_return'].cummax() - 1
+        annual_drawdowns = strategy_data.groupby('year')['drawdown'].min()
+
+        st.write(f"{strategy_name} Strategy Annual Returns")
+        st.write(annual_returns)
+
+        st.write(f"{strategy_name} Strategy Annual Drawdowns")
+        st.write(annual_drawdowns)
+
+    # Combined strategy annual performance
+    combined_data['year'] = combined_data['date'].dt.year
+    combined_annual_returns = combined_data.groupby('year')['combined_return'].sum()
+    combined_annual_drawdowns = combined_data.groupby('year')['combined_cumulative'].apply(lambda x: (x / x.cummax() - 1).min())
+
+    st.write("Combined Strategy Annual Returns")
+    st.write(combined_annual_returns)
+
+    st.write("Combined Strategy Annual Drawdowns")
+    st.write(combined_annual_drawdowns)
 
     # Download data
-    st.subheader("Download Sell Strategy Data")
-    csv = sell_data.to_csv(index=False)
-    st.download_button("Download CSV", data=csv, file_name="sell_strategy_results.csv", mime="text/csv")
+    st.subheader("Download Strategy Data")
+    for strategy_name, strategy_data in strategies.items():
+        csv = strategy_data.to_csv(index=False)
+        st.download_button(f"Download {strategy_name} Strategy Data", data=csv, file_name=f"{strategy_name.lower()}_strategy_results.csv", mime="text/csv")
+
+    combined_csv = combined_data.to_csv(index=False)
+    st.download_button("Download Combined Strategy Data", data=combined_csv, file_name="combined_strategy_results.csv", mime="text/csv")
 
 # Load and process EUR/PLN data
 st.subheader("Upload EUR/PLN Data")
