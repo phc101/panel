@@ -30,9 +30,8 @@ else:
     data['Mean_20'] = data['Close'].rolling(window=20).mean()
     data['Std_20'] = data['Close'].rolling(window=20).std()
 
-    # Fill NaN values in rolling calculations with placeholders
-    data['Mean_20'].fillna(method='bfill', inplace=True)
-    data['Std_20'].fillna(method='bfill', inplace=True)
+    # Filter rows with sufficient data for rolling calculations
+    data = data[data['Mean_20'].notna() & data['Std_20'].notna()]
 
     # Calculate Z-Score and probabilities
     data['Z_Score'] = (data['Close'] - data['Mean_20']) / data['Std_20']
