@@ -28,9 +28,6 @@ def process_and_visualize(data, pair):
     # Data preparation
     data = data.sort_values(by='date')
 
-    # Keep only the last 12 months of data
-    data = data.tail(252).reset_index(drop=True)  # Approx. 252 trading days in a year
-
     # Rolling calculations
     data['mean_20'] = data['close'].rolling(window=20).mean()
     data['std_20'] = data['close'].rolling(window=20).std()
