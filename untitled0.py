@@ -23,7 +23,7 @@ def load_data(file_path):
         st.error(f"Error loading data: {e}")
         return pd.DataFrame()
 
-# Function to process and visualize data with multiple settlement strategies
+# Function to process and visualize data
 def process_and_visualize(data, pair):
     # Data preparation
     data = data.sort_values(by='date')
@@ -46,44 +46,32 @@ def process_and_visualize(data, pair):
     data['signal'] = np.where(data['z_score'] < -2, 'Buy',
                               np.where(data['z_score'] > 2, 'Sell', 'Hold'))
 
-    # Backtesting strategies for Buy and Sell signals separately
-    results = {}
-    for strategy in ['Buy', 'Sell']:
-        strategy_data = data[data['signal'] == strategy].copy()
-        strategy_results = {}
-        for days in [30, 60, 90]:
-            settlement_col = f'settlement_close_{days}'
-            return_col = f'return_{days}'
-            cumulative_col = f'cumulative_return_{days}'
+    # Backtesting strategies
+    for days in [30, 60, 90]:
+        settlement_col = f'settlement_close_{days}'
+        return_col = f'return_{days}'
 
-            strategy_data[f'settlement_date_{days}'] = strategy_data['date'].shift(-days)
-            strategy_data[settlement_col] = strategy_data['close'].shift(-days)
+        data[f'settlement_date_{days}'] = data['date'].shift(-days)
+        data[settlement_col] = data['close'].shift(-days)
 
-            if strategy == 'Buy':
-                strategy_data[return_col] = (strategy_data[settlement_col] - strategy_data['close']) / strategy_data['close']
-            elif strategy == 'Sell':
-                strategy_data[return_col] = (strategy_data['close'] - strategy_data[settlement_col]) / strategy_data['close']
-
-            strategy_data[cumulative_col] = (1 + strategy_data[return_col]).cumprod()
-            strategy_results[days] = strategy_data[cumulative_col].iloc[-1] if not strategy_data[cumulative_col].empty else 1
-
-        results[strategy] = strategy_results
-
-    # Display performance rankings
-    rankings = pd.DataFrame(results)
-    rankings.index = ["30 Days", "60 Days", "90 Days"]
-    st.subheader(f"Performance Rankings for {pair}")
-    st.write(rankings)
+        data[return_col] = np.where(data['signal'] == 'Buy',
+                                     (data[settlement_col] - data['close']) / data['close'],
+                                     np.where(data['signal'] == 'Sell',
+                                              (data['close'] - data[settlement_col]) / data['close'],
+                                              0))
 
     # Visualization of cumulative returns for all strategies
+    st.subheader(f"Signals and Returns for {pair}")
+    st.write(data[['date', 'close', 'z_score', 'signal', 'settlement_date_30', 'settlement_close_30', 'return_30',
+                   'settlement_date_60', 'settlement_close_60', 'return_60',
+                   'settlement_date_90', 'settlement_close_90', 'return_90']])
+
     st.subheader(f"Cumulative Returns of {pair} Strategy")
     plt.figure(figsize=(10, 6))
-    for strategy in ['Buy', 'Sell']:
-        for days in [30, 60, 90]:
-            label = f'{strategy} {days} Days'
-            cumulative_col = f'cumulative_return_{days}'
-            if cumulative_col in data.columns:
-                plt.plot(data['date'], data[cumulative_col], label=label)
+    for days in [30, 60, 90]:
+        cumulative_col = f'cumulative_return_{days}'
+        data[cumulative_col] = (1 + data[f'return_{days}']).cumprod()
+        plt.plot(data['date'], data[cumulative_col], label=f'{days} Days')
     plt.title(f"Cumulative Returns for {pair}")
     plt.legend()
     plt.grid()
