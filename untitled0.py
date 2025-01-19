@@ -3,6 +3,7 @@ import numpy as np
 import streamlit as st
 import matplotlib.pyplot as plt
 import requests
+import io
 
 # Title and description
 st.title("EUR/PLN Z-Score Signal Generator")
@@ -13,7 +14,7 @@ def fetch_live_data(api_key):
     url = f"https://www.alphavantage.co/query?function=FX_DAILY&from_symbol=EUR&to_symbol=PLN&apikey={api_key}&datatype=csv"
     response = requests.get(url)
     if response.status_code == 200:
-        data = pd.read_csv(pd.compat.StringIO(response.text))
+        data = pd.read_csv(io.StringIO(response.text))
         data = data.rename(columns={"timestamp": "Date", "close": "Close"})
         data['Date'] = pd.to_datetime(data['Date'])
         return data[['Date', 'Close']]
