@@ -59,14 +59,14 @@ def process_and_visualize(data):
 
     # Calculate drawdowns
     sell_data['cumulative_return'] = (1 + sell_data['return_30']).cumprod()
-    sell_data['drawdown'] = sell_data['cumulative_return'] / sell_data['cumulative_return'].cummax() - 1
+    annual_drawdowns = sell_data.groupby('year')['cumulative_return'].apply(lambda x: (x / x.cummax() - 1).min())
 
     # Visualization of annual returns with drawdowns
     st.subheader("Annual Returns and Drawdowns")
     plt.figure(figsize=(12, 6))
     for days in [30, 60, 90]:
         plt.bar(annual_returns.index, annual_returns[f'return_{days}'], label=f'{days}-Day Returns', alpha=0.7)
-    plt.plot(sell_data['year'], sell_data.groupby('year')['drawdown'].min(), label='Max Drawdown', color='red', linestyle='--')
+    plt.plot(annual_drawdowns.index, annual_drawdowns.values, label='Max Drawdown', color='red', linestyle='--')
     plt.axhline(0, color='black', linewidth=0.8, linestyle='--')
     plt.title("Annual Returns and Maximum Drawdowns")
     plt.xlabel("Year")
@@ -77,7 +77,7 @@ def process_and_visualize(data):
 
     # Display data
     st.subheader("Sell Strategy Data")
-    st.write(sell_data[['date', 'close', 'z_score', 'signal', 'cumulative_return', 'drawdown'] + \
+    st.write(sell_data[['date', 'close', 'z_score', 'signal', 'cumulative_return'] + \
                        [f'return_{days}' for days in [30, 60, 90]]])
 
     # Download data
