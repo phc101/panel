@@ -33,8 +33,8 @@ if api_key:
         # Data preparation
         data = data.sort_values(by='Date')
 
-        # Keep only the last 6 months of data
-        data = data.tail(180).reset_index(drop=True)
+        # Keep only the last 2 years of data
+        data = data.tail(504).reset_index(drop=True)  # Approx. 252 trading days per year
 
         # Rolling calculations
         data['Mean_20'] = data['Close'].rolling(window=20).mean()
@@ -51,9 +51,37 @@ if api_key:
         data['Signal'] = np.where(data['Z_Score'] < -2, 'Buy',
                                   np.where(data['Z_Score'] > 2, 'Sell', 'Hold'))
 
+        # Calculate returns
+        data['Next_Close'] = data['Close'].shift(-1)
+        data['Forward_Return'] = (data['Next_Close'] - data['Close']) / data['Close']
+
+        # Track strategy performance
+        data['Strategy_Return'] = 0.0
+        open_position = None
+        open_price = None
+
+        for i in range(len(data)):
+            if data.iloc[i]['Signal'] == 'Buy' and open_position is None:
+                open_position = 'Buy'
+                open_price = data.iloc[i]['Close']
+            elif data.iloc[i]['Signal'] == 'Sell' and open_position is None:
+                open_position = 'Sell'
+                open_price = data.iloc[i]['Close']
+            elif open_position == 'Buy' and (i >= len(data) - 1 or data.iloc[i]['Signal'] == 'Sell'):
+                data.at[i, 'Strategy_Return'] = (data.iloc[i]['Close'] - open_price) / open_price
+                open_position = None
+                open_price = None
+            elif open_position == 'Sell' and (i >= len(data) - 1 or data.iloc[i]['Signal'] == 'Buy'):
+                data.at[i, 'Strategy_Return'] = (open_price - data.iloc[i]['Close']) / open_price
+                open_position = None
+                open_price = None
+
+        # Calculate cumulative returns
+        data['Cumulative_Return'] = (1 + data['Strategy_Return']).cumprod()
+
         # Display results
         st.subheader("Data Preview")
-        st.write(data[['Date', 'Close', 'Mean_20', 'Std_20', 'Z_Score', 'Signal']])
+        st.write(data[['Date', 'Close', 'Mean_20', 'Std_20', 'Z_Score', 'Signal', 'Forward_Return', 'Strategy_Return', 'Cumulative_Return']])
 
         # Display signals as a table
         st.subheader("Buy and Sell Signals")
@@ -61,7 +89,7 @@ if api_key:
         st.write(signal_data)
 
         # Visualization
-        st.subheader("EUR/PLN Close Price and Signals (Last 6 Months)")
+        st.subheader("EUR/PLN Close Price and Strategy Performance")
         plt.figure(figsize=(10, 6))
         plt.plot(data['Date'], data['Close'], label='Close Price', alpha=0.7)
         plt.scatter(data['Date'][data['Signal'] == 'Buy'], data['Close'][data['Signal'] == 'Buy'], label='Buy Signal', color='green', marker='^')
@@ -71,8 +99,17 @@ if api_key:
         plt.grid()
         st.pyplot(plt)
 
+        # Plot cumulative returns
+        st.subheader("Cumulative Returns of Strategy")
+        plt.figure(figsize=(10, 6))
+        plt.plot(data['Date'], data['Cumulative_Return'], label='Cumulative Return', color='blue')
+        plt.title("Cumulative Returns")
+        plt.legend()
+        plt.grid()
+        st.pyplot(plt)
+
         st.subheader("Download Results")
         csv = data.to_csv(index=False)
-        st.download_button("Download CSV", data=csv, file_name="zscore_signals.csv", mime="text/csv")
+        st.download_button("Download CSV", data=csv, file_name="zscore_strategy_results.csv", mime="text/csv")
     else:
         st.error("No data available to process.")
