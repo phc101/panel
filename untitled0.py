@@ -33,22 +33,30 @@ else:
     data['Mean_20'] = data['Close'].rolling(window=20).mean()
     data['Std_20'] = data['Close'].rolling(window=20).std()
 
+    # Debug: Check rolling calculations
+    st.write("Rolling Calculations Preview:")
+    st.write(data[['Date', 'Close', 'Mean_20', 'Std_20']].tail(20))
+
     # Filter rows with sufficient data for rolling calculations
     data = data[data['Mean_20'].notna() & data['Std_20'].notna()]
 
+    # Avoid division by zero or invalid operations
+    data = data[data['Std_20'] > 0]
+
     # Calculate Z-Score and probabilities
     data['Z_Score'] = (data['Close'] - data['Mean_20']) / data['Std_20']
+    data['Z_Score'].replace([np.inf, -np.inf], np.nan, inplace=True)
+    data['Z_Score'].fillna(0, inplace=True)
+
     data['Up_Probability'] = 1 - (1 - np.abs(data['Z_Score']).map(lambda x: min(0.5 + 0.5 * np.tanh(x / 2), 1)))
 
     # Signal generation
     data['Signal'] = np.where((data['Z_Score'] < -2) & (data['Up_Probability'] > 0.95), 'Buy',
                               np.where((data['Z_Score'] > 2) & (data['Up_Probability'] < 0.05), 'Sell', 'Hold'))
 
-    # Debugging: Check column H (Up_Probability)
-    st.subheader("Debugging Column H (Up_Probability)")
-    st.write("Up_Probability Summary:")
-    st.write(data['Up_Probability'].describe())
-    st.write("Signals Generated:")
+    # Debugging: Check Z-Score and Signal columns
+    st.subheader("Debugging Z-Score and Signals")
+    st.write("Z-Score and Signal Preview:")
     st.write(data[['Date', 'Close', 'Z_Score', 'Up_Probability', 'Signal']].tail(20))
 
     # Display results
