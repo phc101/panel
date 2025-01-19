@@ -14,7 +14,7 @@ def fetch_live_data():
     data = yf.download(ticker, period="6mo", interval="1d")
     data = data.reset_index()
     data = data.rename(columns={"Date": "Date", "Close": "Close"})
-    return data["Date"], data["Close"]
+    return data[["Date", "Close"]]
 
 # Load data
 data = fetch_live_data()
@@ -27,7 +27,7 @@ else:
     data = data.sort_values(by='Date')
 
     # Apply 1-month delay
-    data = data.iloc[30:, :]
+    data = data.iloc[30:].reset_index(drop=True)
 
     # Rolling calculations
     data['Mean_20'] = data['Close'].rolling(window=20).mean()
