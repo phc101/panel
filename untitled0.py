@@ -43,19 +43,17 @@ if api_key:
         # Filter rows with valid rolling calculations
         data = data[data['Mean_20'].notna() & data['Std_20'].notna()]
 
-        # Calculate Z-Score and probabilities
+        # Calculate Z-Score
         data['Z_Score'] = (data['Close'] - data['Mean_20']) / data['Std_20']
         data['Z_Score'] = data['Z_Score'].replace([np.inf, -np.inf], np.nan).fillna(0)
 
-        data['Up_Probability'] = 1 - (1 - np.abs(data['Z_Score']).map(lambda x: min(0.5 + 0.5 * np.tanh(x / 2), 1)))
-
-        # Signal generation
-        data['Signal'] = np.where((data['Z_Score'] < -2) & (data['Up_Probability'] > 0.95), 'Buy',
-                                  np.where((data['Z_Score'] > 2) & (data['Up_Probability'] < 0.05), 'Sell', 'Hold'))
+        # Signal generation based on Z-Score
+        data['Signal'] = np.where(data['Z_Score'] < -2, 'Buy',
+                                  np.where(data['Z_Score'] > 2, 'Sell', 'Hold'))
 
         # Display results
         st.subheader("Data Preview")
-        st.write(data[['Date', 'Close', 'Mean_20', 'Std_20', 'Z_Score', 'Up_Probability', 'Signal']])
+        st.write(data[['Date', 'Close', 'Mean_20', 'Std_20', 'Z_Score', 'Signal']])
 
         # Display signals as a table
         st.subheader("Buy and Sell Signals")
