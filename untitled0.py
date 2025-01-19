@@ -11,10 +11,10 @@ st.write("This app calculates Z-scores based on the last 20 days of EUR/PLN clos
 # Fetch live data
 def fetch_live_data():
     ticker = "EURPLN=X"
-    data = yf.download(ticker, period="1mo", interval="1d")
+    data = yf.download(ticker, period="6mo", interval="1d")
     data = data.reset_index()
     data = data.rename(columns={"Date": "Date", "Close": "Close"})
-    return data[["Date", "Close"]]
+    return data["Date"], data["Close"]
 
 # Load data
 data = fetch_live_data()
@@ -25,6 +25,9 @@ else:
     # Data preparation
     data['Date'] = pd.to_datetime(data['Date'])
     data = data.sort_values(by='Date')
+
+    # Apply 1-month delay
+    data = data.iloc[30:, :]
 
     # Rolling calculations
     data['Mean_20'] = data['Close'].rolling(window=20).mean()
