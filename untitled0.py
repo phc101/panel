@@ -2,33 +2,23 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import matplotlib.pyplot as plt
-import requests
-import io
 
 # Title and description
 st.title("EUR/PLN and USD/PLN Z-Score Signal Generator")
 st.write("This app calculates Z-scores based on the last 20 days of close prices and generates buy/sell signals with multiple settlement strategies.")
 
-# Fetch live data from Alpha Vantage
-def fetch_live_data(api_key, from_symbol, to_symbol):
-    url = f"https://www.alphavantage.co/query?function=FX_DAILY&from_symbol={from_symbol}&to_symbol={to_symbol}&apikey={api_key}&outputsize=full&datatype=csv"
-    response = requests.get(url)
-    if response.status_code == 200:
-        try:
-            data = pd.read_csv(io.StringIO(response.text))
-            st.write("API Response Preview:", data.head())  # Debugging: Show API response
-            if 'timestamp' in data.columns and 'close' in data.columns:
-                data = data.rename(columns={"timestamp": "Date", "close": "Close"})
-                data['Date'] = pd.to_datetime(data['Date'])
-                return data[['Date', 'Close']]
-            else:
-                st.error("Expected columns not found in API response.")
-                return pd.DataFrame()
-        except Exception as e:
-            st.error(f"Error parsing API response: {e}")
+# Load data from uploaded file
+def load_data(file_path):
+    try:
+        data = pd.read_excel(file_path)
+        if 'Date' in data.columns and 'Close' in data.columns:
+            data['Date'] = pd.to_datetime(data['Date'])
+            return data[['Date', 'Close']]
+        else:
+            st.error("The uploaded file must contain 'Date' and 'Close' columns.")
             return pd.DataFrame()
-    else:
-        st.error(f"Failed to fetch live data for {from_symbol}/{to_symbol}. HTTP Status Code: {response.status_code}")
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
         return pd.DataFrame()
 
 # Function to process and visualize data with multiple settlement strategies
@@ -101,18 +91,18 @@ def process_and_visualize(data, pair):
     csv = data.to_csv(index=False)
     st.download_button(f"Download CSV for {pair}", data=csv, file_name=f"zscore_strategy_results_{pair}.csv", mime="text/csv")
 
-# Enter your Alpha Vantage API key
-api_key = st.text_input("Enter your Alpha Vantage API key:", type="password")
-
-if api_key:
-    # Fetch and process EUR/PLN data
-    st.subheader("EUR/PLN Analysis")
-    eurpln_data = fetch_live_data(api_key, "EUR", "PLN")
+# Load and process EUR/PLN data
+st.subheader("Upload EUR/PLN Data")
+eurpln_file = st.file_uploader("Upload EUR/PLN Excel file:", type=["xlsx"])
+if eurpln_file:
+    eurpln_data = load_data(eurpln_file)
     if not eurpln_data.empty:
         process_and_visualize(eurpln_data, "EUR/PLN")
 
-    # Fetch and process USD/PLN data
-    st.subheader("USD/PLN Analysis")
-    usdpln_data = fetch_live_data(api_key, "USD", "PLN")
+# Load and process USD/PLN data
+st.subheader("Upload USD/PLN Data")
+usdpln_file = st.file_uploader("Upload USD/PLN Excel file:", type=["xlsx"])
+if usdpln_file:
+    usdpln_data = load_data(usdpln_file)
     if not usdpln_data.empty:
         process_and_visualize(usdpln_data, "USD/PLN")
