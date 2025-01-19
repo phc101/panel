@@ -11,10 +11,10 @@ st.write("This app calculates Z-scores based on the last 20 days of EUR/PLN clos
 # Fetch live data
 def fetch_live_data():
     ticker = "EURPLN=X"
-    data = yf.download(ticker, period="6mo", interval="1d")
+    data = yf.download(ticker, period="1mo", interval="1d")
     data = data.reset_index()
     data = data.rename(columns={"Date": "Date", "Close": "Close"})
-    return data[["Date", "Close"]]
+    return data["Date"], data["Close"]
 
 # Load data
 data = fetch_live_data()
@@ -26,19 +26,15 @@ else:
     data['Date'] = pd.to_datetime(data['Date'])
     data = data.sort_values(by='Date')
 
-    # Apply 1-month delay
-    data = data.iloc[30:].reset_index(drop=True)
+    # Keep only the last 20 days
+    data = data.tail(20).reset_index(drop=True)
 
     # Rolling calculations
     data['Mean_20'] = data['Close'].rolling(window=20).mean()
     data['Std_20'] = data['Close'].rolling(window=20).std()
 
     # Filter rows with valid rolling calculations
-    data = data[data['Mean_20'].notna() & data['Std_20'].notna() & (data['Std_20'] > 0)]
-
-    # Debug: Check for problematic rows
-    st.write("Rolling Calculations Preview (Last 20 Rows):")
-    st.write(data[['Date', 'Close', 'Mean_20', 'Std_20']].tail(20))
+    data = data[data['Mean_20'].notna() & data['Std_20'].notna()]
 
     # Calculate Z-Score and probabilities
     data['Z_Score'] = (data['Close'] - data['Mean_20']) / data['Std_20']
@@ -50,14 +46,9 @@ else:
     data['Signal'] = np.where((data['Z_Score'] < -2) & (data['Up_Probability'] > 0.95), 'Buy',
                               np.where((data['Z_Score'] > 2) & (data['Up_Probability'] < 0.05), 'Sell', 'Hold'))
 
-    # Debugging: Check Z-Score and Signal columns
-    st.subheader("Debugging Z-Score and Signals")
-    st.write("Z-Score and Signal Preview (Last 20 Rows):")
-    st.write(data[['Date', 'Close', 'Z_Score', 'Up_Probability', 'Signal']].tail(20))
-
     # Display results
     st.subheader("Data Preview")
-    st.write(data[['Date', 'Close', 'Mean_20', 'Std_20', 'Z_Score', 'Up_Probability', 'Signal']].tail(20))
+    st.write(data[['Date', 'Close', 'Mean_20', 'Std_20', 'Z_Score', 'Up_Probability', 'Signal']])
 
     # Display signals as a table
     st.subheader("Buy and Sell Signals")
