@@ -68,12 +68,25 @@ def process_and_visualize(data, pair):
     buy_combined['cumulative'] = (1 + buy_combined['combined_return']).cumprod()
     sell_combined['cumulative'] = (1 + sell_combined['combined_return']).cumprod()
 
-    # Display results
-    st.subheader(f"Signals and Returns for {pair}")
-    st.write(data[['date', 'close', 'z_score', 'signal', 'settlement_date_30', 'settlement_close_30', 'return_30',
-                   'settlement_date_60', 'settlement_close_60', 'return_60',
-                   'settlement_date_90', 'settlement_close_90', 'return_90',
-                   'combined_return', 'combined_cumulative']])
+    # Risk assessment
+    strategies = ['return_30', 'return_60', 'return_90', 'combined_return']
+    assessments = []
+    for strategy in strategies:
+        avg_drawdown = data[data['signal'] != 'Hold'].groupby('signal')[strategy].apply(lambda x: (x[x < 0]).mean())
+        avg_gain_loss = data[data['signal'] != 'Hold'].groupby('signal')[strategy].mean()
+        num_positive = data[data['signal'] != 'Hold'].groupby('signal')[strategy].apply(lambda x: (x > 0).sum())
+        num_negative = data[data['signal'] != 'Hold'].groupby('signal')[strategy].apply(lambda x: (x < 0).sum())
+        assessments.append(pd.DataFrame({
+            'Strategy': strategy,
+            'Avg Drawdown': avg_drawdown,
+            'Avg Gain/Loss': avg_gain_loss,
+            'Num Positive Trades': num_positive,
+            'Num Negative Trades': num_negative
+        }))
+
+    combined_assessment = pd.concat(assessments)
+    st.subheader(f"Risk Assessment for {pair}")
+    st.write(combined_assessment)
 
     # Visualize cumulative returns
     st.subheader(f"Cumulative Returns of {pair} Strategy")
