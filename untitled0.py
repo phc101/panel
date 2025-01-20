@@ -146,7 +146,7 @@ if all_cashflows:
         all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Spot Rate"]
     )
     all_cashflows_df["Profit in PLN"] = (
-        all_cashflows_df["Remaining Points"] * all_cashflows_df["Amount"]
+        all_cashflows_df["Total Points"] * all_cashflows_df["Amount"]
     )
 
     # Stair-Step Chart
