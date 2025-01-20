@@ -197,7 +197,8 @@ if all_cashflows:
     # Points and Profit Summary
     st.header("Points and Profit Summary")
     points_profit_summary = all_cashflows_df[[
-        "Currency", "Amount", "Points to Window Open", "Remaining Points", "Total Points", "Profit in PLN"
+        "Currency", "Window Open Date", "Maturity Date", "Amount", "Points to Window Open", 
+        "Remaining Points", "Total Points", "Profit in PLN"
     ]]
     points_profit_summary["Points to Window Open"] = points_profit_summary["Points to Window Open"].round(4)
     points_profit_summary["Remaining Points"] = points_profit_summary["Remaining Points"].round(4)
@@ -216,4 +217,3 @@ if all_cashflows:
 # Footer
 st.markdown("---")
 st.caption("Developed using Streamlit")
-
