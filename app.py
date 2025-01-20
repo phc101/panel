@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 # Tytuł strony
-st.title("Model Finansowania i Wyceny Startupu")  # Tytuł aplikacji
+st.title("Wycena Premium Hedge 2025 - 2032")  # Tytuł aplikacji
 
 # Sekcja wejściowa
 st.header("Wprowadź swoje dane o przychodach i kosztach")  # Wyjaśnia, że użytkownik wprowadza swoje dane finansowe
@@ -67,11 +67,14 @@ st.write(f"### Zysk inwestorów (nominalny): {zysk_inwestorow:,.2f} zł")
 st.write(f"### Zysk założycieli (nominalny): {zysk_zalozycieli:,.2f} zł")
 st.write(f"### Stopa zwrotu inwestorów (ROI): {roi_inwestorow:.2f}x")
 
-st.write(f"### Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów': {wartosc_biezaca / zysk_inwestorow if zysk_inwestorow > 0 else 'Nie można obliczyć'}")
+st.write(f"### Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów': {wartosc_biezaca / zysk_inwestorow:.2f}"
+          if zysk_inwestorow > 0 else "Wskaźnik nie został obliczony")
 
 # Interpretacja wskaźnika
 if zysk_inwestorow > 0:
-    st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów' pokazuje, ile razy bieżąca wartość całej firmy przewyższa zysk nominalny inwestorów. **Wysoka wartość wskaźnika** oznacza, że inwestorzy uzyskują stosunkowo małą część wartości firmy, co może być korzystne dla założycieli. **Niska wartość wskaźnika** oznacza, że inwestorzy mają znaczący udział w wartości firmy w stosunku do swojego zysku nominalnego.</div>", unsafe_allow_html=True)
+    wskaznik = wartosc_biezaca / zysk_inwestorow
+    atrakcyjnosc = "bardzo atrakcyjnie" if wskaznik <= 1.5 else "umiarkowanie atrakcyjnie" if wskaznik <= 3 else "mało atrakcyjnie"
+    st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów' wynosi {wskaznik:.2f}. Sugeruje, że inwestycja jest {atrakcyjnosc} dla inwestorów.</div>", unsafe_allow_html=True)
 else:
     st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik nie został obliczony, ponieważ zysk inwestorów jest ujemny lub równy zeru. Może to oznaczać, że inwestycja nie generuje wystarczającego zwrotu w stosunku do wkładu inwestorów.</div>", unsafe_allow_html=True)
 
