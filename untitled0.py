@@ -143,6 +143,39 @@ if all_cashflows:
         all_cashflows_df["Remaining Points"] * all_cashflows_df["Amount"]
     )
 
+    # Enhanced Chart: Rectangular Blocks for Forward Rates
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Collect all relevant dates for the x-axis
+    x_ticks = sorted(
+        set(all_cashflows_df["Window Open Date"].tolist() + all_cashflows_df["Maturity Date"].tolist())
+    )
+
+    for _, row in all_cashflows_df.iterrows():
+        # Bar for the forward rate between Window Open Date and Maturity Date
+        ax.barh(
+            row["Forward Rate (Window Open Date)"],  # Y position (forward rate value)
+            width=(row["Maturity Date"] - row["Window Open Date"]).days,  # Duration as width
+            left=(row["Window Open Date"] - datetime.today()).days,  # Start position
+            height=0.05,  # Bar height (size of the rectangular block)
+            color="blue", alpha=0.7, edgecolor="black", label="Forward Rate" if _ == 0 else None
+        )
+        # Highlight the starting point (Window Open Rate)
+        ax.scatter(
+            (row["Window Open Date"] - datetime.today()).days, 
+            row["Forward Rate (Window Open Date)"], 
+            color="orange", s=80, label="Window Open Rate" if _ == 0 else None
+        )
+
+    # Chart styling
+    ax.set_title("Forward Windows with Rectangular Blocks", fontsize=16)
+    ax.set_xlabel("Days from Today", fontsize=12)
+    ax.set_ylabel("Forward Rate (PLN)", fontsize=12)
+    ax.grid(color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
+    ax.legend(loc="upper left", fontsize=10)
+    plt.tight_layout()
+    st.pyplot(fig)
+
     # Additional Table: Remaining Points and Profit
     st.header("Remaining Points and Profit Summary")
     points_profit_summary = all_cashflows_df[[
