@@ -72,7 +72,7 @@ roi_inwestorow = (wycena_rok_8 * udzial_inwestorow) / pozyskany_kapital
 st.write(f"### Zysk inwestorów (nominalny): {zysk_inwestorow:,.2f} zł")
 st.write(f"### Zysk założycieli (nominalny): {zysk_zalozycieli:,.2f} zł")
 st.write(f"### Stopa zwrotu inwestorów (ROI): {roi_inwestorow:.2f}x")
-st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Stopa zwrotu inwestorów (ROI) pokazuje, ile razy inwestorzy odzyskują swój początkowy wkład kapitałowy. Wartość powyżej 1 oznacza, że inwestycja przynosi zysk, podczas gdy wartość poniżej 1 wskazuje na stratę.</div>", unsafe_allow_html=True)
+st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px;'>Stopa zwrotu inwestorów (ROI) wynosi {roi_inwestorow:.2f}x. Oznacza to, że inwestorzy odzyskują zarówno kapitał początkowy, jak i osiągają zysk. W tym przypadku, pozyskujemy {pozyskany_kapital:,.2f} zł jako kapitał początkowy od inwestorów. Wycena firmy na wyjściu w roku 8 wynosi {wycena_rok_8:,.2f} zł, co daje inwestorom zysk nominalny w wysokości {zysk_inwestorow:,.2f} zł. ROI powyżej 1 wskazuje na zyskowną inwestycję, natomiast wartości poniżej 1 oznaczają stratę.</div>", unsafe_allow_html=True)
 
 st.write(f"### Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów': {wartosc_biezaca / zysk_inwestorow:.2f}")
 
