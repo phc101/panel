@@ -12,7 +12,7 @@ st.header("Wprowadź swoje dane o przychodach i kosztach")
 data = {
     "Rok": [2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032],
     "Przychody netto (zł)": [0, 812500, 2372500, 4322500, 6272500, 8222500, 10172500, 12122500],
-    "Koszty operacyjne (zł)": 934 800, 1 441 200, 1 652 400, 1 652 400, 1 652 400, 1 652 400, 1 652 400, 1 652 400],
+    "Koszty operacyjne (zł)": [934800, 1441200, 1652400, 1652400, 1652400, 1652400, 1652400, 1652400],
     "Prowizja sprzedażowa (zł)": [0, 40625, 118625, 216125, 313625, 411125, 508625, 606125]
 }
 
@@ -67,13 +67,13 @@ st.write(f"### Udział inwestorów: {udzial_inwestorow * 100:.2f}%")
 zysk_inwestorow = wycena_rok_8 * udzial_inwestorow - pozyskany_kapital
 zysk_zalozycieli = wycena_rok_8 * udzial_zalozycieli
 roi_inwestorow = (wycena_rok_8 * udzial_inwestorow) / pozyskany_kapital
+zysk_procentowy = ((zysk_inwestorow / pozyskany_kapital) * 100) if pozyskany_kapital > 0 else 0
+srednioroczny_zwrot = (roi_inwestorow ** (1/8) - 1) * 100
 
 # Wyświetlanie stóp zwrotu i zysków nominalnych
 st.write(f"### Zysk inwestorów (nominalny): {zysk_inwestorow:,.2f} zł")
 st.write(f"### Zysk założycieli (nominalny): {zysk_zalozycieli:,.2f} zł")
 st.write(f"### Stopa zwrotu inwestorów (ROI): {roi_inwestorow:.2f}x")
-zysk_procentowy = ((zysk_inwestorow / pozyskany_kapital) * 100) if pozyskany_kapital > 0 else 0
-srednioroczny_zwrot = (roi_inwestorow ** (1/8) - 1) * 100
 st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px;'>Stopa zwrotu inwestorów (ROI) wynosi {roi_inwestorow:.2f}x. Oznacza to, że inwestorzy odzyskują zarówno kapitał początkowy, jak i osiągają zysk. W tym przypadku, pozyskujemy {pozyskany_kapital:,.2f} zł jako kapitał początkowy od inwestorów. Wycena firmy na wyjściu w roku 8 wynosi {wycena_rok_8:,.2f} zł, co daje inwestorom zysk nominalny w wysokości {zysk_inwestorow:,.2f} zł. ROI powyżej 1 wskazuje na zyskowną inwestycję, natomiast wartości poniżej 1 oznaczają stratę. Dodatkowo, inwestorzy zyskują {zysk_procentowy:.2f}% na swojej inwestycji, co średniorocznie daje zwrot w wysokości {srednioroczny_zwrot:.2f}%.</div>", unsafe_allow_html=True)
 
 st.write(f"### Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów': {wartosc_biezaca / zysk_inwestorow:.2f}")
@@ -85,5 +85,3 @@ if zysk_inwestorow > 0:
     st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów' wynosi {wskaznik:.2f}. Sugeruje, że inwestycja jest {atrakcyjnosc} dla inwestorów.</div>", unsafe_allow_html=True)
 else:
     st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik nie został obliczony, ponieważ zysk inwestorów jest ujemny lub równy zeru. Może to oznaczać, że inwestycja nie generuje wystarczającego zwrotu w stosunku do wkładu inwestorów.</div>", unsafe_allow_html=True)
-
-
