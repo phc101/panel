@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 
 # Tytuł strony
-st.title("Wycena Premium Hedge")  # Tytuł aplikacji
+st.title("Wycena Premium Hedge 2025 - 2032")  # Tytuł aplikacji
 
 # Sekcja wejściowa
 st.header("Wprowadź swoje dane o przychodach i kosztach")  # Wyjaśnia, że użytkownik wprowadza swoje dane finansowe
@@ -29,8 +30,6 @@ st.write(financial_data)  # Wyświetla tabelę z prognozami finansowymi
 # Założenia
 st.header("Kluczowe założenia")
 st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Założenia pozwalają dostosować model do rzeczywistości biznesowej. Możesz zmienić oczekiwaną marżę zysku, wskaźnik cena/zysk (P/E) oraz stopę dyskontową, które wpływają na wycenę firmy.</div>", unsafe_allow_html=True)  # Wyjaśnia, że poniżej można zmieniać założenia modelu
-przychody_rok_8 = financial_data[financial_data["Rok"] == 2032]["Przychody netto (zł)"].values[0]
-koszty_rok_8 = financial_data[financial_data["Rok"] == 2032]["Koszty operacyjne (zł)"].values[0]
 profit_margin = st.slider("Oczekiwana marża zysku (rok 8, %):", 10, 80, 20) / 100  # Użytkownik może ustawić oczekiwaną marżę zysku, zakres do 80%  # Automatyczne wyliczenie marży zysku na podstawie danych za rok 8  # Oczekiwana marża zysku
 pe_multiple = st.slider("Wskaźnik cena/zysk (P/E):", 5, 25, 15)  # Współczynnik wyceny
 discount_rate = st.slider("Stopa dyskontowa (%):", 10, 50, 30) / 100  # Stopa dyskontowa do obliczenia wartości bieżącej
@@ -46,8 +45,16 @@ wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy  # Dyskontowanie wartości p
 
 # Definicje udziałów i kapitału
 udzial_inwestorow = st.slider("Udział inwestorów (%):", 10, 90, 30) / 100  # Inwestorzy otrzymują 30% udziałów
-pozyskany_kapital = 3_700_000  # Ręczna kwota pozyskana od inwestorów w zamian za 30% udziałów  # Kwota zainwestowana przez inwestorów
+pozyskany_kapital = wartosc_biezaca * udzial_inwestorow  # Kwota zainwestowana przez inwestorów
 udzial_zalozycieli = 1 - udzial_inwestorow  # Założyciele zachowują 70%
+
+# Obliczenie zysku inwestorów w czasie
+zyski_inwestorow_czas = []
+for index, row in financial_data.iterrows():
+    rok = row["Rok"]
+    zysk_calkowity = row["Zysk netto (zł)"] * udzial_inwestorow
+    zyski_inwestorow_czas.append({"Rok": rok, "Zysk inwestorów (zł)": zysk_calkowity})
+zyski_inwestorow_df = pd.DataFrame(zyski_inwestorow_czas)
 
 # Wyświetlanie wyników
 st.header("Wyniki i stopy zwrotu")
@@ -78,4 +85,7 @@ if zysk_inwestorow > 0:
 else:
     st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik nie został obliczony, ponieważ zysk inwestorów jest ujemny lub równy zeru. Może to oznaczać, że inwestycja nie generuje wystarczającego zwrotu w stosunku do wkładu inwestorów.</div>", unsafe_allow_html=True)
 
-st.write("### Użyj tego modelu, aby symulować różne scenariusze, zmieniając założenia!")
+# Wizualizacja zysków inwestorów w czasie
+st.subheader("Zysk inwestorów w czasie")
+fig, ax = plt.subplots()
+ax.plot(zyski_inwestorow_df["Rok"], zyski_inwest
