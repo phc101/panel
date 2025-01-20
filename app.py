@@ -72,13 +72,14 @@ roi_inwestorow = (wycena_rok_8 * udzial_inwestorow) / pozyskany_kapital
 st.write(f"### Zysk inwestorów (nominalny): {zysk_inwestorow:,.2f} zł")
 st.write(f"### Zysk założycieli (nominalny): {zysk_zalozycieli:,.2f} zł")
 st.write(f"### Stopa zwrotu inwestorów (ROI): {roi_inwestorow:.2f}x")
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Stopa zwrotu inwestorów (ROI) pokazuje, ile razy inwestorzy odzyskują swój początkowy wkład kapitałowy. Wartość powyżej 1 oznacza, że inwestycja przynosi zysk, podczas gdy wartość poniżej 1 wskazuje na stratę.</div>", unsafe_allow_html=True)
 
 st.write(f"### Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów': {wartosc_biezaca / zysk_inwestorow:.2f}")
 
 # Interpretacja wskaźnika
 if zysk_inwestorow > 0:
     wskaznik = wartosc_biezaca / zysk_inwestorow
-    atrakcyjnosc = "bardzo atrakcyjna" if wskaznik <= 1.5 else "umiarkowanie atrakcyjna" if wskaznik <= 2.5 else "mało atrakcyjna"
+    atrakcyjnosc = "bardzo atrakcyjna" if wskaznik <= 1.5 else "dobrze wyważona" if wskaznik <= 2.0 else "umiarkowanie atrakcyjna" if wskaznik <= 2.5 else "mało atrakcyjna"
     st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów' wynosi {wskaznik:.2f}. Sugeruje, że inwestycja jest {atrakcyjnosc} dla inwestorów.</div>", unsafe_allow_html=True)
 else:
     st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik nie został obliczony, ponieważ zysk inwestorów jest ujemny lub równy zeru. Może to oznaczać, że inwestycja nie generuje wystarczającego zwrotu w stosunku do wkładu inwestorów.</div>", unsafe_allow_html=True)
