@@ -143,20 +143,20 @@ if all_cashflows:
         all_cashflows_df["Remaining Points"] * all_cashflows_df["Amount"]
     )
 
-    # L-Shape Chart
+    # Stair-Step Chart
     fig, ax = plt.subplots(figsize=(12, 6))
 
     for _, row in all_cashflows_df.iterrows():
-        # Horizontal line for the forward rate between Window Open Date and Maturity Date
-        ax.hlines(
-            row["Forward Rate (Window Open Date)"],
-            xmin=row["Window Open Date"],
-            xmax=row["Maturity Date"],
+        # Use `step` to connect lines with a stair-step pattern
+        ax.step(
+            [row["Window Open Date"], row["Maturity Date"]],
+            [row["Forward Rate (Window Open Date)"], row["Forward Rate (Window Open Date)"]],
+            where="post",
             color="blue",
-            linewidth=1.5,  # Narrower blue line
+            linewidth=1.5,
             alpha=0.7
         )
-        # Vertical line connecting Window Open Rate to the x-axis
+        # Add vertical line connecting Window Open Rate to the x-axis
         ax.axvline(
             x=row["Window Open Date"],
             color="gray",
@@ -172,7 +172,7 @@ if all_cashflows:
         )
 
     # Chart styling
-    ax.set_title("Forward Windows with L-Shape Representation", fontsize=16)
+    ax.set_title("Forward Windows with Stair-Step Representation", fontsize=16)
     ax.set_xlabel("Date", fontsize=12)
     ax.set_ylabel("Forward Rate (PLN)", fontsize=12)
     ax.grid(color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
