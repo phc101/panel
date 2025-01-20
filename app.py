@@ -3,13 +3,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Tytuł strony
-st.title("Wycena Premium Hedge 2025 - 2032")  # Tytuł aplikacji
+st.title("Wycena Premium Hedge 2025 - 2032")
 
 # Sekcja wejściowa
-st.header("Wprowadź swoje dane o przychodach i kosztach")  # Wyjaśnia, że użytkownik wprowadza swoje dane finansowe
+st.header("Wprowadź swoje dane o przychodach i kosztach")
 
 # Dane o przychodach i kosztach
-# Tabela danych do uzupełnienia
 data = {
     "Rok": [2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032],
     "Przychody netto (zł)": [0, 812500, 2372500, 4322500, 6272500, 8222500, 10172500, 12122500],
@@ -25,28 +24,28 @@ financial_data["Marża netto (%)"] = (financial_data["Zysk netto (zł)"] / finan
 # Wyświetlanie danych finansowych
 st.subheader("Prognozowane dane finansowe")
 st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Tabela pokazuje prognozowane przychody, koszty oraz wynikowy zysk netto dla każdego roku. Dane te są podstawą do dalszych obliczeń w modelu.</div>", unsafe_allow_html=True)
-st.write(financial_data)  # Wyświetla tabelę z prognozami finansowymi
+st.write(financial_data)
 
 # Założenia
 st.header("Kluczowe założenia")
-st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Założenia pozwalają dostosować model do rzeczywistości biznesowej. Możesz zmienić oczekiwaną marżę zysku, wskaźnik cena/zysk (P/E) oraz stopę dyskontową, które wpływają na wycenę firmy.</div>", unsafe_allow_html=True)  # Wyjaśnia, że poniżej można zmieniać założenia modelu
-profit_margin = st.slider("Oczekiwana marża zysku (rok 8, %):", 10, 80, 20) / 100  # Użytkownik może ustawić oczekiwaną marżę zysku, zakres do 80%  # Automatyczne wyliczenie marży zysku na podstawie danych za rok 8  # Oczekiwana marża zysku
-pe_multiple = st.slider("Wskaźnik cena/zysk (P/E):", 5, 25, 15)  # Współczynnik wyceny
-discount_rate = st.slider("Stopa dyskontowa (%):", 10, 50, 30) / 100  # Stopa dyskontowa do obliczenia wartości bieżącej
+st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Założenia pozwalają dostosować model do rzeczywistości biznesowej. Możesz zmienić oczekiwaną marżę zysku, wskaźnik cena/zysk (P/E) oraz stopę dyskontową, które wpływają na wycenę firmy.</div>", unsafe_allow_html=True)
+profit_margin = st.slider("Oczekiwana marża zysku (rok 8, %):", 10, 80, 20) / 100
+pe_multiple = st.slider("Wskaźnik cena/zysk (P/E):", 5, 25, 15)
+discount_rate = st.slider("Stopa dyskontowa (%):", 10, 50, 30) / 100
 
 # Obliczenie wyceny w roku 8
 przychody_rok_8 = financial_data[financial_data["Rok"] == 2032]["Przychody netto (zł)"].values[0]
-zysk_rok_8 = przychody_rok_8 * profit_margin  # Zysk netto w roku 8 = Przychody netto w roku 8 x Marża zysku (założona jako %)
-wycena_rok_8 = zysk_rok_8 * pe_multiple  # Wycena firmy w roku 8 = Zysk netto w roku 8 x Wskaźnik cena/zysk (P/E)
+zysk_rok_8 = przychody_rok_8 * profit_margin
+wycena_rok_8 = zysk_rok_8 * pe_multiple
 
 # Dyskontowanie do wartości bieżącej
 czynnik_dyskontowy = (1 + discount_rate) ** 8
-wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy  # Dyskontowanie wartości przyszłej wyceny do wartości bieżącej
+wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy
 
 # Definicje udziałów i kapitału
-udzial_inwestorow = st.slider("Udział inwestorów (%):", 10, 90, 30) / 100  # Inwestorzy otrzymują 30% udziałów
-pozyskany_kapital = wartosc_biezaca * udzial_inwestorow  # Kwota zainwestowana przez inwestorów
-udzial_zalozycieli = 1 - udzial_inwestorow  # Założyciele zachowują 70%
+udzial_inwestorow = st.slider("Udział inwestorów (%):", 10, 90, 30) / 100
+pozyskany_kapital = wartosc_biezaca * udzial_inwestorow
+udzial_zalozycieli = 1 - udzial_inwestorow
 
 # Obliczenie zysku inwestorów w czasie
 zyski_inwestorow_czas = []
@@ -88,4 +87,9 @@ else:
 # Wizualizacja zysków inwestorów w czasie
 st.subheader("Zysk inwestorów w czasie")
 fig, ax = plt.subplots()
-ax.plot(zyski_inwestorow_df["Rok"], zyski_inwest
+ax.plot(zyski_inwestorow_df["Rok"], zyski_inwestorow_df["Zysk inwestorów (zł)"], marker='o', linestyle='-', label="Zysk inwestorów")
+ax.set_xlabel("Rok")
+ax.set_ylabel("Zysk inwestorów (zł)")
+ax.set_title("Zysk inwestorów w czasie")
+ax.legend()
+st.pyplot(fig)
