@@ -63,24 +63,37 @@ with st.sidebar:
         "Adjust Forward Points up to Window Open Date (%)", 
         0.0, 1.30, 1.0, step=0.01
     )
-
-    # Ensure the tab corresponds to the month of the Window Open Date
-    if window_open_date.month != st.session_state.selected_month:
-        st.session_state.selected_month = window_open_date.month
+    add_6_months = st.checkbox("Add 6-Month Strip Forward")
+    add_12_months = st.checkbox("Add 12-Month Strip Forward")
 
     # Calculate maturity date
     maturity_date = window_open_date + timedelta(days=30 * window_tenor)
 
     if st.button("Add Cashflow"):
-        st.session_state.monthly_cashflows[st.session_state.selected_month].append({
-            "Currency": currency,
-            "Amount": amount,
-            "Window Open Date": str(window_open_date),  # Convert to string to ensure persistence
-            "Window Tenor (months)": window_tenor,
-            "Maturity Date": str(maturity_date),  # Convert to string to ensure persistence
-            "Spot Rate": spot_rate,
-            "Points Adjustment": points_adjustment,  # Save the points adjustment
-        })
+        if add_6_months or add_12_months:
+            num_forwards = 6 if add_6_months else 12
+            for i in range(num_forwards):
+                start_date = window_open_date + timedelta(days=30 * i)
+                maturity_date = start_date + timedelta(days=30 * window_tenor)
+                st.session_state.monthly_cashflows[start_date.month].append({
+                    "Currency": currency,
+                    "Amount": amount,
+                    "Window Open Date": str(start_date),  # Convert to string to ensure persistence
+                    "Window Tenor (months)": window_tenor,
+                    "Maturity Date": str(maturity_date),  # Convert to string to ensure persistence
+                    "Spot Rate": spot_rate,
+                    "Points Adjustment": points_adjustment,  # Save the points adjustment
+                })
+        else:
+            st.session_state.monthly_cashflows[window_open_date.month].append({
+                "Currency": currency,
+                "Amount": amount,
+                "Window Open Date": str(window_open_date),  # Convert to string to ensure persistence
+                "Window Tenor (months)": window_tenor,
+                "Maturity Date": str(maturity_date),  # Convert to string to ensure persistence
+                "Spot Rate": spot_rate,
+                "Points Adjustment": points_adjustment,  # Save the points adjustment
+            })
 
 # Display and edit cashflows for the selected month
 st.header(f"Cashflow Records for {selected_month}")
@@ -192,6 +205,15 @@ if all_cashflows:
     points_profit_summary["Profit in PLN"] = points_profit_summary["Profit in PLN"].round(2)
     st.table(points_profit_summary)
 
+    # Summary Section
+    total_amount = all_cashflows_df["Amount"].sum()
+    total_profit = all_cashflows_df["Profit in PLN"].sum()
+
+    st.write("### Summary")
+    st.write(f"**Total Amount:** {total_amount:,.2f}")
+    st.write(f"**Total Profit in PLN:** {total_profit:,.2f}")
+
 # Footer
 st.markdown("---")
 st.caption("Developed using Streamlit")
+
