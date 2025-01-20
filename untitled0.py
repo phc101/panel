@@ -61,7 +61,7 @@ with st.sidebar:
     spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.0001, key="spot_rate")
     points_adjustment = st.slider(
         "Adjust Forward Points up to Window Open Date (%)", 
-        0.0, 1.0, 1.0, step=0.01
+        0.0, 1.30, 1.0, step=0.01
     )
 
     # Ensure the tab corresponds to the month of the Window Open Date
@@ -129,6 +129,9 @@ if all_cashflows:
         ),
         axis=1
     )
+    all_cashflows_df["Forward Points"] = (
+        all_cashflows_df["Forward Rate (Window Open Date)"] - all_cashflows_df["Spot Rate"]
+    )
 
     # Enhanced Chart: L-Shape for Forward Rates with Custom Date Axis
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -183,6 +186,14 @@ if all_cashflows:
         })
     aggregated_df = pd.DataFrame(aggregated_results)
     st.table(aggregated_df)
+
+    # Additional Table: Forward Points
+    st.header("Forward Points Summary")
+    forward_points_summary = all_cashflows_df[[
+        "Currency", "Amount", "Spot Rate", "Forward Rate (Window Open Date)", "Forward Points"
+    ]]
+    forward_points_summary["Forward Points"] = forward_points_summary["Forward Points"].round(4)
+    st.table(forward_points_summary)
 
 # Footer
 st.markdown("---")
