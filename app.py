@@ -30,7 +30,7 @@ st.write(financial_data)  # Wyświetla tabelę z prognozami finansowymi
 st.header("Kluczowe założenia")
 st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Założenia pozwalają dostosować model do rzeczywistości biznesowej. Możesz zmienić oczekiwaną marżę zysku, wskaźnik cena/zysk (P/E) oraz stopę dyskontową, które wpływają na wycenę firmy.</div>", unsafe_allow_html=True)  # Wyjaśnia, że poniżej można zmieniać założenia modelu
 przychody_rok_8 = financial_data[financial_data["Rok"] == 2032]["Przychody netto (zł)"].values[0]
-koszty_rok_8 = financial_data[financial_data["Rok"] == 2032]["Koszty (zł)"].values[0]
+koszty_rok_8 = financial_data[financial_data["Rok"] == 2032]["Koszty operacyjne (zł)"].values[0]
 profit_margin = st.slider("Oczekiwana marża zysku (rok 8, %):", 10, 80, 20) / 100  # Użytkownik może ustawić oczekiwaną marżę zysku, zakres do 80%  # Automatyczne wyliczenie marży zysku na podstawie danych za rok 8  # Oczekiwana marża zysku
 pe_multiple = st.slider("Wskaźnik cena/zysk (P/E):", 5, 25, 15)  # Współczynnik wyceny
 discount_rate = st.slider("Stopa dyskontowa (%):", 10, 50, 30) / 100  # Stopa dyskontowa do obliczenia wartości bieżącej
