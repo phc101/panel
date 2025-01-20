@@ -45,6 +45,11 @@ with st.sidebar:
     global_domestic_rate = st.slider("Global Domestic Interest Rate (%)", 0.0, 10.0, 5.0, step=0.25) / 100
     global_foreign_rate = st.slider("Global Foreign Interest Rate (%)", 0.0, 10.0, 3.0, step=0.25) / 100
 
+# Global slider for adjusting points up to window open dynamically
+global_points_adjustment = st.sidebar.slider(
+    "Adjust Forward Points Globally (% up to Window Open Date)", 0.0, 1.0, 0.5, step=0.01
+)
+
 # Horizontal bookmarks for month navigation
 selected_month = st.radio(
     "Months", MONTH_NAMES, index=st.session_state.selected_month - 1, horizontal=True
@@ -59,10 +64,6 @@ with st.sidebar:
     window_open_date = st.date_input("Window Open Date", min_value=datetime.today(), key="window_open_date")
     window_tenor = st.number_input("Window Tenor (in months)", min_value=1, value=1, step=1, key="window_tenor")
     spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.0001, key="spot_rate")
-    points_adjustment = st.slider(
-        "Adjust Forward Points up to Window Open Date (%)", 
-        0.0, 1.0, 0.5, step=0.01
-    )
     add_6_months = st.checkbox("Add 6-Month Strip Forward")
     add_12_months = st.checkbox("Add 12-Month Strip Forward")
 
@@ -82,7 +83,6 @@ with st.sidebar:
                     "Window Tenor (months)": window_tenor,
                     "Maturity Date": str(maturity_date),  # Convert to string to ensure persistence
                     "Spot Rate": spot_rate,
-                    "Points Adjustment": points_adjustment,  # Save the points adjustment
                 })
         else:
             st.session_state.monthly_cashflows[window_open_date.month].append({
@@ -92,34 +92,7 @@ with st.sidebar:
                 "Window Tenor (months)": window_tenor,
                 "Maturity Date": str(maturity_date),  # Convert to string to ensure persistence
                 "Spot Rate": spot_rate,
-                "Points Adjustment": points_adjustment,  # Save the points adjustment
             })
-
-# Display and edit cashflows for the selected month
-st.header(f"Cashflow Records for {selected_month}")
-
-if len(st.session_state.monthly_cashflows[st.session_state.selected_month]) > 0:
-    # Button to delete all records
-    if st.button("Delete All"):
-        st.session_state.monthly_cashflows[st.session_state.selected_month] = []
-
-    # Editable table simulation with delete buttons
-    for idx, cashflow in enumerate(st.session_state.monthly_cashflows[st.session_state.selected_month], start=1):
-        st.write(f"Record {idx}:")
-        col1, col2 = st.columns([9, 1])
-        with col1:
-            st.write(f"""
-            - Currency: {cashflow['Currency']}
-            - Amount: {cashflow['Amount']}
-            - Window Open Date: {cashflow['Window Open Date']}
-            - Window Tenor: {cashflow['Window Tenor (months)']} months
-            - Maturity Date: {cashflow['Maturity Date']}
-            - Spot Rate: {cashflow['Spot Rate']}
-            - Forward Points Adjustment: {cashflow['Points Adjustment'] * 100:.2f}%
-            """)
-        with col2:
-            if st.button("🗑", key=f"delete_{idx}"):
-                st.session_state.monthly_cashflows[st.session_state.selected_month].pop(idx - 1)
 
 # Generate a chart for all records across months
 st.header("Forward Window Overview")
@@ -132,13 +105,13 @@ if all_cashflows:
     all_cashflows_df["Window Open Date"] = pd.to_datetime(all_cashflows_df["Window Open Date"])
     all_cashflows_df["Maturity Date"] = pd.to_datetime(all_cashflows_df["Maturity Date"])
 
-    # Calculate forward rates
+    # Calculate forward rates dynamically based on the global adjustment
     all_cashflows_df["Forward Rate (Window Open Date)"] = all_cashflows_df.apply(
         lambda row: row["Spot Rate"] + (
             (calculate_forward_rate(
                 row["Spot Rate"], global_domestic_rate, global_foreign_rate,
                 (row["Window Open Date"] - datetime.today()).days
-            ) - row["Spot Rate"]) * row["Points Adjustment"]
+            ) - row["Spot Rate"]) * global_points_adjustment
         ),
         axis=1
     )
