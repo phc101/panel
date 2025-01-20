@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 # Tytuł strony
-st.title("Wycena Premium Hedge")  # Tytuł aplikacji
+st.title("Model Finansowania i Wyceny Startupu")  # Tytuł aplikacji
 
 # Sekcja wejściowa
 st.header("Wprowadź swoje dane o przychodach i kosztach")  # Wyjaśnia, że użytkownik wprowadza swoje dane finansowe
@@ -19,6 +19,7 @@ data = {
 # Tworzenie DataFrame
 financial_data = pd.DataFrame(data)
 financial_data["Zysk netto (zł)"] = financial_data["Przychody netto (zł)"] - financial_data["Koszty operacyjne (zł)"] + financial_data["Prowizja sprzedażowa (zł)"]
+financial_data["Marża netto (%)"] = (financial_data["Zysk netto (zł)"] / financial_data["Przychody netto (zł)"]) * 100
 
 # Wyświetlanie danych finansowych
 st.subheader("Prognozowane dane finansowe")
