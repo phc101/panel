@@ -145,8 +145,10 @@ if all_cashflows:
     all_cashflows_df["Points Difference"] = (
         all_cashflows_df["Forward Points at Maturity Date"] - all_cashflows_df["Forward Points at Window Open Date"]
     )
-    all_cashflows_df["Profit %"] = (
-        all_cashflows_df["Points Difference"] / all_cashflows_df["Forward Points at Window Open Date"] * 100
+    all_cashflows_df["Profit %"] = all_cashflows_df.apply(
+        lambda row: (row["Points Difference"] / row["Forward Points at Window Open Date"] * 100)
+        if row["Forward Points at Window Open Date"] != 0 else 0,
+        axis=1
     )
     all_cashflows_df["Profit Nominal"] = (
         all_cashflows_df["Points Difference"] * all_cashflows_df["Amount"]
