@@ -123,7 +123,7 @@ if all_cashflows:
         axis=1
     )
     all_cashflows_df["Points to Window Open"] = (
-        (all_cashflows_df["Forward Rate (Window Open Date)"] - all_cashflows_df["Spot Rate"])
+        all_cashflows_df["Forward Rate (Window Open Date)"] - all_cashflows_df["Spot Rate"]
     )
     all_cashflows_df["Window Open Outright"] = (
         all_cashflows_df["Forward Rate (Window Open Date)"] - all_cashflows_df["Spot Rate"]
@@ -132,7 +132,7 @@ if all_cashflows:
         all_cashflows_df["Spot Rate"] + all_cashflows_df["Window Open Outright"]
     )
     all_cashflows_df["Remaining Points"] = (
-        all_cashflows_df["Window Open Price"] - all_cashflows_df["Window Open Outright"]
+        all_cashflows_df["Forward Rate (Window Open Date)"] - all_cashflows_df["Spot Rate"]
     )
     all_cashflows_df["Points from Window"] = (
         all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Forward Rate (Window Open Date)"]
