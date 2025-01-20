@@ -44,7 +44,7 @@ wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy
 
 # Definicje udziałów i kapitału
 udzial_inwestorow = st.slider("Udział inwestorów (%):", 10, 90, 30) / 100
-pozyskany_kapital = wartosc_biezaca * udzial_inwestorow
+pozyskany_kapital = sum(financial_data["Koszty operacyjne (zł)"].iloc[:3])
 udzial_zalozycieli = 1 - udzial_inwestorow
 
 # Obliczenie zysku inwestorów w czasie
@@ -84,12 +84,4 @@ if zysk_inwestorow > 0:
 else:
     st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik nie został obliczony, ponieważ zysk inwestorów jest ujemny lub równy zeru. Może to oznaczać, że inwestycja nie generuje wystarczającego zwrotu w stosunku do wkładu inwestorów.</div>", unsafe_allow_html=True)
 
-# Wizualizacja zysków inwestorów w czasie
-st.subheader("Zysk inwestorów w czasie")
-fig, ax = plt.subplots()
-ax.plot(zyski_inwestorow_df["Rok"], zyski_inwestorow_df["Zysk inwestorów (zł)"], marker='o', linestyle='-', label="Zysk inwestorów")
-ax.set_xlabel("Rok")
-ax.set_ylabel("Zysk inwestorów (zł)")
-ax.set_title("Zysk inwestorów w czasie")
-ax.legend()
-st.pyplot(fig)
+
