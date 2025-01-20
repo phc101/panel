@@ -44,7 +44,7 @@ wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy
 
 # Definicje udziałów i kapitału
 udzial_inwestorow = st.slider("Udział inwestorów (%):", 10, 90, 30) / 100
-pozyskany_kapital = wartosc_biezaca * udzial_inwestorow
+pozyskany_kapital = sum(financial_data["Koszty operacyjne (zł)"].iloc[:3])
 udzial_zalozycieli = 1 - udzial_inwestorow
 
 # Obliczenie zysku inwestorów w czasie
