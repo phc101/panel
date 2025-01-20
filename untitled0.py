@@ -136,8 +136,14 @@ if all_cashflows:
         ),
         axis=1
     )
+    all_cashflows_df["Points to Window Open"] = (
+        all_cashflows_df["Forward Rate (Window Open Date)"] - all_cashflows_df["Spot Rate"]
+    )
     all_cashflows_df["Remaining Points"] = (
         all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Forward Rate (Window Open Date)"]
+    )
+    all_cashflows_df["Total Points"] = (
+        all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Spot Rate"]
     )
     all_cashflows_df["Profit in PLN"] = (
         all_cashflows_df["Remaining Points"] * all_cashflows_df["Amount"]
@@ -147,7 +153,6 @@ if all_cashflows:
     fig, ax = plt.subplots(figsize=(12, 6))
 
     for _, row in all_cashflows_df.iterrows():
-        # Use `step` to connect lines with a stair-step pattern
         ax.step(
             [row["Window Open Date"], row["Maturity Date"]],
             [row["Forward Rate (Window Open Date)"], row["Forward Rate (Window Open Date)"]],
@@ -156,14 +161,12 @@ if all_cashflows:
             linewidth=1.5,
             alpha=0.7
         )
-        # Add vertical line connecting Window Open Rate to the x-axis
         ax.axvline(
             x=row["Window Open Date"],
             color="gray",
             linestyle="--",
             alpha=0.5
         )
-        # Highlight the starting point (Window Open Rate)
         ax.scatter(
             row["Window Open Date"],
             row["Forward Rate (Window Open Date)"],
@@ -171,7 +174,6 @@ if all_cashflows:
             s=80
         )
 
-    # Chart styling
     ax.set_title("Forward Windows with Stair-Step Representation", fontsize=16)
     ax.set_xlabel("Date", fontsize=12)
     ax.set_ylabel("Forward Rate (PLN)", fontsize=12)
@@ -179,12 +181,14 @@ if all_cashflows:
     plt.tight_layout()
     st.pyplot(fig)
 
-    # Remaining Points and Profit Summary Table
-    st.header("Remaining Points and Profit Summary")
+    # Points and Profit Summary
+    st.header("Points and Profit Summary")
     points_profit_summary = all_cashflows_df[[
-        "Currency", "Amount", "Remaining Points", "Profit in PLN"
+        "Currency", "Amount", "Points to Window Open", "Remaining Points", "Total Points", "Profit in PLN"
     ]]
+    points_profit_summary["Points to Window Open"] = points_profit_summary["Points to Window Open"].round(4)
     points_profit_summary["Remaining Points"] = points_profit_summary["Remaining Points"].round(4)
+    points_profit_summary["Total Points"] = points_profit_summary["Total Points"].round(4)
     points_profit_summary["Profit in PLN"] = points_profit_summary["Profit in PLN"].round(2)
     st.table(points_profit_summary)
 
