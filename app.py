@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 # Tytuł strony
-st.title("Wycena Premium Hedge)  # Tytuł aplikacji
+st.title("Wycena Premium Hedge")  # Tytuł aplikacji
 
 # Sekcja wejściowa
 st.header("Wprowadź swoje dane o przychodach i kosztach")  # Wyjaśnia, że użytkownik wprowadza swoje dane finansowe
