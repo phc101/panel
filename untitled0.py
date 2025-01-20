@@ -129,71 +129,38 @@ if all_cashflows:
         ),
         axis=1
     )
-    all_cashflows_df["Forward Points"] = (
+    all_cashflows_df["Forward Rate (Maturity Date)"] = all_cashflows_df.apply(
+        lambda row: calculate_forward_rate(
+            row["Spot Rate"], global_domestic_rate, global_foreign_rate,
+            (row["Maturity Date"] - datetime.today()).days
+        ),
+        axis=1
+    )
+    all_cashflows_df["Forward Points at Window Open Date"] = (
         all_cashflows_df["Forward Rate (Window Open Date)"] - all_cashflows_df["Spot Rate"]
     )
-
-    # Enhanced Chart: L-Shape for Forward Rates with Custom Date Axis
-    fig, ax = plt.subplots(figsize=(12, 6))
-
-    # Collect all relevant dates for the x-axis
-    x_ticks = sorted(
-        set(all_cashflows_df["Window Open Date"].tolist() + all_cashflows_df["Maturity Date"].tolist())
+    all_cashflows_df["Forward Points at Maturity Date"] = (
+        all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Spot Rate"]
+    )
+    all_cashflows_df["Points Difference"] = (
+        all_cashflows_df["Forward Points at Maturity Date"] - all_cashflows_df["Forward Points at Window Open Date"]
+    )
+    all_cashflows_df["Profit %"] = (
+        all_cashflows_df["Points Difference"] / all_cashflows_df["Forward Points at Window Open Date"] * 100
+    )
+    all_cashflows_df["Profit Nominal"] = (
+        all_cashflows_df["Points Difference"] * all_cashflows_df["Amount"]
     )
 
-    for _, row in all_cashflows_df.iterrows():
-        # Plot the horizontal line for the forward rate between Window Open Date and Maturity Date
-        ax.hlines(
-            row["Forward Rate (Window Open Date)"], 
-            xmin=row["Window Open Date"], 
-            xmax=row["Maturity Date"], 
-            color="blue", label="Forward Rate", linewidth=2, alpha=0.7
-        )
-        # Add vertical line connecting Window Open Rate to x-axis
-        ax.axvline(
-            x=row["Window Open Date"], 
-            color="gray", linestyle="--", alpha=0.5
-        )
-        # Highlight the starting point (Window Open Rate)
-        ax.scatter(
-            row["Window Open Date"], row["Forward Rate (Window Open Date)"], 
-            color="orange", s=80, label="Window Open Rate"
-        )
-
-    # Chart styling
-    ax.set_title("Forward Windows with L-Shape Representation", fontsize=16)
-    ax.set_xlabel("Date", fontsize=12)
-    ax.set_ylabel("Forward Rate (PLN)", fontsize=12)
-    ax.set_xticks(x_ticks)  # Set x-axis ticks to relevant dates
-    ax.set_xticklabels([date.strftime('%Y-%m-%d') for date in x_ticks], rotation=45, fontsize=10)
-    ax.grid(color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
-    ax.legend(loc="upper left", fontsize=10)
-    plt.tight_layout()
-    st.pyplot(fig)
-
-    # Aggregated Table: Add Window Open Forward Rate
-    st.header("Aggregated Cashflow Summary")
-    aggregated_results = []
-    for _, row in all_cashflows_df.iterrows():
-        aggregated_results.append({
-            "Currency": row["Currency"],
-            "Amount": row["Amount"],
-            "Window Open Date": row["Window Open Date"].strftime("%Y-%m-%d"),
-            "Window Tenor (months)": row["Window Tenor (months)"],
-            "Maturity Date": row["Maturity Date"].strftime("%Y-%m-%d"),
-            "Spot Rate": row["Spot Rate"],
-            "Forward Rate (Window Open Date)": row["Forward Rate (Window Open Date)"],
-        })
-    aggregated_df = pd.DataFrame(aggregated_results)
-    st.table(aggregated_df)
-
-    # Additional Table: Forward Points
-    st.header("Forward Points Summary")
-    forward_points_summary = all_cashflows_df[[
-        "Currency", "Amount", "Spot Rate", "Forward Rate (Window Open Date)", "Forward Points"
+    # Additional Table: Forward Points and Profit
+    st.header("Forward Points and Profit Summary")
+    points_profit_summary = all_cashflows_df[[
+        "Currency", "Amount", "Forward Points at Window Open Date", 
+        "Forward Points at Maturity Date", "Points Difference", "Profit %", "Profit Nominal"
     ]]
-    forward_points_summary["Forward Points"] = forward_points_summary["Forward Points"].round(4)
-    st.table(forward_points_summary)
+    points_profit_summary["Profit %"] = points_profit_summary["Profit %"].round(2)
+    points_profit_summary["Profit Nominal"] = points_profit_summary["Profit Nominal"].round(2)
+    st.table(points_profit_summary)
 
 # Footer
 st.markdown("---")
