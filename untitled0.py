@@ -125,12 +125,27 @@ if all_cashflows:
     all_cashflows_df["Points to Window Open"] = (
         (all_cashflows_df["Forward Rate (Window Open Date)"] - all_cashflows_df["Spot Rate"])
     )
+    all_cashflows_df["Window Open Outright"] = (
+        all_cashflows_df["Forward Rate (Window Open Date)"] - all_cashflows_df["Spot Rate"]
+    )
+    all_cashflows_df["Window Open Price"] = (
+        all_cashflows_df["Spot Rate"] + all_cashflows_df["Window Open Outright"]
+    )
     all_cashflows_df["Remaining Points"] = (
-        (all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Spot Rate"]) 
-        - all_cashflows_df["Points to Window Open"]
+        all_cashflows_df["Window Open Price"] - all_cashflows_df["Window Open Outright"]
+    )
+    all_cashflows_df["Points from Window"] = (
+        all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Forward Rate (Window Open Date)"]
+    )
+    all_cashflows_df["Window Open Profit"] = (
+        all_cashflows_df["Remaining Points"] * all_cashflows_df["Amount"]
+    )
+    all_cashflows_df["Maturity Profit"] = (
+        (all_cashflows_df["Points from Window"] + all_cashflows_df["Remaining Points"])
+        * all_cashflows_df["Amount"]
     )
     all_cashflows_df["Total Points"] = (
-        all_cashflows_df["Points to Window Open"] + all_cashflows_df["Remaining Points"]
+        all_cashflows_df["Points to Window Open"] + all_cashflows_df["Points from Window"]
     )
     all_cashflows_df["Profit in PLN"] = (
         all_cashflows_df["Total Points"] * all_cashflows_df["Amount"]
@@ -171,13 +186,19 @@ if all_cashflows:
     # Points and Profit Summary
     st.header("Points and Profit Summary")
     points_profit_summary = all_cashflows_df[[
-        "Currency", "Window Open Date", "Maturity Date", "Amount", "Forward Rate (Window Open Date)", 
-        "Points to Window Open", "Remaining Points", "Total Points", "Profit in PLN"
+        "Currency", "Window Open Date", "Maturity Date", "Amount", "Spot Rate",
+        "Window Open Outright", "Window Open Price", "Remaining Points", 
+        "Points from Window", "Window Open Profit", "Maturity Profit",
+        "Points to Window Open", "Total Points", "Profit in PLN"
     ]]
-    points_profit_summary["Points to Window Open"] = points_profit_summary["Points to Window Open"].round(4)
+    points_profit_summary["Window Open Outright"] = points_profit_summary["Window Open Outright"].round(4)
+    points_profit_summary["Window Open Price"] = points_profit_summary["Window Open Price"].round(4)
     points_profit_summary["Remaining Points"] = points_profit_summary["Remaining Points"].round(4)
+    points_profit_summary["Points from Window"] = points_profit_summary["Points from Window"].round(4)
+    points_profit_summary["Window Open Profit"] = points_profit_summary["Window Open Profit"].round(2)
+    points_profit_summary["Maturity Profit"] = points_profit_summary["Maturity Profit"].round(2)
+    points_profit_summary["Points to Window Open"] = points_profit_summary["Points to Window Open"].round(4)
     points_profit_summary["Total Points"] = points_profit_summary["Total Points"].round(4)
-    points_profit_summary["Forward Rate (Window Open Date)"] = points_profit_summary["Forward Rate (Window Open Date)"].round(4)
     points_profit_summary["Profit in PLN"] = points_profit_summary["Profit in PLN"].round(2)
     st.table(points_profit_summary)
 
