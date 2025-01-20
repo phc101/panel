@@ -61,7 +61,7 @@ with st.sidebar:
     spot_rate = st.number_input("Spot Rate", min_value=0.0, value=4.5, step=0.0001, key="spot_rate")
     points_adjustment = st.slider(
         "Adjust Forward Points up to Window Open Date (%)", 
-        0.0, 1.30, 1.0, step=0.01
+        0.0, 1.0, 0.5, step=0.01
     )
     add_6_months = st.checkbox("Add 6-Month Strip Forward")
     add_12_months = st.checkbox("Add 12-Month Strip Forward")
@@ -150,13 +150,14 @@ if all_cashflows:
         axis=1
     )
     all_cashflows_df["Points to Window Open"] = (
-        all_cashflows_df["Forward Rate (Window Open Date)"] - all_cashflows_df["Spot Rate"]
+        (all_cashflows_df["Forward Rate (Window Open Date)"] - all_cashflows_df["Spot Rate"])
     )
     all_cashflows_df["Remaining Points"] = (
-        all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Forward Rate (Window Open Date)"]
+        (all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Spot Rate"]) 
+        - all_cashflows_df["Points to Window Open"]
     )
     all_cashflows_df["Total Points"] = (
-        all_cashflows_df["Forward Rate (Maturity Date)"] - all_cashflows_df["Spot Rate"]
+        all_cashflows_df["Points to Window Open"] + all_cashflows_df["Remaining Points"]
     )
     all_cashflows_df["Profit in PLN"] = (
         all_cashflows_df["Total Points"] * all_cashflows_df["Amount"]
