@@ -197,12 +197,13 @@ if all_cashflows:
     # Points and Profit Summary
     st.header("Points and Profit Summary")
     points_profit_summary = all_cashflows_df[[
-        "Currency", "Window Open Date", "Maturity Date", "Amount", "Points to Window Open", 
-        "Remaining Points", "Total Points", "Profit in PLN"
+        "Currency", "Window Open Date", "Maturity Date", "Amount", "Forward Rate (Window Open Date)", 
+        "Points to Window Open", "Remaining Points", "Total Points", "Profit in PLN"
     ]]
     points_profit_summary["Points to Window Open"] = points_profit_summary["Points to Window Open"].round(4)
     points_profit_summary["Remaining Points"] = points_profit_summary["Remaining Points"].round(4)
     points_profit_summary["Total Points"] = points_profit_summary["Total Points"].round(4)
+    points_profit_summary["Forward Rate (Window Open Date)"] = points_profit_summary["Forward Rate (Window Open Date)"].round(4)
     points_profit_summary["Profit in PLN"] = points_profit_summary["Profit in PLN"].round(2)
     st.table(points_profit_summary)
 
