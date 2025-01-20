@@ -45,7 +45,7 @@ czynnik_dyskontowy = (1 + discount_rate) ** 8
 wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy  # Dyskontowanie wartości przyszłej wyceny do wartości bieżącej
 
 # Definicje udziałów i kapitału
-udzial_inwestorow = 0.3  # Inwestorzy otrzymują 30% udziałów
+udzial_inwestorow = st.slider("Udział inwestorów (%):", 10, 90, 30) / 100  # Inwestorzy otrzymują 30% udziałów
 pozyskany_kapital = 3_700_000  # Ręczna kwota pozyskana od inwestorów w zamian za 30% udziałów  # Kwota zainwestowana przez inwestorów
 udzial_zalozycieli = 1 - udzial_inwestorow  # Założyciele zachowują 70%
 
@@ -73,7 +73,7 @@ st.write(f"### Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów': {wartos
 # Interpretacja wskaźnika
 if zysk_inwestorow > 0:
     wskaznik = wartosc_biezaca / zysk_inwestorow
-    atrakcyjnosc = "bardzo atrakcyjnie" if wskaznik <= 1.5 else "umiarkowanie atrakcyjnie" if wskaznik <= 3 else "mało atrakcyjnie"
+    atrakcyjnosc = "bardzo atrakcyjna" if wskaznik <= 1.5 else "umiarkowanie atrakcyjna" if wskaznik <= 3 else "mało atrakcyjna"
     st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów' wynosi {wskaznik:.2f}. Sugeruje, że inwestycja jest {atrakcyjnosc} dla inwestorów.</div>", unsafe_allow_html=True)
 else:
     st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik nie został obliczony, ponieważ zysk inwestorów jest ujemny lub równy zeru. Może to oznaczać, że inwestycja nie generuje wystarczającego zwrotu w stosunku do wkładu inwestorów.</div>", unsafe_allow_html=True)
