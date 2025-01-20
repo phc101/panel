@@ -44,7 +44,7 @@ wartosc_biezaca = wycena_rok_8 / czynnik_dyskontowy
 
 # Definicje udziałów i kapitału
 udzial_inwestorow = st.slider("Udział inwestorów (%):", 10, 90, 30) / 100
-pozyskany_kapital = sum(financial_data["Koszty operacyjne (zł)"].iloc[:3])
+pozyskany_kapital = wartosc_biezaca * udzial_inwestorow
 udzial_zalozycieli = 1 - udzial_inwestorow
 
 # Obliczenie zysku inwestorów w czasie
@@ -66,20 +66,19 @@ st.write(f"### Udział inwestorów: {udzial_inwestorow * 100:.2f}%")
 # Obliczenie stopy zwrotu (ROI) i zysków nominalnych
 zysk_inwestorow = wycena_rok_8 * udzial_inwestorow - pozyskany_kapital
 zysk_zalozycieli = wycena_rok_8 * udzial_zalozycieli
-roi_inwestorow = wycena_rok_8 * udzial_inwestorow / pozyskany_kapital
+roi_inwestorow = (wycena_rok_8 * udzial_inwestorow) / pozyskany_kapital
 
 # Wyświetlanie stóp zwrotu i zysków nominalnych
 st.write(f"### Zysk inwestorów (nominalny): {zysk_inwestorow:,.2f} zł")
 st.write(f"### Zysk założycieli (nominalny): {zysk_zalozycieli:,.2f} zł")
 st.write(f"### Stopa zwrotu inwestorów (ROI): {roi_inwestorow:.2f}x")
 
-st.write(f"### Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów': {wartosc_biezaca / zysk_inwestorow:.2f}"
-          if zysk_inwestorow > 0 else "Wskaźnik nie został obliczony")
+st.write(f"### Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów': {wartosc_biezaca / zysk_inwestorow:.2f}")
 
 # Interpretacja wskaźnika
 if zysk_inwestorow > 0:
     wskaznik = wartosc_biezaca / zysk_inwestorow
-    atrakcyjnosc = "bardzo atrakcyjna" if wskaznik <= 1.5 else "umiarkowanie atrakcyjna" if wskaznik <= 3 else "mało atrakcyjna"
+    atrakcyjnosc = "bardzo atrakcyjna" if wskaznik <= 1.5 else "umiarkowanie atrakcyjna" if wskaznik <= 2.5 else "mało atrakcyjna"
     st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik 'Wartość bieżąca firmy / Zysk inwestorów' wynosi {wskaznik:.2f}. Sugeruje, że inwestycja jest {atrakcyjnosc} dla inwestorów.</div>", unsafe_allow_html=True)
 else:
     st.markdown("<div style='border: 1px solid #ddd; padding: 10px;'>Wskaźnik nie został obliczony, ponieważ zysk inwestorów jest ujemny lub równy zeru. Może to oznaczać, że inwestycja nie generuje wystarczającego zwrotu w stosunku do wkładu inwestorów.</div>", unsafe_allow_html=True)
