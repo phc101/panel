@@ -18,7 +18,7 @@ data = {
 
 # Tworzenie DataFrame
 financial_data = pd.DataFrame(data)
-financial_data["Zysk netto (zł)"] = financial_data["Przychody netto (zł)"] - financial_data["Koszty operacyjne (zł)"] + financial_data["Prowizja sprzedażowa (zł)"]financial_data["Przychody netto (zł)"] - financial_data["Koszty (zł)"]
+financial_data["Zysk netto (zł)"] = financial_data["Przychody netto (zł)"] - financial_data["Koszty operacyjne (zł)"] + financial_data["Prowizja sprzedażowa (zł)"]
 
 # Wyświetlanie danych finansowych
 st.subheader("Prognozowane dane finansowe")
