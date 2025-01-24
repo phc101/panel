@@ -58,6 +58,14 @@ if st.sidebar.button("Reset Trades"):
     st.session_state.trades = []
     st.success("All trades have been removed!")
 
+# Remove Last Trade Button
+if st.sidebar.button("Remove Last Trade"):
+    if st.session_state.trades:
+        removed_trade = st.session_state.trades.pop()
+        st.success(f"Last trade removed: {removed_trade['action']} {removed_trade['type']} at Strike {removed_trade['strike']:.4f}")
+    else:
+        st.warning("No trades to remove!")
+
 # Plot the Chart at the Top
 if st.session_state.trades:
     fig, ax = plt.subplots(figsize=(10, 6))
