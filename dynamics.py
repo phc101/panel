@@ -86,7 +86,32 @@ else:
             "notional": notional
         })
 
-    # Display Net Premium Above Current Trades
+    # Display Chart
+    fig, ax = plt.subplots(figsize=(10, 6))
+    maturity_months = [trade["maturity_months"] for trade in trades]
+    max_prices = [trade["strike"] for trade in trades if trade["type"] == "Max Price"]
+    min_prices = [trade["strike"] for trade in trades if trade["type"] == "Min Price"]
+
+    ax.step(maturity_months, max_prices, color="green", linestyle="--", label="Max Price (Call)")
+    ax.step(maturity_months, min_prices, color="red", linestyle="--", label="Min Price (Put)")
+
+    # Labels for Right and Left Axis
+    ax.annotate("Max Participation Price", xy=(12, max_prices[-1]), xytext=(13, max_prices[-1]),
+                color="green", fontsize=10, ha="left", va="center")
+    ax.annotate("Hedged Price", xy=(12, min_prices[-1]), xytext=(13, min_prices[-1]),
+                color="red", fontsize=10, ha="left", va="center")
+    ax.annotate("Spot Price", xy=(0, spot_rate), xytext=(-1.0, spot_rate),
+                color="blue", fontsize=10, ha="right", va="center")
+
+    ax.set_title("Trades Visualization (Stair Step)")
+    ax.set_xlabel("Time to Maturity (Months)")
+    ax.set_ylabel("Strike Prices (PLN)")
+    ax.grid(True, linewidth=0.5, alpha=0.3)
+    ax.set_xlim(left=0, right=13)
+    ax.set_ylim(min(min_prices) - 0.01, max(max_prices) + 0.01)
+    st.pyplot(fig)
+
+    # Display Net Premium
     net_premium = 0
     for trade in trades:
         price = fx_option_pricer(
