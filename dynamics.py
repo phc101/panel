@@ -18,7 +18,7 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
     return price * notional
 
 # Streamlit App
-st.title("EUR/PLN FX Option Pricer")
+st.title("EUR/PLN FX Option Pricer with Auto-Generated Trades")
 
 # Allow user to manually input the spot rate
 spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.3150, step=0.0001, format="%.4f")
@@ -39,31 +39,29 @@ st.sidebar.header("Add a Trade")
 trade_type = st.sidebar.radio("Trade Type", ["Max Price", "Min Price"])
 action = st.sidebar.radio("Action", ["Buy", "Sell"])
 strike_price = st.sidebar.number_input(f"{trade_type} Strike Price", value=float(spot_rate), step=0.0001, format="%.4f")
-time_to_maturity_months = st.sidebar.number_input("Time to Maturity (in months)", value=3, step=1, min_value=1)
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 
 # Add Trade Button
 if st.sidebar.button("Add Trade"):
-    st.session_state.trades.append({
-        "type": trade_type,
-        "action": action,
-        "strike": strike_price,
-        "maturity_months": time_to_maturity_months,
-        "notional": notional
-    })
-    st.success(f"{action} {trade_type} at Strike {strike_price:.4f} added!")
-
-# Add Min Price Button
-if st.sidebar.button("Add Min Price"):
-    predefined_trade = {
-        "type": "Min Price",
-        "action": "Buy",
-        "strike": spot_rate,  # Default strike is the current spot rate
-        "maturity_months": 3,  # Default maturity in months
-        "notional": 100000.0  # Default notional amount
-    }
-    st.session_state.trades.append(predefined_trade)
-    st.success(f"Predefined trade added: Buy Min Price at Strike {spot_rate:.4f}")
+    if not st.session_state.trades:  # If no trades exist, auto-generate 12 trades
+        for i in range(12):
+            st.session_state.trades.append({
+                "type": trade_type,
+                "action": action,
+                "strike": strike_price + (i * 0.01),  # Increment strike by 0.01 for each trade
+                "maturity_months": i + 1,  # Maturity from 1 month to 12 months
+                "notional": notional
+            })
+        st.success(f"12 trades auto-generated for {trade_type} starting at Strike {strike_price:.4f}")
+    else:  # Otherwise, add the single trade
+        st.session_state.trades.append({
+            "type": trade_type,
+            "action": action,
+            "strike": strike_price,
+            "maturity_months": 1,  # Default to 1-month maturity for single trade
+            "notional": notional
+        })
+        st.success(f"{action} {trade_type} at Strike {strike_price:.4f} added!")
 
 # Reset Trades Button
 if st.sidebar.button("Reset Trades"):
