@@ -93,7 +93,7 @@ ax.annotate("Max Participation Price", xy=(12, max_prices[-1]), xytext=(13, max_
             color="green", fontsize=10, ha="left", va="center")
 ax.annotate("Hedged Price", xy=(12, min_prices[-1]), xytext=(13, min_prices[-1]),
             color="red", fontsize=10, ha="left", va="center")
-ax.annotate("Spot Price", xy=(0, spot_rate), xytext=(-0.5, spot_rate),
+ax.annotate("Spot Price", xy=(0, spot_rate), xytext=(-1.5, spot_rate),  # Adjusted to move further left
             color="blue", fontsize=10, ha="right", va="center")
 
 # Configure chart
@@ -101,7 +101,7 @@ ax.set_title("Trades Visualization (Stair Step)")
 ax.set_xlabel("Time to Maturity (Months)")
 ax.set_ylabel("Strike Prices (PLN)")
 ax.grid(True, linewidth=0.5, alpha=0.3)  # Thinner and barely visible grid
-ax.set_xlim(left=-1, right=13)
+ax.set_xlim(left=-2, right=13)
 ax.set_ylim(min(min_prices) - 0.01, max(max_prices) + 0.01)
 st.pyplot(fig)
 
