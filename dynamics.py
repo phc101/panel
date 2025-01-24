@@ -76,22 +76,26 @@ if st.session_state.trades:
     # Prepare data for stair-step plotting
     sorted_trades = sorted(st.session_state.trades, key=lambda x: x["maturity_months"])
     maturity_dates = [today]  # Start from today's date
-    max_prices = []
-    min_prices = []
+    max_prices = [None]  # Placeholder for max prices
+    min_prices = [None]  # Placeholder for min prices
 
     for trade in sorted_trades:
-        if trade["type"] == "Max Price":
-            max_prices.append(trade["strike"])
-            min_prices.append(min_prices[-1] if min_prices else trade["strike"])  # Extend min_prices to create stairs
-        elif trade["type"] == "Min Price":
-            min_prices.append(trade["strike"])
-            max_prices.append(max_prices[-1] if max_prices else trade["strike"])  # Extend max_prices to create stairs
         maturity_dates.append(datetime.strptime(trade["maturity_date"], '%Y-%m-%d'))
+        if trade["type"] == "Max Price":
+            max_prices[-1] = trade["strike"]
+            min_prices.append(min_prices[-1] if min_prices[-1] is not None else trade["strike"])
+        elif trade["type"] == "Min Price":
+            min_prices[-1] = trade["strike"]
+            max_prices.append(max_prices[-1] if max_prices[-1] is not None else trade["strike"])
 
-    # Extend lines horizontally for the last maturity
+    # Fill placeholders for the last step
     maturity_dates.append(maturity_dates[-1] + timedelta(days=30))
     max_prices.append(max_prices[-1])
     min_prices.append(min_prices[-1])
+
+    # Replace None values with appropriate starting points
+    max_prices[0] = max_prices[1]
+    min_prices[0] = min_prices[1]
 
     # Plot the stair steps
     ax.step(maturity_dates, max_prices, color="green", linestyle="--", label="Max Price (Call)")
