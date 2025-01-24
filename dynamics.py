@@ -1,8 +1,22 @@
-import streamlit as st
-import numpy as np
-from scipy.stats import norm
+# Install alpha_vantage if it's not already installed
+import subprocess
+import sys
+
+def install_package(package):
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+    except Exception as e:
+        print(f"Error installing {package}: {e}")
+
+# Install alpha_vantage
+install_package("alpha_vantage")
+
+# Now, import required libraries
 from alpha_vantage.foreignexchange import ForeignExchange
 from alpha_vantage.timeseries import TimeSeries
+import numpy as np
+import streamlit as st
+from scipy.stats import norm
 
 # Alpha Vantage API Key
 API_KEY = "YOUR_ALPHA_VANTAGE_API_KEY"
