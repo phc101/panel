@@ -46,8 +46,9 @@ flat_min_price = st.sidebar.checkbox("Flat Min Price", value=False)
 
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 
-# Dynamically Generate Trades Button
+# Generate 12 Trades Button
 if st.sidebar.button("Generate Trades"):
+    st.session_state.trades = []  # Clear existing trades
     for i in range(12):
         maturity_date = datetime.now() + timedelta(days=30 * (i + 1))
         st.session_state.trades.append({
@@ -70,6 +71,23 @@ if st.sidebar.button("Generate Trades"):
 # Clear All Trades Button
 if st.sidebar.button("Clear All Trades"):
     st.session_state.trades = []
+
+# Calculate Net Premium
+net_premium = 0
+if st.session_state.trades:
+    for trade in st.session_state.trades:
+        price = fx_option_pricer(
+            spot_rate,
+            trade["strike"],
+            volatility,
+            domestic_rate,
+            foreign_rate,
+            trade["maturity_months"] / 12,  # Convert months to years
+            trade["notional"],
+            "call" if trade["type"] == "Max Price" else "put"
+        )
+        premium = -price if trade["action"] == "Buy" else price
+        net_premium += premium
 
 # Prepare data for the chart if trades exist
 if st.session_state.trades:
@@ -97,6 +115,13 @@ if st.session_state.trades:
     ax.set_xlim(left=0, right=13)
     ax.set_ylim(min(min_prices) - 0.01, max(max_prices) + 0.01)
     st.pyplot(fig)
+
+    # Display Net Premium
+    st.write("### Net Premium")
+    if net_premium > 0:
+        st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
+    else:
+        st.write(f"**Net Premium Paid:** {abs(net_premium):.2f} PLN")
 
     # Display Added Trades
     st.write("### Current Trades")
