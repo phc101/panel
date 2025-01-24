@@ -2,7 +2,6 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
-from datetime import datetime
 
 # Black-Scholes Pricing Function
 def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, notional, option_type="call"):
@@ -70,26 +69,22 @@ if st.session_state.trades:
     # Prepare data for stair-step plotting
     sorted_trades = sorted(st.session_state.trades, key=lambda x: x["maturity_months"])
     maturity_months = [0]  # Start from 0 months
-    max_prices = [None]  # Placeholder for max prices
-    min_prices = [None]  # Placeholder for min prices
+    max_prices = [spot_rate]  # Start with spot rate for max prices
+    min_prices = [spot_rate]  # Start with spot rate for min prices
 
     for trade in sorted_trades:
         maturity_months.append(trade["maturity_months"])
         if trade["type"] == "Max Price":
-            max_prices[-1] = trade["strike"]
-            min_prices.append(min_prices[-1] if min_prices[-1] is not None else trade["strike"])
+            max_prices.append(trade["strike"])
+            min_prices.append(min_prices[-1])  # Repeat the previous min price
         elif trade["type"] == "Min Price":
-            min_prices[-1] = trade["strike"]
-            max_prices.append(max_prices[-1] if max_prices[-1] is not None else trade["strike"])
+            min_prices.append(trade["strike"])
+            max_prices.append(max_prices[-1])  # Repeat the previous max price
 
-    # Fill placeholders for the last step
+    # Extend the last maturity point
     maturity_months.append(maturity_months[-1] + 1)
     max_prices.append(max_prices[-1])
     min_prices.append(min_prices[-1])
-
-    # Replace None values with appropriate starting points
-    max_prices[0] = max_prices[1]
-    min_prices[0] = min_prices[1]
 
     # Plot the stair steps
     ax.step(maturity_months, max_prices, color="green", linestyle="--", label="Max Price (Call)")
