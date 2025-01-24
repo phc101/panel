@@ -46,33 +46,32 @@ st.sidebar.header("Option Strategy")
 call_action = st.sidebar.selectbox("Call Option", ["Buy", "Sell"], index=0)
 put_action = st.sidebar.selectbox("Put Option", ["Buy", "Sell"], index=0)
 
-# Calculate Option Prices and Net Premium
-if st.sidebar.button("Calculate Net Premium"):
-    try:
-        # Calculate Call and Put Prices
-        call_price = fx_option_pricer(spot_rate, call_strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "call")
-        put_price = fx_option_pricer(spot_rate, put_strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "put")
+# Calculate Option Prices and Net Premium dynamically
+try:
+    # Calculate Call and Put Prices
+    call_price = fx_option_pricer(spot_rate, call_strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "call")
+    put_price = fx_option_pricer(spot_rate, put_strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "put")
 
-        # Adjust Prices Based on Buy/Sell Action
-        # - Buying: Negative premium (you pay)
-        # - Selling: Positive premium (you receive)
-        call_premium = -call_price if call_action == "Buy" else call_price
-        put_premium = -put_price if put_action == "Buy" else put_price
+    # Adjust Prices Based on Buy/Sell Action
+    # - Buying: Negative premium (you pay)
+    # - Selling: Positive premium (you receive)
+    call_premium = -call_price if call_action == "Buy" else call_price
+    put_premium = -put_price if put_action == "Buy" else put_price
 
-        # Calculate Net Premium
-        net_premium = call_premium + put_premium
+    # Calculate Net Premium
+    net_premium = call_premium + put_premium
 
-        # Display Results
-        st.write("### Option Prices")
-        st.write(f"**Call Option ({call_action}) at Strike {call_strike_price:.2f}:** {call_price:.2f} PLN")
-        st.write(f"**Put Option ({put_action}) at Strike {put_strike_price:.2f}:** {put_price:.2f} PLN")
-        st.write("### Net Premium")
-        if net_premium > 0:
-            st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
-        else:
-            st.write(f"**Net Premium Paid:** {abs(net_premium):.2f} PLN")
-    except Exception as e:
-        st.error(f"Error in calculation: {e}")
+    # Display Results
+    st.write("### Option Prices")
+    st.write(f"**Call Option ({call_action}) at Strike {call_strike_price:.2f}:** {call_price:.2f} PLN")
+    st.write(f"**Put Option ({put_action}) at Strike {put_strike_price:.2f}:** {put_price:.2f} PLN")
+    st.write("### Net Premium")
+    if net_premium > 0:
+        st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
+    else:
+        st.write(f"**Net Premium Paid:** {abs(net_premium):.2f} PLN")
+except Exception as e:
+    st.error(f"Error in calculation: {e}")
 
 # Footer
 st.write("Powered by Streamlit | All inputs are manual")
