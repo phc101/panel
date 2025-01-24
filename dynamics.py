@@ -34,7 +34,8 @@ st.sidebar.write(f"Foreign Risk-Free Rate: {foreign_rate * 100:.2f}%")
 
 # Input Parameters
 st.sidebar.header("Option Parameters")
-strike_price = st.sidebar.number_input("Strike Price", value=float(spot_rate), step=0.01)
+call_strike_price = st.sidebar.number_input("Call Strike Price", value=float(spot_rate), step=0.01)
+put_strike_price = st.sidebar.number_input("Put Strike Price", value=float(spot_rate), step=0.01)
 volatility = st.sidebar.number_input("Volatility (annualized, %)", value=10.0, step=0.1) / 100
 time_to_maturity_months = st.sidebar.number_input("Time to Maturity (in months)", value=3, step=1)
 time_to_maturity_years = time_to_maturity_months / 12  # Convert to years for calculations
@@ -49,8 +50,8 @@ put_action = st.sidebar.selectbox("Put Option", ["Buy", "Sell"], index=0)
 if st.sidebar.button("Calculate Net Premium"):
     try:
         # Calculate Call and Put Prices
-        call_price = fx_option_pricer(spot_rate, strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "call")
-        put_price = fx_option_pricer(spot_rate, strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "put")
+        call_price = fx_option_pricer(spot_rate, call_strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "call")
+        put_price = fx_option_pricer(spot_rate, put_strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "put")
 
         # Adjust Prices Based on Buy/Sell Action
         call_premium = call_price if call_action == "Buy" else -call_price
@@ -61,8 +62,8 @@ if st.sidebar.button("Calculate Net Premium"):
 
         # Display Results
         st.write("### Option Prices")
-        st.write(f"**Call Option ({call_action}):** {call_price:.2f} PLN")
-        st.write(f"**Put Option ({put_action}):** {put_price:.2f} PLN")
+        st.write(f"**Call Option ({call_action}) at Strike {call_strike_price:.2f}:** {call_price:.2f} PLN")
+        st.write(f"**Put Option ({put_action}) at Strike {put_strike_price:.2f}:** {put_price:.2f} PLN")
         st.write("### Net Premium")
         if net_premium > 0:
             st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
