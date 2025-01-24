@@ -3,7 +3,7 @@ import numpy as np
 from scipy.stats import norm
 from alpha_vantage.foreignexchange import ForeignExchange
 from alpha_vantage.timeseries import TimeSeries
-pip install alpha_vantage
+
 # Alpha Vantage API Key
 API_KEY = "YOUR_ALPHA_VANTAGE_API_KEY"
 
