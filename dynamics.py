@@ -1,9 +1,8 @@
 import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
-from datetime import datetime, timedelta
+import matplotlib.pyplot as plt
 from scipy.stats import norm
+from datetime import datetime, timedelta
 
 # Black-Scholes Pricing Function
 def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, notional, option_type="call"):
@@ -19,106 +18,96 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
     
     return price * notional
 
-def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor):
-    """Calculate forward rate based on interest rate parity."""
-    return spot_rate * (1 + domestic_rate * tenor) / (1 + foreign_rate * tenor)
+# Main App Content
+st.title("EUR/PLN Dynamic Forward Pricer")
 
-def plot_window_forward_curve(spot_rate, domestic_rate, foreign_rate, window_open_date, months):
-    today = datetime.now().date()
-    start_tenor = (window_open_date - today).days / 365 if window_open_date > today else 0
+# Sidebar inputs
+spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.3150, step=0.0001, format="%.4f")
+volatility = st.sidebar.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
+domestic_rate = st.sidebar.number_input("Polish 10-Year Bond Yield (Domestic Rate, %)", value=5.5, step=0.1) / 100
+foreign_rate = st.sidebar.number_input("German 10-Year Bond Yield (Foreign Rate, %)", value=2.5, step=0.1) / 100
 
-    maturity_dates = [(window_open_date + timedelta(days=30 * i)).strftime("%Y-%m-%d") for i in range(months)]
-    tenors = [(start_tenor + i / 12) for i in range(months)]
-    forward_rates = [calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, tenor) for tenor in tenors]
+st.sidebar.header("Set Max and Min Prices")
+max_price = st.sidebar.number_input("Enter Max Price Strike", value=spot_rate + 0.1, step=0.0001, format="%.4f")
+min_price = st.sidebar.number_input("Enter Min Price Strike", value=spot_rate - 0.1, step=0.0001, format="%.4f")
 
-    forward_points = [rate - spot_rate for rate in forward_rates]
-    fig, ax = plt.subplots()
+flat_max_price = st.sidebar.checkbox("Flat Max Price", value=False)
+flat_min_price = st.sidebar.checkbox("Flat Min Price", value=False)
 
-    ax.step(maturity_dates, forward_rates, where='post', label="Forward Rate", linewidth=1, color="blue")
-    for i, rate in enumerate(forward_rates):
-        ax.text(maturity_dates[i], rate, f"{rate:.4f}", fontsize=8, ha="center", va="bottom", color="blue")
+notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 
-    ax.set_xlabel("Maturity Date")
-    ax.set_ylabel("Forward Rate")
-    ax.set_title("Step Chart of Forward Rates")
-    ax.grid(True)
-    plt.xticks(rotation=45)
-    plt.legend()
+# Dynamically Generate Trades
+trades = []
+for i in range(12):
+    maturity_date = datetime.now() + timedelta(days=30 * (i + 1))
+    trades.append({
+        "type": "Max Price",
+        "action": "Sell",
+        "strike": max_price if flat_max_price else max_price + (i * 0.01),
+        "maturity_months": i + 1,
+        "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+        "notional": notional
+    })
+    trades.append({
+        "type": "Min Price",
+        "action": "Buy",
+        "strike": min_price if flat_min_price else min_price + (i * 0.01),
+        "maturity_months": i + 1,
+        "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+        "notional": notional
+    })
 
-    data = {
-        "Tenor (Months)": [i + 1 for i in range(months)],
-        "Maturity Date": maturity_dates,
-        "Forward Rate": forward_rates,
-        "Forward Points": forward_points
-    }
-    df = pd.DataFrame(data)
+# Calculate Net Premium
+net_premium = 0
+for trade in trades:
+    price = fx_option_pricer(
+        spot_rate,
+        trade["strike"],
+        volatility,
+        domestic_rate,
+        foreign_rate,
+        trade["maturity_months"] / 12,  # Convert months to years
+        trade["notional"],
+        "call" if trade["type"] == "Max Price" else "put"
+    )
+    premium = -price if trade["action"] == "Buy" else price
+    net_premium += premium
 
-    return fig, df
+# Prepare data for the chart
+max_prices = [trade["strike"] for trade in trades if trade["type"] == "Max Price"]
+min_prices = [trade["strike"] for trade in trades if trade["type"] == "Min Price"]
+max_maturities = [trade["maturity_months"] for trade in trades if trade["type"] == "Max Price"]
+min_maturities = [trade["maturity_months"] for trade in trades if trade["type"] == "Min Price"]
 
-# Main App
-st.title("Choose the Forward Type")
+# Plot the Chart
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.step(max_maturities, max_prices, color="green", linestyle="--", label="Max Price (Call)")
+ax.step(min_maturities, min_prices, color="red", linestyle="--", label="Min Price (Put)")
 
-# Choice Buttons
-if st.button("Dynamic Forward"):
-    st.title("EUR/PLN Dynamic Forward Pricer")
-    spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.3150, step=0.0001, format="%.4f")
-    volatility = st.sidebar.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
-    domestic_rate = st.sidebar.number_input("Polish 10-Year Bond Yield (Domestic Rate, %)", value=5.5, step=0.1) / 100
-    foreign_rate = st.sidebar.number_input("German 10-Year Bond Yield (Foreign Rate, %)", value=2.5, step=0.1) / 100
+ax.annotate("Max Participation Price", xy=(12, max_prices[-1]), xytext=(13, max_prices[-1]),
+            color="green", fontsize=10, ha="left", va="center")
+ax.annotate("Hedged Price", xy=(12, min_prices[-1]), xytext=(13, min_prices[-1]),
+            color="red", fontsize=10, ha="left", va="center")
+ax.annotate("Spot Price", xy=(0, spot_rate), xytext=(-1.0, spot_rate),
+            color="blue", fontsize=10, ha="right", va="center")
 
-    st.sidebar.header("Set Max and Min Prices")
-    max_price = st.sidebar.number_input("Enter Max Price Strike", value=spot_rate + 0.1, step=0.0001, format="%.4f")
-    min_price = st.sidebar.number_input("Enter Min Price Strike", value=spot_rate - 0.1, step=0.0001, format="%.4f")
+ax.set_title("Trades Visualization (Stair Step)")
+ax.set_xlabel("Time to Maturity (Months)")
+ax.set_ylabel("Strike Prices (PLN)")
+ax.grid(True, linewidth=0.5, alpha=0.3)
+ax.set_xlim(left=0, right=13)
+ax.set_ylim(min(min_prices) - 0.01, max(max_prices) + 0.01)
+st.pyplot(fig)
 
-    flat_max_price = st.sidebar.checkbox("Flat Max Price", value=False)
-    flat_min_price = st.sidebar.checkbox("Flat Min Price", value=False)
-    notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
+# Display Net Premium
+st.write("### Net Premium")
+if net_premium > 0:
+    st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
+else:
+    st.write(f"**Net Premium Paid:** {abs(net_premium):.2f} PLN")
 
-    trades = []
-    for i in range(12):
-        maturity_date = datetime.now() + timedelta(days=30 * (i + 1))
-        trades.append({
-            "type": "Max Price",
-            "action": "Sell",
-            "strike": max_price if flat_max_price else max_price + (i * 0.01),
-            "maturity_months": i + 1,
-            "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-            "notional": notional
-        })
-        trades.append({
-            "type": "Min Price",
-            "action": "Buy",
-            "strike": min_price if flat_min_price else min_price + (i * 0.01),
-            "maturity_months": i + 1,
-            "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-            "notional": notional
-        })
-
-    max_prices = [trade["strike"] for trade in trades if trade["type"] == "Max Price"]
-    min_prices = [trade["strike"] for trade in trades if trade["type"] == "Min Price"]
-    max_maturities = [trade["maturity_months"] for trade in trades if trade["type"] == "Max Price"]
-    min_maturities = [trade["maturity_months"] for trade in trades if trade["type"] == "Min Price"]
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.step(max_maturities, max_prices, color="green", linestyle="--", label="Max Price (Call)")
-    ax.step(min_maturities, min_prices, color="red", linestyle="--", label="Min Price (Put)")
-
-    ax.set_title("Trades Visualization (Stair Step)")
-    ax.set_xlabel("Time to Maturity (Months)")
-    ax.set_ylabel("Strike Prices (PLN)")
-    st.pyplot(fig)
-
-elif st.button("Window Forward"):
-    st.title("Window Forward Rate Calculator")
-    spot_rate = st.sidebar.number_input("Spot Rate", value=4.5, step=0.01)
-    poland_rate = st.sidebar.number_input("Poland Interest Rate (%)", value=5.75, step=0.1) / 100
-    foreign_rate = st.sidebar.number_input("Foreign Interest Rate (%)", value=3.0, step=0.1) / 100
-    window_open_date = st.sidebar.date_input("Window Open Date", value=datetime.now().date())
-    months = st.sidebar.number_input("Number of Months", value=12, step=1, min_value=1)
-
-    if st.sidebar.button("Generate Window Forward Curve"):
-        fig, df = plot_window_forward_curve(spot_rate, poland_rate, foreign_rate, window_open_date, months)
-        st.write("### Step Chart of Forward Rates")
-        st.pyplot(fig)
-        st.write("### Forward Rate Table")
-        st.dataframe(df)
+# Display Added Trades
+st.write("### Current Trades")
+for i, trade in enumerate(trades):
+    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']:.4f} "
+             f"(Maturity: {trade['maturity_months']} months, Date: {trade['maturity_date']})")
