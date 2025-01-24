@@ -52,22 +52,37 @@ for i in range(12):
     maturity_date = datetime.now() + timedelta(days=30 * (i + 1))
     if strategy == "Exporter (Buy Put, Sell Call)":
         # Exporter: Buy Put, Sell Call
-        if flat_max_price and increase_min_price:
-            min_price_adjusted = min_price * 1.01 if i + 1 >= 7 else min_price
-            trades.append({"type": "Max Price", "action": "Sell", "strike": max_price, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
-            trades.append({"type": "Min Price", "action": "Buy", "strike": min_price_adjusted, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
+        if flat_max_price:
+            max_price_adjusted = max_price
         else:
-            trades.append({"type": "Max Price", "action": "Sell", "strike": max_price + (i * 0.01), "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
-            trades.append({"type": "Min Price", "action": "Buy", "strike": min_price + (i * 0.01), "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
+            max_price_adjusted = max_price + (i * 0.01)
+
+        if flat_min_price:
+            min_price_adjusted = min_price
+        elif increase_min_price and i + 1 >= 7:
+            min_price_adjusted = min_price * 1.01
+        else:
+            min_price_adjusted = min_price + (i * 0.01)
+
+        trades.append({"type": "Max Price", "action": "Sell", "strike": max_price_adjusted, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
+        trades.append({"type": "Min Price", "action": "Buy", "strike": min_price_adjusted, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
+
     elif strategy == "Importer (Sell Put, Buy Call)":
         # Importer: Sell Put, Buy Call
-        if flat_min_price and increase_max_price:
-            max_price_adjusted = max_price * 1.01 if i + 1 >= 7 else max_price
-            trades.append({"type": "Max Price", "action": "Buy", "strike": max_price_adjusted, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
-            trades.append({"type": "Min Price", "action": "Sell", "strike": min_price, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
+        if flat_min_price:
+            min_price_adjusted = min_price
         else:
-            trades.append({"type": "Max Price", "action": "Buy", "strike": max_price + (i * 0.01), "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
-            trades.append({"type": "Min Price", "action": "Sell", "strike": min_price + (i * 0.01), "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
+            min_price_adjusted = min_price + (i * 0.01)
+
+        if flat_max_price:
+            max_price_adjusted = max_price
+        elif increase_max_price and i + 1 >= 7:
+            max_price_adjusted = max_price * 1.01
+        else:
+            max_price_adjusted = max_price + (i * 0.01)
+
+        trades.append({"type": "Max Price", "action": "Buy", "strike": max_price_adjusted, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
+        trades.append({"type": "Min Price", "action": "Sell", "strike": min_price_adjusted, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
 
 # Calculate Net Premium
 net_premium = 0
