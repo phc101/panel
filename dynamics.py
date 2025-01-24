@@ -73,9 +73,39 @@ if st.session_state.trades:
     net_premium = 0
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    # Plot each trade as a stair step
-    for trade in st.session_state.trades:
-        # Calculate option premium
+    # Prepare data for stair-step plotting
+    sorted_trades = sorted(st.session_state.trades, key=lambda x: x["maturity_months"])
+    maturity_dates = [today]  # Start from today's date
+    max_prices = []
+    min_prices = []
+
+    for trade in sorted_trades:
+        if trade["type"] == "Max Price":
+            max_prices.append(trade["strike"])
+            min_prices.append(min_prices[-1] if min_prices else trade["strike"])  # Extend min_prices to create stairs
+        elif trade["type"] == "Min Price":
+            min_prices.append(trade["strike"])
+            max_prices.append(max_prices[-1] if max_prices else trade["strike"])  # Extend max_prices to create stairs
+        maturity_dates.append(datetime.strptime(trade["maturity_date"], '%Y-%m-%d'))
+
+    # Extend lines horizontally for the last maturity
+    maturity_dates.append(maturity_dates[-1] + timedelta(days=30))
+    max_prices.append(max_prices[-1])
+    min_prices.append(min_prices[-1])
+
+    # Plot the stair steps
+    ax.step(maturity_dates, max_prices, color="green", linestyle="--", label="Max Price (Call)")
+    ax.step(maturity_dates, min_prices, color="red", linestyle="--", label="Min Price (Put)")
+
+    # Configure chart
+    ax.set_title("Trades Visualization (Stair Step)")
+    ax.set_xlabel("Strike Date")
+    ax.set_ylabel("Strike Prices (PLN)")
+    ax.grid(True)
+    st.pyplot(fig)
+
+    # Display Net Premium
+    for trade in sorted_trades:
         price = fx_option_pricer(
             spot_rate,
             trade["strike"],
@@ -89,22 +119,6 @@ if st.session_state.trades:
         premium = -price if trade["action"] == "Buy" else price
         net_premium += premium
 
-        # Plot strike price as a stair step
-        color = "green" if trade["type"] == "Max Price" else "red"
-        label = f"{trade['type']} {trade['action']} (Strike: {trade['strike']}, Date: {trade['maturity_date']})"
-        ax.hlines(
-            trade["strike"], xmin=today, xmax=datetime.strptime(trade["maturity_date"], '%Y-%m-%d'), color=color, linestyle="--", label=label
-        )
-
-    # Configure chart
-    ax.set_title("Trades Visualization (Stair Step)")
-    ax.set_xlabel("Strike Date")
-    ax.set_ylabel("Strike Prices (PLN)")
-    ax.legend()
-    ax.grid(True)
-    st.pyplot(fig)
-
-    # Display Net Premium
     st.write("### Net Premium")
     if net_premium > 0:
         st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
