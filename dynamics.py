@@ -1,5 +1,6 @@
-import numpy as np
 import streamlit as st
+import numpy as np
+import matplotlib.pyplot as plt
 from scipy.stats import norm
 
 # Black-Scholes Pricing Function
@@ -17,7 +18,7 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
     return price * notional
 
 # Streamlit App
-st.title("EUR/PLN FX Option Pricer (Manual Inputs)")
+st.title("EUR/PLN FX Option Pricer with Trade Stacking")
 
 # Allow user to manually input the spot rate
 spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.5, step=0.01)
@@ -29,43 +30,74 @@ volatility = st.sidebar.number_input("Enter Volatility (annualized, %)", value=1
 domestic_rate = st.sidebar.number_input("Polish 10-Year Bond Yield (Domestic Rate, %)", value=5.5, step=0.1) / 100
 foreign_rate = st.sidebar.number_input("German 10-Year Bond Yield (Foreign Rate, %)", value=2.5, step=0.1) / 100
 
-# Input Parameters
-st.sidebar.header("Option Parameters")
-call_strike_price = st.sidebar.number_input("Call Strike Price", value=float(spot_rate), step=0.01)
-put_strike_price = st.sidebar.number_input("Put Strike Price", value=float(spot_rate), step=0.01)
+# Trades Storage
+if "trades" not in st.session_state:
+    st.session_state.trades = []
+
+# Input Parameters for a Single Trade
+st.sidebar.header("Add a Trade")
+trade_type = st.sidebar.radio("Trade Type", ["Call", "Put"])
+action = st.sidebar.radio("Action", ["Buy", "Sell"])
+strike_price = st.sidebar.number_input(f"{trade_type} Strike Price", value=float(spot_rate), step=0.01)
 time_to_maturity_months = st.sidebar.number_input("Time to Maturity (in months)", value=3, step=1)
-time_to_maturity_years = time_to_maturity_months / 12  # Convert to years for calculations
+time_to_maturity_years = time_to_maturity_months / 12  # Convert to years
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 
-# Buy or Sell Selection
-st.sidebar.header("Option Strategy")
-call_action = st.sidebar.selectbox("Call Option", ["Buy", "Sell"], index=0)
-put_action = st.sidebar.selectbox("Put Option", ["Buy", "Sell"], index=0)
+# Add Trade Button
+if st.sidebar.button("Add Trade"):
+    if len(st.session_state.trades) < 12:
+        st.session_state.trades.append({
+            "type": trade_type,
+            "action": action,
+            "strike": strike_price,
+            "maturity": time_to_maturity_years,
+            "notional": notional
+        })
+        st.success(f"{action} {trade_type} at Strike {strike_price:.2f} added!")
+    else:
+        st.warning("You can only add up to 12 trades.")
 
-# Calculate Option Prices and Net Premium Dynamically
-try:
-    # Calculate Call and Put Prices
-    call_price = fx_option_pricer(spot_rate, call_strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "call")
-    put_price = fx_option_pricer(spot_rate, put_strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "put")
+# Display Added Trades
+st.write("### Current Trades")
+for i, trade in enumerate(st.session_state.trades):
+    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']} (Maturity: {trade['maturity']*12:.0f} months)")
 
-    # Adjust Prices Based on Buy/Sell Action
-    call_premium = -call_price if call_action == "Buy" else call_price
-    put_premium = -put_price if put_action == "Buy" else put_price
+# Calculate Net Premium and Plot Trades
+if st.session_state.trades:
+    net_premium = 0
+    fig, ax = plt.subplots()
 
-    # Calculate Net Premium
-    net_premium = call_premium + put_premium
+    # Plot each trade
+    for trade in st.session_state.trades:
+        # Calculate option premium
+        price = fx_option_pricer(
+            spot_rate,
+            trade["strike"],
+            volatility,
+            domestic_rate,
+            foreign_rate,
+            trade["maturity"],
+            trade["notional"],
+            trade["type"].lower()
+        )
+        premium = -price if trade["action"] == "Buy" else price
+        net_premium += premium
 
-    # Display Results
-    st.write("### Option Prices")
-    st.write(f"**Call Option ({call_action}) at Strike {call_strike_price:.2f}:** {call_price:.2f} PLN")
-    st.write(f"**Put Option ({put_action}) at Strike {put_strike_price:.2f}:** {put_price:.2f} PLN")
+        # Plot strike price
+        color = "green" if trade["type"] == "Call" else "red"
+        label = f"{trade['type']} {trade['action']} (Strike: {trade['strike']})"
+        ax.axvline(trade["strike"], color=color, linestyle="--", label=label)
+
+    # Configure chart
+    ax.set_title("Trades Visualization")
+    ax.set_xlabel("Strike Prices (PLN)")
+    ax.set_ylabel("Indicator (Vertical Lines)")
+    ax.legend()
+    st.pyplot(fig)
+
+    # Display Net Premium
     st.write("### Net Premium")
     if net_premium > 0:
         st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
     else:
         st.write(f"**Net Premium Paid:** {abs(net_premium):.2f} PLN")
-except Exception as e:
-    st.error(f"Error in calculation: {e}")
-
-# Footer
-st.write("Powered by Streamlit | All inputs are manual")
