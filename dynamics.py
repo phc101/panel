@@ -18,7 +18,7 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
     return price * notional
 
 # Streamlit App
-st.title("EUR/PLN FX Option Pricer with Trade Stacking")
+st.title("EUR/PLN FX Option Pricer with Configurable Limits")
 
 # Allow user to manually input the spot rate
 spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.5, step=0.01)
@@ -29,6 +29,10 @@ volatility = st.sidebar.number_input("Enter Volatility (annualized, %)", value=1
 # Manual Bond Yields Input
 domestic_rate = st.sidebar.number_input("Polish 10-Year Bond Yield (Domestic Rate, %)", value=5.5, step=0.1) / 100
 foreign_rate = st.sidebar.number_input("German 10-Year Bond Yield (Foreign Rate, %)", value=2.5, step=0.1) / 100
+
+# Configurable Limits for Transactions
+st.sidebar.header("Transaction Limit Configuration")
+max_transactions = st.sidebar.radio("Choose Limit for Max/Min Price Transactions", [6, 9, 12], index=2)
 
 # Trades Storage
 if "trades" not in st.session_state:
@@ -44,7 +48,15 @@ notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.
 
 # Add Trade Button
 if st.sidebar.button("Add Trade"):
-    if len(st.session_state.trades) < 12:
+    # Check limit for max or min price
+    current_max_price_count = sum(1 for trade in st.session_state.trades if trade["type"] == "Max Price")
+    current_min_price_count = sum(1 for trade in st.session_state.trades if trade["type"] == "Min Price")
+    
+    if trade_type == "Max Price" and current_max_price_count >= max_transactions:
+        st.warning(f"You can only add up to {max_transactions} Max Price trades.")
+    elif trade_type == "Min Price" and current_min_price_count >= max_transactions:
+        st.warning(f"You can only add up to {max_transactions} Min Price trades.")
+    else:
         st.session_state.trades.append({
             "type": trade_type,
             "action": action,
@@ -53,8 +65,6 @@ if st.sidebar.button("Add Trade"):
             "notional": notional
         })
         st.success(f"{action} {trade_type} at Strike {strike_price:.2f} added!")
-    else:
-        st.warning("You can only add up to 12 trades.")
 
 # Display Added Trades
 st.write("### Current Trades")
