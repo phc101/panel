@@ -18,7 +18,7 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
     return price * notional
 
 # Streamlit App
-st.title("EUR/PLN FX Option Pricer with Enhanced Chart and Layout")
+st.title("EUR/PLN FX Option Pricer with Enhanced Chart Layout")
 
 # Allow user to manually input the spot rate
 spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.3150, step=0.0001, format="%.4f")
@@ -77,18 +77,6 @@ for trade in trades:
     premium = -price if trade["action"] == "Buy" else price
     net_premium += premium
 
-# Display Net Premium Above Current Trades
-st.write("### Net Premium")
-if net_premium > 0:
-    st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
-else:
-    st.write(f"**Net Premium Paid:** {abs(net_premium):.2f} PLN")
-
-# Display Added Trades
-st.write("### Current Trades")
-for i, trade in enumerate(trades):
-    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']:.4f} (Maturity: {trade['maturity_months']} months)")
-
 # Plot the Chart at the Top
 fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -117,16 +105,28 @@ ax.step(maturity_months, max_prices, color="green", linestyle="--", label="Max P
 ax.step(maturity_months, min_prices, color="red", linestyle="--", label="Min Price (Put)")
 
 # Add labels on the right-hand axis
-ax.annotate("Max Participation Price", xy=(maturity_months[-2], max_prices[-2]), 
-            xytext=(maturity_months[-2] + 1, max_prices[-2]), color="green",
-            arrowprops=dict(facecolor="green", arrowstyle="->"))
-ax.annotate("Hedged Price", xy=(maturity_months[-2], min_prices[-2]), 
-            xytext=(maturity_months[-2] + 1, min_prices[-2]), color="red",
-            arrowprops=dict(facecolor="red", arrowstyle="->"))
+ax.annotate("Max Participation Price", xy=(12.5, max_prices[-1]), xycoords='data',
+            color="green", fontsize=10, ha="left", va="center")
+ax.annotate("Hedged Price", xy=(12.5, min_prices[-1]), xycoords='data',
+            color="red", fontsize=10, ha="left", va="center")
 
 # Configure chart
 ax.set_title("Trades Visualization (Stair Step)")
 ax.set_xlabel("Time to Maturity (Months)")
 ax.set_ylabel("Strike Prices (PLN)")
 ax.grid(True, linewidth=0.5, alpha=0.3)  # Thinner and barely visible grid
+ax.set_xlim(left=0, right=13)
+ax.set_ylim(min(min_prices) - 0.01, max(max_prices) + 0.01)
 st.pyplot(fig)
+
+# Display Net Premium Above Current Trades
+st.write("### Net Premium")
+if net_premium > 0:
+    st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
+else:
+    st.write(f"**Net Premium Paid:** {abs(net_premium):.2f} PLN")
+
+# Display Added Trades
+st.write("### Current Trades")
+for i, trade in enumerate(trades):
+    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']:.4f} (Maturity: {trade['maturity_months']} months)")
