@@ -1,33 +1,71 @@
-# Install alpha_vantage if not already installed
-import subprocess
-import sys
-
-def install_package(package):
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-    except Exception as e:
-        print(f"Error installing {package}: {e}")
-
-install_package("alpha_vantage")
-
-# Verify installation
-try:
-    from alpha_vantage.foreignexchange import ForeignExchange
-    from alpha_vantage.timeseries import TimeSeries
-    print("alpha_vantage is installed and ready to use.")
-except ImportError:
-    print("Failed to import alpha_vantage. Please check the installation.")
-
-# Now include the rest of your script
 import numpy as np
 import streamlit as st
 from scipy.stats import norm
 
-# Alpha Vantage API Key
-API_KEY = "YOUR_ALPHA_VANTAGE_API_KEY"
+# Black-Scholes Pricing Function
+def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, notional, option_type="call"):
+    d1 = (np.log(spot / strike) + (domestic_rate - foreign_rate + 0.5 * volatility**2) * time_to_maturity) / (volatility * np.sqrt(time_to_maturity))
+    d2 = d1 - volatility * np.sqrt(time_to_maturity)
 
-# Initialize Alpha Vantage Clients
-fx = ForeignExchange(key=API_KEY)
-ts = TimeSeries(key=API_KEY, output_format="pandas")
+    if option_type.lower() == "call":
+        price = np.exp(-foreign_rate * time_to_maturity) * spot * norm.cdf(d1) - np.exp(-domestic_rate * time_to_maturity) * strike * norm.cdf(d2)
+    elif option_type.lower() == "put":
+        price = np.exp(-domestic_rate * time_to_maturity) * strike * norm.cdf(-d2) - np.exp(-foreign_rate * time_to_maturity) * spot * norm.cdf(-d1)
+    else:
+        raise ValueError("Invalid option type. Use 'call' or 'put'.")
+    
+    return price * notional
 
-# Rest of the code goes here...
+# Streamlit App
+st.title("EUR/PLN FX Option Pricer (Manual Inputs)")
+
+# Allow user to manually input the spot rate
+spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.5, step=0.01)
+
+# Allow user to manually input volatility
+volatility = st.sidebar.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
+
+# Manual Bond Yields Input
+domestic_rate = st.sidebar.number_input("Polish 10-Year Bond Yield (Domestic Rate, %)", value=5.5, step=0.1) / 100
+foreign_rate = st.sidebar.number_input("German 10-Year Bond Yield (Foreign Rate, %)", value=2.5, step=0.1) / 100
+
+# Input Parameters
+st.sidebar.header("Option Parameters")
+call_strike_price = st.sidebar.number_input("Call Strike Price", value=float(spot_rate), step=0.01)
+put_strike_price = st.sidebar.number_input("Put Strike Price", value=float(spot_rate), step=0.01)
+time_to_maturity_months = st.sidebar.number_input("Time to Maturity (in months)", value=3, step=1)
+time_to_maturity_years = time_to_maturity_months / 12  # Convert to years for calculations
+notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
+
+# Buy or Sell Selection
+st.sidebar.header("Option Strategy")
+call_action = st.sidebar.selectbox("Call Option", ["Buy", "Sell"], index=0)
+put_action = st.sidebar.selectbox("Put Option", ["Buy", "Sell"], index=0)
+
+# Calculate Option Prices and Net Premium Dynamically
+try:
+    # Calculate Call and Put Prices
+    call_price = fx_option_pricer(spot_rate, call_strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "call")
+    put_price = fx_option_pricer(spot_rate, put_strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "put")
+
+    # Adjust Prices Based on Buy/Sell Action
+    call_premium = -call_price if call_action == "Buy" else call_price
+    put_premium = -put_price if put_action == "Buy" else put_price
+
+    # Calculate Net Premium
+    net_premium = call_premium + put_premium
+
+    # Display Results
+    st.write("### Option Prices")
+    st.write(f"**Call Option ({call_action}) at Strike {call_strike_price:.2f}:** {call_price:.2f} PLN")
+    st.write(f"**Put Option ({put_action}) at Strike {put_strike_price:.2f}:** {put_price:.2f} PLN")
+    st.write("### Net Premium")
+    if net_premium > 0:
+        st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
+    else:
+        st.write(f"**Net Premium Paid:** {abs(net_premium):.2f} PLN")
+except Exception as e:
+    st.error(f"Error in calculation: {e}")
+
+# Footer
+st.write("Powered by Streamlit | All inputs are manual")
