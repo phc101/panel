@@ -51,81 +51,23 @@ trades = []
 for i in range(12):
     maturity_date = datetime.now() + timedelta(days=30 * (i + 1))
     if strategy == "Exporter (Buy Put, Sell Call)":
+        # Exporter: Buy Put, Sell Call
         if flat_max_price and increase_min_price:
-            # Flat Max Price, Increment Min Price by 1% from Month 7
             min_price_adjusted = min_price * 1.01 if i + 1 >= 7 else min_price
-            trades.append({
-                "type": "Max Price",
-                "action": "Sell",
-                "strike": max_price,
-                "maturity_months": i + 1,
-                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-                "notional": notional
-            })
-            trades.append({
-                "type": "Min Price",
-                "action": "Buy",
-                "strike": min_price_adjusted,
-                "maturity_months": i + 1,
-                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-                "notional": notional
-            })
+            trades.append({"type": "Max Price", "action": "Sell", "strike": max_price, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
+            trades.append({"type": "Min Price", "action": "Buy", "strike": min_price_adjusted, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
         else:
-            # Default Exporter Behavior
-            trades.append({
-                "type": "Max Price",
-                "action": "Sell",
-                "strike": max_price + (i * 0.01),
-                "maturity_months": i + 1,
-                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-                "notional": notional
-            })
-            trades.append({
-                "type": "Min Price",
-                "action": "Buy",
-                "strike": min_price + (i * 0.01),
-                "maturity_months": i + 1,
-                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-                "notional": notional
-            })
+            trades.append({"type": "Max Price", "action": "Sell", "strike": max_price + (i * 0.01), "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
+            trades.append({"type": "Min Price", "action": "Buy", "strike": min_price + (i * 0.01), "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
     elif strategy == "Importer (Sell Put, Buy Call)":
+        # Importer: Sell Put, Buy Call
         if flat_min_price and increase_max_price:
-            # Flat Min Price, Increment Max Price by 1% from Month 7
             max_price_adjusted = max_price * 1.01 if i + 1 >= 7 else max_price
-            trades.append({
-                "type": "Max Price",
-                "action": "Buy",
-                "strike": max_price_adjusted,
-                "maturity_months": i + 1,
-                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-                "notional": notional
-            })
-            trades.append({
-                "type": "Min Price",
-                "action": "Sell",
-                "strike": min_price,
-                "maturity_months": i + 1,
-                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-                "notional": notional
-            })
+            trades.append({"type": "Max Price", "action": "Buy", "strike": max_price_adjusted, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
+            trades.append({"type": "Min Price", "action": "Sell", "strike": min_price, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
         else:
-            # Default Importer Behavior
-            trades.append({
-                "type": "Max Price",
-                "action": "Buy",
-                "strike": max_price + (i * 0.01),
-                "maturity_months": i + 1,
-                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-                "notional": notional
-            })
-            trades.append({
-                "type": "Min Price",
-                "action": "Sell",
-                "strike": min_price + (i * 0.01),
-                "maturity_months": i + 1,
-                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-                "notional": notional
-            })
+            trades.append({"type": "Max Price", "action": "Buy", "strike": max_price + (i * 0.01), "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
+            trades.append({"type": "Min Price", "action": "Sell", "strike": min_price + (i * 0.01), "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
 
 # Calculate Net Premium
 net_premium = 0
@@ -151,8 +93,12 @@ min_maturities = [trade["maturity_months"] for trade in trades if trade["type"] 
 
 # Plot the Chart
 fig, ax = plt.subplots(figsize=(10, 6))
-ax.step(max_maturities, max_prices, color="green", linestyle="--", label="Max Price (Call)")
-ax.step(min_maturities, min_prices, color="red", linestyle="--", label="Min Price (Put)")
+if strategy == "Exporter (Buy Put, Sell Call)":
+    ax.step(max_maturities, max_prices, color="green", linestyle="--", label="Max Participation Price")
+    ax.step(min_maturities, min_prices, color="red", linestyle="--", label="Hedged Price")
+elif strategy == "Importer (Sell Put, Buy Call)":
+    ax.step(max_maturities, min_prices, color="green", linestyle="--", label="Max Participation Price")
+    ax.step(min_maturities, max_prices, color="red", linestyle="--", label="Hedged Price")
 
 ax.annotate("Max Participation Price", xy=(12, max_prices[-1]), xytext=(13, max_prices[-1]),
             color="green", fontsize=10, ha="left", va="center")
