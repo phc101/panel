@@ -1,7 +1,7 @@
 import streamlit as st
 import numpy as np
 from scipy.stats import norm
-import yfinance as yf
+import requests
 
 # Black-Scholes Pricing Function for FX Options
 def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, notional, option_type="call"):
@@ -17,38 +17,49 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
     
     return price * notional
 
+# Fetch 10-year Bond Yields from Trading Economics
+def get_bond_yield(country_code):
+    """Fetches the 10-year government bond yield using Trading Economics API."""
+    api_key = "YOUR_TRADING_ECONOMICS_API_KEY"  # Replace with your API key
+    url = f"https://api.tradingeconomics.com/markets/bonds/{country_code}:10Y?c={api_key}"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        if data and isinstance(data, list):
+            return float(data[0]["Last"]) / 100  # Convert from percentage to decimal
+    except Exception as e:
+        st.error(f"Error fetching bond yield for {country_code}: {e}")
+        return None
+
 # Streamlit App
 st.title("EUR/PLN FX Option Pricer")
 
-# Fetch Spot Rate from Yahoo Finance
+# Fetch Spot Rate (Default for Manual Input)
+default_spot_rate = 4.5  # Replace with real live spot rate fetching logic if needed
+
+# Allow user to input spot rate
 st.sidebar.header("Market Data")
-try:
-    spot_data = yf.download("EURPLN=X", period="1d", progress=False)
-    if not spot_data.empty:
-        fetched_spot_rate = float(spot_data['Close'].iloc[-1])
-    else:
-        fetched_spot_rate = 4.5  # Default fallback rate
-except Exception:
-    fetched_spot_rate = 4.5  # Default rate in case of an error
+spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=default_spot_rate, step=0.01)
 
-# Ensure `fetched_spot_rate` is valid
-if fetched_spot_rate is None or np.isnan(fetched_spot_rate):
-    fetched_spot_rate = 4.5  # Additional fallback
+# Fetch Bond Yields
+domestic_rate = get_bond_yield("PL")  # 10-year Polish bond yield
+foreign_rate = get_bond_yield("DE")  # 10-year German bond yield
 
-# Allow user to use fetched spot rate or input manually
-use_live_data = st.sidebar.checkbox("Use Live Spot Rate", value=True)
-if use_live_data:
-    spot_rate = fetched_spot_rate
-    st.sidebar.write(f"Current EUR/PLN Spot Rate (Live): {spot_rate:.4f}")
-else:
-    spot_rate = st.sidebar.number_input("Enter Spot Rate", value=fetched_spot_rate, step=0.01)
+# Handle missing data
+if domestic_rate is None:
+    domestic_rate = 0.055  # Default to 5.5% if live data is unavailable
+if foreign_rate is None:
+    foreign_rate = 0.025  # Default to 2.5% if live data is unavailable
+
+# Display bond yields
+st.sidebar.write(f"10-Year Polish Bond Yield (Domestic Rate): {domestic_rate * 100:.2f}%")
+st.sidebar.write(f"10-Year German Bond Yield (Foreign Rate): {foreign_rate * 100:.2f}%")
 
 # Input Parameters
 st.sidebar.header("Option Parameters")
 strike_price = st.sidebar.number_input("Strike Price", value=float(spot_rate), step=0.01)
 volatility = st.sidebar.number_input("Volatility (annualized, %)", value=10.0, step=0.1) / 100
-domestic_rate = st.sidebar.number_input("Domestic Risk-Free Rate (%)", value=2.0, step=0.1) / 100
-foreign_rate = st.sidebar.number_input("Foreign Risk-Free Rate (%)", value=1.0, step=0.1) / 100
 time_to_maturity = st.sidebar.number_input("Time to Maturity (in years)", value=0.25, step=0.01)
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 option_type = st.sidebar.radio("Option Type", ["Call", "Put"], index=0)
@@ -62,4 +73,4 @@ if st.sidebar.button("Calculate Price"):
         st.error(f"Error in calculation: {e}")
 
 # Footer
-st.write("Powered by Streamlit | Data from Yahoo Finance (when available)")
+st.write("Powered by Streamlit | Bond yields fetched from Trading Economics")
