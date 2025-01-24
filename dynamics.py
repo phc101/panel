@@ -18,7 +18,7 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
     return price * notional
 
 # Streamlit App
-st.title("EUR/PLN FX Option Pricer with Enhanced Chart Layout")
+st.title("EUR/PLN FX Option Pricer with Enhanced Chart Labels")
 
 # Allow user to manually input the spot rate
 spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.3150, step=0.0001, format="%.4f")
@@ -61,22 +61,6 @@ for i in range(12):
         "notional": notional
     })
 
-# Calculate Net Premium
-net_premium = 0
-for trade in trades:
-    price = fx_option_pricer(
-        spot_rate,
-        trade["strike"],
-        volatility,
-        domestic_rate,
-        foreign_rate,
-        trade["maturity_months"] / 12,  # Convert months to years
-        trade["notional"],
-        "call" if trade["type"] == "Max Price" else "put"
-    )
-    premium = -price if trade["action"] == "Buy" else price
-    net_premium += premium
-
 # Plot the Chart at the Top
 fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -104,20 +88,38 @@ min_prices.append(min_prices[-1])
 ax.step(maturity_months, max_prices, color="green", linestyle="--", label="Max Price (Call)")
 ax.step(maturity_months, min_prices, color="red", linestyle="--", label="Min Price (Put)")
 
-# Add labels on the right-hand axis
-ax.annotate("Max Participation Price", xy=(12.5, max_prices[-1]), xycoords='data',
+# Add labels to the edges
+ax.annotate("Max Participation Price", xy=(12, max_prices[-1]), xytext=(13, max_prices[-1]),
             color="green", fontsize=10, ha="left", va="center")
-ax.annotate("Hedged Price", xy=(12.5, min_prices[-1]), xycoords='data',
+ax.annotate("Hedged Price", xy=(12, min_prices[-1]), xytext=(13, min_prices[-1]),
             color="red", fontsize=10, ha="left", va="center")
+ax.annotate("Spot Price", xy=(0, spot_rate), xytext=(-0.5, spot_rate),
+            color="blue", fontsize=10, ha="right", va="center")
 
 # Configure chart
 ax.set_title("Trades Visualization (Stair Step)")
 ax.set_xlabel("Time to Maturity (Months)")
 ax.set_ylabel("Strike Prices (PLN)")
 ax.grid(True, linewidth=0.5, alpha=0.3)  # Thinner and barely visible grid
-ax.set_xlim(left=0, right=13)
+ax.set_xlim(left=-1, right=13)
 ax.set_ylim(min(min_prices) - 0.01, max(max_prices) + 0.01)
 st.pyplot(fig)
+
+# Calculate Net Premium
+net_premium = 0
+for trade in trades:
+    price = fx_option_pricer(
+        spot_rate,
+        trade["strike"],
+        volatility,
+        domestic_rate,
+        foreign_rate,
+        trade["maturity_months"] / 12,  # Convert months to years
+        trade["notional"],
+        "call" if trade["type"] == "Max Price" else "put"
+    )
+    premium = -price if trade["action"] == "Buy" else price
+    net_premium += premium
 
 # Display Net Premium Above Current Trades
 st.write("### Net Premium")
