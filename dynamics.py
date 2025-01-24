@@ -31,7 +31,11 @@ st.sidebar.header("Set Max and Min Prices")
 max_price = st.sidebar.number_input("Enter Max Price Strike", value=spot_rate + 0.1, step=0.0001, format="%.4f")
 min_price = st.sidebar.number_input("Enter Min Price Strike", value=spot_rate - 0.1, step=0.0001, format="%.4f")
 
-flat_price = st.sidebar.checkbox("Flat Max Price with +1% Higher Min Price from Month 7")
+flat_max_price = st.sidebar.checkbox("Flat Max Price")
+flat_min_price = st.sidebar.checkbox("Flat Min Price")
+
+increase_min_price = st.sidebar.checkbox("+1% Min Price from Month 7")
+increase_max_price = st.sidebar.checkbox("+1% Max Price from Month 7")
 
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 
@@ -39,8 +43,8 @@ notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.
 trades = []
 for i in range(12):
     maturity_date = datetime.now() + timedelta(days=30 * (i + 1))
-    if flat_price:
-        # Keep Max Price flat and increase Min Price by 1% starting from month 7
+    if flat_max_price and increase_min_price:
+        # Flat Max Price, Increment Min Price by 1% from Month 7
         min_price_adjusted = min_price * 1.01 if i + 1 >= 7 else min_price
         trades.append({
             "type": "Max Price",
@@ -58,8 +62,27 @@ for i in range(12):
             "maturity_date": maturity_date.strftime("%Y-%m-%d"),
             "notional": notional
         })
+    elif flat_min_price and increase_max_price:
+        # Flat Min Price, Increment Max Price by 1% from Month 7
+        max_price_adjusted = max_price * 1.01 if i + 1 >= 7 else max_price
+        trades.append({
+            "type": "Max Price",
+            "action": "Sell",
+            "strike": max_price_adjusted,
+            "maturity_months": i + 1,
+            "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+            "notional": notional
+        })
+        trades.append({
+            "type": "Min Price",
+            "action": "Buy",
+            "strike": min_price,
+            "maturity_months": i + 1,
+            "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+            "notional": notional
+        })
     else:
-        # Standard increment logic
+        # Default behavior
         trades.append({
             "type": "Max Price",
             "action": "Sell",
