@@ -53,6 +53,18 @@ if st.sidebar.button("Add Trade"):
     })
     st.success(f"{action} {trade_type} at Strike {strike_price:.4f} added!")
 
+# Add Min Price Button
+if st.sidebar.button("Add Min Price"):
+    predefined_trade = {
+        "type": "Min Price",
+        "action": "Buy",
+        "strike": spot_rate,  # Default strike is the current spot rate
+        "maturity_months": 3,  # Default maturity in months
+        "notional": 100000.0  # Default notional amount
+    }
+    st.session_state.trades.append(predefined_trade)
+    st.success(f"Predefined trade added: Buy Min Price at Strike {spot_rate:.4f}")
+
 # Reset Trades Button
 if st.sidebar.button("Reset Trades"):
     st.session_state.trades = []
