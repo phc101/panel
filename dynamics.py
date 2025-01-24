@@ -50,7 +50,7 @@ if st.sidebar.button("Add Trade"):
             "type": trade_type,
             "action": action,
             "strike": strike_price,
-            "maturity": time_to_maturity_years,
+            "maturity": time_to_maturity_months,
             "notional": notional
         })
         st.success(f"{action} {trade_type} at Strike {strike_price:.2f} added!")
@@ -60,12 +60,12 @@ if st.sidebar.button("Add Trade"):
 # Display Added Trades
 st.write("### Current Trades")
 for i, trade in enumerate(st.session_state.trades):
-    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']} (Maturity: {trade['maturity']*12:.0f} months)")
+    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']} (Maturity: {trade['maturity']} months)")
 
 # Calculate Net Premium and Plot Trades
 if st.session_state.trades:
     net_premium = 0
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(10, 6))
 
     # Plot each trade
     for trade in st.session_state.trades:
@@ -76,22 +76,24 @@ if st.session_state.trades:
             volatility,
             domestic_rate,
             foreign_rate,
-            trade["maturity"],
+            trade["maturity"] / 12,  # Convert months to years
             trade["notional"],
             trade["type"].lower()
         )
         premium = -price if trade["action"] == "Buy" else price
         net_premium += premium
 
-        # Plot strike price
+        # Plot strike price as a horizontal line
         color = "green" if trade["type"] == "Call" else "red"
-        label = f"{trade['type']} {trade['action']} (Strike: {trade['strike']})"
-        ax.axvline(trade["strike"], color=color, linestyle="--", label=label)
+        label = f"{trade['type']} {trade['action']} (Strike: {trade['strike']}, Maturity: {trade['maturity']} months)"
+        ax.hlines(
+            trade["strike"], xmin=0, xmax=trade["maturity"], color=color, linestyle="--", label=label
+        )
 
     # Configure chart
     ax.set_title("Trades Visualization")
-    ax.set_xlabel("Strike Prices (PLN)")
-    ax.set_ylabel("Indicator (Vertical Lines)")
+    ax.set_xlabel("Time to Maturity (Months)")
+    ax.set_ylabel("Strike Prices (PLN)")
     ax.legend()
     st.pyplot(fig)
 
