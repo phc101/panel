@@ -18,7 +18,7 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
     return price * notional
 
 # Streamlit App
-st.title("EUR/PLN FX Option Pricer with Both-Sided Auto-Generated Trades")
+st.title("EUR/PLN FX Option Pricer with Max and Min Prices")
 
 # Allow user to manually input the spot rate
 spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.3150, step=0.0001, format="%.4f")
@@ -34,34 +34,35 @@ foreign_rate = st.sidebar.number_input("German 10-Year Bond Yield (Foreign Rate,
 if "trades" not in st.session_state:
     st.session_state.trades = []
 
-# Input Parameters for a Single Trade
-st.sidebar.header("Add a Trade")
-strike_price = st.sidebar.number_input("Base Strike Price", value=float(spot_rate), step=0.0001, format="%.4f")
+# Input Parameters for Max and Min Prices
+st.sidebar.header("Set Max and Min Prices")
+max_price = st.sidebar.number_input("Enter Max Price Strike", value=float(spot_rate + 0.1), step=0.0001, format="%.4f")
+min_price = st.sidebar.number_input("Enter Min Price Strike", value=float(spot_rate - 0.1), step=0.0001, format="%.4f")
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 
-# Add Trade Button
-if st.sidebar.button("Add Trade"):
-    if not st.session_state.trades:  # If no trades exist, auto-generate 12 trades for both Min Price and Max Price
+# Add Trades Button
+if st.sidebar.button("Add Trades"):
+    if not st.session_state.trades:  # If no trades exist, auto-generate 12 trades for both Max Price and Min Price
         for i in range(12):
-            # Generate Max Price trades
+            # Generate Max Price (Sell)
             st.session_state.trades.append({
                 "type": "Max Price",
-                "action": "Sell",  # Default action for Max Price
-                "strike": strike_price + (i * 0.01),  # Increment strike by 0.01 for each trade
+                "action": "Sell",
+                "strike": max_price + (i * 0.01),  # Increment max price by 0.01 for each trade
                 "maturity_months": i + 1,  # Maturity from 1 month to 12 months
                 "notional": notional
             })
-            # Generate Min Price trades
+            # Generate Min Price (Buy)
             st.session_state.trades.append({
                 "type": "Min Price",
-                "action": "Buy",  # Default action for Min Price
-                "strike": strike_price + (i * 0.01),  # Increment strike by 0.01 for each trade
+                "action": "Buy",
+                "strike": min_price + (i * 0.01),  # Increment min price by 0.01 for each trade
                 "maturity_months": i + 1,  # Maturity from 1 month to 12 months
                 "notional": notional
             })
-        st.success(f"12 trades for both Max Price and Min Price auto-generated starting at Strike {strike_price:.4f}")
-    else:  # Otherwise, inform the user
-        st.warning("Trades already exist. Reset the trades to generate new ones.")
+        st.success(f"12 trades for both Max Price and Min Price auto-generated!")
+    else:
+        st.warning("Trades already exist. Reset to generate new ones.")
 
 # Reset Trades Button
 if st.sidebar.button("Reset Trades"):
