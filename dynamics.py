@@ -18,7 +18,7 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
     return price * notional
 
 # Streamlit App
-st.title("EUR/PLN FX Option Pricer with Enhanced Chart Labels")
+st.title("EUR/PLN FX Option Pricer with Improved Spot Price Label")
 
 # Allow user to manually input the spot rate
 spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.3150, step=0.0001, format="%.4f")
@@ -93,7 +93,7 @@ ax.annotate("Max Participation Price", xy=(12, max_prices[-1]), xytext=(13, max_
             color="green", fontsize=10, ha="left", va="center")
 ax.annotate("Hedged Price", xy=(12, min_prices[-1]), xytext=(13, min_prices[-1]),
             color="red", fontsize=10, ha="left", va="center")
-ax.annotate("Spot Price", xy=(0, spot_rate), xytext=(-1.5, spot_rate),  # Adjusted to move further left
+ax.annotate("Spot Price", xy=(0, spot_rate), xytext=(-1.0, spot_rate),  # Adjusted further left for readability
             color="blue", fontsize=10, ha="right", va="center")
 
 # Configure chart
@@ -101,7 +101,7 @@ ax.set_title("Trades Visualization (Stair Step)")
 ax.set_xlabel("Time to Maturity (Months)")
 ax.set_ylabel("Strike Prices (PLN)")
 ax.grid(True, linewidth=0.5, alpha=0.3)  # Thinner and barely visible grid
-ax.set_xlim(left=-2, right=13)
+ax.set_xlim(left=0, right=13)
 ax.set_ylim(min(min_prices) - 0.01, max(max_prices) + 0.01)
 st.pyplot(fig)
 
