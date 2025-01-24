@@ -21,6 +21,10 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
 # Main App Content
 st.title("EUR/PLN Dynamic Forward Pricer")
 
+# Initialize trades in session state
+if "trades" not in st.session_state:
+    st.session_state.trades = []
+
 # Allow user to manually input the spot rate
 spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.3150, step=0.0001, format="%.4f")
 
@@ -42,58 +46,62 @@ flat_min_price = st.sidebar.checkbox("Flat Min Price", value=False)
 
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 
-# Dynamically Generate Trades
-trades = []
-for i in range(12):
-    maturity_date = datetime.now() + timedelta(days=30 * (i + 1))  # Generate maturity dates for each forward
-    # Generate Max Price (Sell)
-    trades.append({
-        "type": "Max Price",
-        "action": "Sell",
-        "strike": max_price if flat_max_price else max_price + (i * 0.01),  # Keep flat or increment by 0.01
-        "maturity_months": i + 1,  # Maturity from 1 month to 12 months
-        "maturity_date": maturity_date.strftime("%Y-%m-%d"),  # Convert to a readable date format
-        "notional": notional
-    })
-    # Generate Min Price (Buy)
-    trades.append({
-        "type": "Min Price",
-        "action": "Buy",
-        "strike": min_price if flat_min_price else min_price + (i * 0.01),  # Keep flat or increment by 0.01
-        "maturity_months": i + 1,  # Maturity from 1 month to 12 months
-        "maturity_date": maturity_date.strftime("%Y-%m-%d"),  # Convert to a readable date format
-        "notional": notional
-    })
+# Dynamically Generate Trades Button
+if st.sidebar.button("Generate Trades"):
+    for i in range(12):
+        maturity_date = datetime.now() + timedelta(days=30 * (i + 1))
+        st.session_state.trades.append({
+            "type": "Max Price",
+            "action": "Sell",
+            "strike": max_price if flat_max_price else max_price + (i * 0.01),
+            "maturity_months": i + 1,
+            "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+            "notional": notional
+        })
+        st.session_state.trades.append({
+            "type": "Min Price",
+            "action": "Buy",
+            "strike": min_price if flat_min_price else min_price + (i * 0.01),
+            "maturity_months": i + 1,
+            "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+            "notional": notional
+        })
 
-# Prepare data for the chart
-max_prices = [trade["strike"] for trade in trades if trade["type"] == "Max Price"]
-min_prices = [trade["strike"] for trade in trades if trade["type"] == "Min Price"]
-max_maturities = [trade["maturity_months"] for trade in trades if trade["type"] == "Max Price"]
-min_maturities = [trade["maturity_months"] for trade in trades if trade["type"] == "Min Price"]
+# Clear All Trades Button
+if st.sidebar.button("Clear All Trades"):
+    st.session_state.trades = []
 
-# Plot the Chart
-fig, ax = plt.subplots(figsize=(10, 6))
-ax.step(max_maturities, max_prices, color="green", linestyle="--", label="Max Price (Call)")
-ax.step(min_maturities, min_prices, color="red", linestyle="--", label="Min Price (Put)")
+# Prepare data for the chart if trades exist
+if st.session_state.trades:
+    max_prices = [trade["strike"] for trade in st.session_state.trades if trade["type"] == "Max Price"]
+    min_prices = [trade["strike"] for trade in st.session_state.trades if trade["type"] == "Min Price"]
+    max_maturities = [trade["maturity_months"] for trade in st.session_state.trades if trade["type"] == "Max Price"]
+    min_maturities = [trade["maturity_months"] for trade in st.session_state.trades if trade["type"] == "Min Price"]
 
-# Labels for Right and Left Axis
-ax.annotate("Max Participation Price", xy=(12, max_prices[-1]), xytext=(13, max_prices[-1]),
-            color="green", fontsize=10, ha="left", va="center")
-ax.annotate("Hedged Price", xy=(12, min_prices[-1]), xytext=(13, min_prices[-1]),
-            color="red", fontsize=10, ha="left", va="center")
-ax.annotate("Spot Price", xy=(0, spot_rate), xytext=(-1.0, spot_rate),
-            color="blue", fontsize=10, ha="right", va="center")
+    # Plot the Chart
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.step(max_maturities, max_prices, color="green", linestyle="--", label="Max Price (Call)")
+    ax.step(min_maturities, min_prices, color="red", linestyle="--", label="Min Price (Put)")
 
-ax.set_title("Trades Visualization (Stair Step)")
-ax.set_xlabel("Time to Maturity (Months)")
-ax.set_ylabel("Strike Prices (PLN)")
-ax.grid(True, linewidth=0.5, alpha=0.3)
-ax.set_xlim(left=0, right=13)
-ax.set_ylim(min(min_prices) - 0.01, max(max_prices) + 0.01)
-st.pyplot(fig)
+    ax.annotate("Max Participation Price", xy=(12, max_prices[-1]), xytext=(13, max_prices[-1]),
+                color="green", fontsize=10, ha="left", va="center")
+    ax.annotate("Hedged Price", xy=(12, min_prices[-1]), xytext=(13, min_prices[-1]),
+                color="red", fontsize=10, ha="left", va="center")
+    ax.annotate("Spot Price", xy=(0, spot_rate), xytext=(-1.0, spot_rate),
+                color="blue", fontsize=10, ha="right", va="center")
 
-# Display Added Trades
-st.write("### Current Trades")
-for i, trade in enumerate(trades):
-    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']:.4f} "
-             f"(Maturity: {trade['maturity_months']} months, Date: {trade['maturity_date']})")
+    ax.set_title("Trades Visualization (Stair Step)")
+    ax.set_xlabel("Time to Maturity (Months)")
+    ax.set_ylabel("Strike Prices (PLN)")
+    ax.grid(True, linewidth=0.5, alpha=0.3)
+    ax.set_xlim(left=0, right=13)
+    ax.set_ylim(min(min_prices) - 0.01, max(max_prices) + 0.01)
+    st.pyplot(fig)
+
+    # Display Added Trades
+    st.write("### Current Trades")
+    for i, trade in enumerate(st.session_state.trades):
+        st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']:.4f} "
+                 f"(Maturity: {trade['maturity_months']} months, Date: {trade['maturity_date']})")
+else:
+    st.write("### No trades available. Generate trades using the sidebar.")
