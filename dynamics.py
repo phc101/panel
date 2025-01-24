@@ -24,9 +24,16 @@ st.title("EUR/PLN FX Option Pricer")
 st.sidebar.header("Market Data")
 try:
     spot_data = yf.download("EURPLN=X", period="1d", progress=False)
-    fetched_spot_rate = spot_data['Close'].iloc[-1] if not spot_data.empty else 4.5  # Fallback default rate
+    if not spot_data.empty:
+        fetched_spot_rate = float(spot_data['Close'].iloc[-1])
+    else:
+        fetched_spot_rate = 4.5  # Default fallback rate
 except Exception:
     fetched_spot_rate = 4.5  # Default rate in case of an error
+
+# Ensure `fetched_spot_rate` is valid
+if fetched_spot_rate is None or np.isnan(fetched_spot_rate):
+    fetched_spot_rate = 4.5  # Additional fallback
 
 # Allow user to use fetched spot rate or input manually
 use_live_data = st.sidebar.checkbox("Use Live Spot Rate", value=True)
