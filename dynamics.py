@@ -40,23 +40,34 @@ time_to_maturity_months = st.sidebar.number_input("Time to Maturity (in months)"
 time_to_maturity_years = time_to_maturity_months / 12  # Convert to years for calculations
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 
-# Option Prices for Buying and Selling
-if st.sidebar.button("Calculate Prices"):
+# Buy or Sell Selection
+st.sidebar.header("Option Strategy")
+call_action = st.sidebar.selectbox("Call Option", ["Buy", "Sell"], index=0)
+put_action = st.sidebar.selectbox("Put Option", ["Buy", "Sell"], index=0)
+
+# Calculate Option Prices and Net Premium
+if st.sidebar.button("Calculate Net Premium"):
     try:
-        # Buy Call and Put
+        # Calculate Call and Put Prices
         call_price = fx_option_pricer(spot_rate, strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "call")
         put_price = fx_option_pricer(spot_rate, strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "put")
 
-        # Sell Call and Put (negative prices for selling)
-        sell_call_price = -call_price
-        sell_put_price = -put_price
+        # Adjust Prices Based on Buy/Sell Action
+        call_premium = call_price if call_action == "Buy" else -call_price
+        put_premium = put_price if put_action == "Buy" else -put_price
+
+        # Calculate Net Premium
+        net_premium = call_premium + put_premium
 
         # Display Results
         st.write("### Option Prices")
-        st.write(f"**Buy Call Price:** {call_price:.2f} PLN")
-        st.write(f"**Buy Put Price:** {put_price:.2f} PLN")
-        st.write(f"**Sell Call Price:** {sell_call_price:.2f} PLN")
-        st.write(f"**Sell Put Price:** {sell_put_price:.2f} PLN")
+        st.write(f"**Call Option ({call_action}):** {call_price:.2f} PLN")
+        st.write(f"**Put Option ({put_action}):** {put_price:.2f} PLN")
+        st.write("### Net Premium")
+        if net_premium > 0:
+            st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
+        else:
+            st.write(f"**Net Premium Paid:** {abs(net_premium):.2f} PLN")
     except Exception as e:
         st.error(f"Error in calculation: {e}")
 
