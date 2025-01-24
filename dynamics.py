@@ -60,7 +60,7 @@ for i in range(12):
         if flat_min_price:
             min_price_adjusted = min_price
         elif increase_min_price and i + 1 >= 7:
-            min_price_adjusted = min_price * 1.01
+            min_price_adjusted = min_price * (1 + 0.01 * (i - 6))  # Increment by 1% for each month from month 7
         else:
             min_price_adjusted = min_price + (i * 0.01)
 
@@ -77,7 +77,7 @@ for i in range(12):
         if flat_max_price:
             max_price_adjusted = max_price
         elif increase_max_price and i + 1 >= 7:
-            max_price_adjusted = max_price * 1.01
+            max_price_adjusted = max_price * (1 + 0.01 * (i - 6))  # Increment by 1% for each month from month 7
         else:
             max_price_adjusted = max_price + (i * 0.01)
 
