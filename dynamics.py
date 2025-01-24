@@ -55,7 +55,7 @@ if st.sidebar.button("Add Trade"):
             "action": action,
             "strike": strike_price,
             "maturity_months": time_to_maturity_months,
-            "maturity_date": time_to_maturity_date,
+            "maturity_date": time_to_maturity_date.strftime('%Y-%m-%d'),
             "notional": notional
         })
         st.success(f"{action} {trade_type} at Strike {strike_price:.2f} added!")
@@ -65,7 +65,8 @@ if st.sidebar.button("Add Trade"):
 # Display Added Trades
 st.write("### Current Trades")
 for i, trade in enumerate(st.session_state.trades):
-    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']} (Maturity: {trade['maturity_months']} months, Date: {trade['maturity_date'].strftime('%Y-%m-%d')})")
+    maturity_date = trade.get("maturity_date", "Unknown Date")
+    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']} (Maturity: {trade['maturity_months']} months, Date: {maturity_date})")
 
 # Calculate Net Premium and Plot Trades
 if st.session_state.trades:
@@ -90,9 +91,9 @@ if st.session_state.trades:
 
         # Plot strike price as a stair step
         color = "green" if trade["type"] == "Max Price" else "red"
-        label = f"{trade['type']} {trade['action']} (Strike: {trade['strike']}, Date: {trade['maturity_date'].strftime('%Y-%m-%d')})"
+        label = f"{trade['type']} {trade['action']} (Strike: {trade['strike']}, Date: {trade['maturity_date']})"
         ax.hlines(
-            trade["strike"], xmin=today, xmax=trade["maturity_date"], color=color, linestyle="--", label=label
+            trade["strike"], xmin=today, xmax=datetime.strptime(trade["maturity_date"], '%Y-%m-%d'), color=color, linestyle="--", label=label
         )
 
     # Configure chart
