@@ -54,8 +54,10 @@ if st.sidebar.button("Calculate Net Premium"):
         put_price = fx_option_pricer(spot_rate, put_strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity_years, notional, "put")
 
         # Adjust Prices Based on Buy/Sell Action
-        call_premium = call_price if call_action == "Buy" else -call_price
-        put_premium = put_price if put_action == "Buy" else -put_price
+        # - Buying: Negative premium (you pay)
+        # - Selling: Positive premium (you receive)
+        call_premium = -call_price if call_action == "Buy" else call_price
+        put_premium = -put_price if put_action == "Buy" else put_price
 
         # Calculate Net Premium
         net_premium = call_premium + put_premium
