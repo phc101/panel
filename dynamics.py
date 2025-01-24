@@ -21,6 +21,13 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
 # Main App Content
 st.title("EUR/PLN Dynamic Forward Pricer")
 
+# Choose Mode: Exporter or Importer
+st.sidebar.header("Choose Strategy")
+strategy = st.sidebar.radio(
+    "Select Strategy Type:",
+    options=["Exporter (Buy Put, Sell Call)", "Importer (Sell Put, Buy Call)"]
+)
+
 # Sidebar inputs
 spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.3150, step=0.0001, format="%.4f")
 volatility = st.sidebar.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
@@ -43,62 +50,82 @@ notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.
 trades = []
 for i in range(12):
     maturity_date = datetime.now() + timedelta(days=30 * (i + 1))
-    if flat_max_price and increase_min_price:
-        # Flat Max Price, Increment Min Price by 1% from Month 7
-        min_price_adjusted = min_price * 1.01 if i + 1 >= 7 else min_price
-        trades.append({
-            "type": "Max Price",
-            "action": "Sell",
-            "strike": max_price,
-            "maturity_months": i + 1,
-            "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-            "notional": notional
-        })
-        trades.append({
-            "type": "Min Price",
-            "action": "Buy",
-            "strike": min_price_adjusted,
-            "maturity_months": i + 1,
-            "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-            "notional": notional
-        })
-    elif flat_min_price and increase_max_price:
-        # Flat Min Price, Increment Max Price by 1% from Month 7
-        max_price_adjusted = max_price * 1.01 if i + 1 >= 7 else max_price
-        trades.append({
-            "type": "Max Price",
-            "action": "Sell",
-            "strike": max_price_adjusted,
-            "maturity_months": i + 1,
-            "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-            "notional": notional
-        })
-        trades.append({
-            "type": "Min Price",
-            "action": "Buy",
-            "strike": min_price,
-            "maturity_months": i + 1,
-            "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-            "notional": notional
-        })
-    else:
-        # Default behavior
-        trades.append({
-            "type": "Max Price",
-            "action": "Sell",
-            "strike": max_price + (i * 0.01),
-            "maturity_months": i + 1,
-            "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-            "notional": notional
-        })
-        trades.append({
-            "type": "Min Price",
-            "action": "Buy",
-            "strike": min_price + (i * 0.01),
-            "maturity_months": i + 1,
-            "maturity_date": maturity_date.strftime("%Y-%m-%d"),
-            "notional": notional
-        })
+    if strategy == "Exporter (Buy Put, Sell Call)":
+        if flat_max_price and increase_min_price:
+            # Flat Max Price, Increment Min Price by 1% from Month 7
+            min_price_adjusted = min_price * 1.01 if i + 1 >= 7 else min_price
+            trades.append({
+                "type": "Max Price",
+                "action": "Sell",
+                "strike": max_price,
+                "maturity_months": i + 1,
+                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+                "notional": notional
+            })
+            trades.append({
+                "type": "Min Price",
+                "action": "Buy",
+                "strike": min_price_adjusted,
+                "maturity_months": i + 1,
+                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+                "notional": notional
+            })
+        else:
+            # Default Exporter Behavior
+            trades.append({
+                "type": "Max Price",
+                "action": "Sell",
+                "strike": max_price + (i * 0.01),
+                "maturity_months": i + 1,
+                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+                "notional": notional
+            })
+            trades.append({
+                "type": "Min Price",
+                "action": "Buy",
+                "strike": min_price + (i * 0.01),
+                "maturity_months": i + 1,
+                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+                "notional": notional
+            })
+    elif strategy == "Importer (Sell Put, Buy Call)":
+        if flat_min_price and increase_max_price:
+            # Flat Min Price, Increment Max Price by 1% from Month 7
+            max_price_adjusted = max_price * 1.01 if i + 1 >= 7 else max_price
+            trades.append({
+                "type": "Max Price",
+                "action": "Buy",
+                "strike": max_price_adjusted,
+                "maturity_months": i + 1,
+                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+                "notional": notional
+            })
+            trades.append({
+                "type": "Min Price",
+                "action": "Sell",
+                "strike": min_price,
+                "maturity_months": i + 1,
+                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+                "notional": notional
+            })
+        else:
+            # Default Importer Behavior
+            trades.append({
+                "type": "Max Price",
+                "action": "Buy",
+                "strike": max_price + (i * 0.01),
+                "maturity_months": i + 1,
+                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+                "notional": notional
+            })
+            trades.append({
+                "type": "Min Price",
+                "action": "Sell",
+                "strike": min_price + (i * 0.01),
+                "maturity_months": i + 1,
+                "maturity_date": maturity_date.strftime("%Y-%m-%d"),
+                "notional": notional
+            })
 
 # Calculate Net Premium
 net_premium = 0
