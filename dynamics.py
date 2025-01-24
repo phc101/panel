@@ -24,15 +24,17 @@ st.title("EUR/PLN FX Option Pricer")
 st.sidebar.header("Market Data")
 try:
     spot_data = yf.download("EURPLN=X", period="1d", progress=False)
-    if not spot_data.empty:
-        spot_rate = spot_data['Close'].iloc[-1]
-    else:
-        spot_rate = 4.5  # Default fallback rate
-except Exception as e:
-    st.sidebar.error("Error fetching data. Using fallback value.")
-    spot_rate = 4.5
+    fetched_spot_rate = spot_data['Close'].iloc[-1] if not spot_data.empty else 4.5  # Fallback default rate
+except Exception:
+    fetched_spot_rate = 4.5  # Default rate in case of an error
 
-st.sidebar.write(f"Current EUR/PLN Spot Rate: {spot_rate:.4f}")
+# Allow user to use fetched spot rate or input manually
+use_live_data = st.sidebar.checkbox("Use Live Spot Rate", value=True)
+if use_live_data:
+    spot_rate = fetched_spot_rate
+    st.sidebar.write(f"Current EUR/PLN Spot Rate (Live): {spot_rate:.4f}")
+else:
+    spot_rate = st.sidebar.number_input("Enter Spot Rate", value=fetched_spot_rate, step=0.01)
 
 # Input Parameters
 st.sidebar.header("Option Parameters")
@@ -53,4 +55,4 @@ if st.sidebar.button("Calculate Price"):
         st.error(f"Error in calculation: {e}")
 
 # Footer
-st.write("Powered by Streamlit | Real Data from Yahoo Finance")
+st.write("Powered by Streamlit | Data from Yahoo Finance (when available)")
