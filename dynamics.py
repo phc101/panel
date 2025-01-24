@@ -21,7 +21,7 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
 st.title("EUR/PLN FX Option Pricer with Configurable Limits")
 
 # Allow user to manually input the spot rate
-spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.5, step=0.01)
+spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.3150, step=0.0001, format="%.4f")
 
 # Allow user to manually input volatility
 volatility = st.sidebar.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
@@ -42,7 +42,7 @@ if "trades" not in st.session_state:
 st.sidebar.header("Add a Trade")
 trade_type = st.sidebar.radio("Trade Type", ["Max Price", "Min Price"])
 action = st.sidebar.radio("Action", ["Buy", "Sell"])
-strike_price = st.sidebar.number_input(f"{trade_type} Strike Price", value=float(spot_rate), step=0.01)
+strike_price = st.sidebar.number_input(f"{trade_type} Strike Price", value=float(spot_rate), step=0.0001, format="%.4f")
 time_to_maturity_months = st.sidebar.number_input("Time to Maturity (in months)", value=3, step=1, min_value=1)
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 
@@ -64,16 +64,10 @@ if st.sidebar.button("Add Trade"):
             "maturity_months": time_to_maturity_months,
             "notional": notional
         })
-        st.success(f"{action} {trade_type} at Strike {strike_price:.2f} added!")
+        st.success(f"{action} {trade_type} at Strike {strike_price:.4f} added!")
 
-# Display Added Trades
-st.write("### Current Trades")
-for i, trade in enumerate(st.session_state.trades):
-    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']} (Maturity: {trade['maturity_months']} months)")
-
-# Calculate Net Premium and Plot Trades
+# Plot the Chart at the Top
 if st.session_state.trades:
-    net_premium = 0
     fig, ax = plt.subplots(figsize=(10, 6))
 
     # Prepare data for stair-step plotting
@@ -104,11 +98,18 @@ if st.session_state.trades:
     ax.set_title("Trades Visualization (Stair Step)")
     ax.set_xlabel("Time to Maturity (Months)")
     ax.set_ylabel("Strike Prices (PLN)")
-    ax.grid(True)
+    ax.grid(True, linewidth=0.5, alpha=0.3)  # Thinner and barely visible grid
     st.pyplot(fig)
 
-    # Display Net Premium
-    for trade in sorted_trades:
+# Display Added Trades
+st.write("### Current Trades")
+for i, trade in enumerate(st.session_state.trades):
+    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']:.4f} (Maturity: {trade['maturity_months']} months)")
+
+# Calculate Net Premium and Display Below
+if st.session_state.trades:
+    net_premium = 0
+    for trade in sorted(st.session_state.trades, key=lambda x: x["maturity_months"]):
         price = fx_option_pricer(
             spot_rate,
             trade["strike"],
