@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
+from datetime import datetime, timedelta
 
 # Black-Scholes Pricing Function
 def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, notional, option_type="call"):
@@ -20,6 +21,9 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
 # Streamlit App
 st.title("EUR/PLN FX Option Pricer with Trade Stacking")
 
+# Today's Date
+today = datetime.today()
+
 # Allow user to manually input the spot rate
 spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.5, step=0.01)
 
@@ -36,11 +40,11 @@ if "trades" not in st.session_state:
 
 # Input Parameters for a Single Trade
 st.sidebar.header("Add a Trade")
-trade_type = st.sidebar.radio("Trade Type", ["Call", "Put"])
+trade_type = st.sidebar.radio("Trade Type", ["Max Price", "Min Price"])
 action = st.sidebar.radio("Action", ["Buy", "Sell"])
 strike_price = st.sidebar.number_input(f"{trade_type} Strike Price", value=float(spot_rate), step=0.01)
-time_to_maturity_months = st.sidebar.number_input("Time to Maturity (in months)", value=3, step=1)
-time_to_maturity_years = time_to_maturity_months / 12  # Convert to years
+time_to_maturity_months = st.sidebar.number_input("Time to Maturity (in months)", value=3, step=1, min_value=1)
+time_to_maturity_date = today + timedelta(days=30 * time_to_maturity_months)
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 
 # Add Trade Button
@@ -50,7 +54,8 @@ if st.sidebar.button("Add Trade"):
             "type": trade_type,
             "action": action,
             "strike": strike_price,
-            "maturity": time_to_maturity_months,
+            "maturity_months": time_to_maturity_months,
+            "maturity_date": time_to_maturity_date,
             "notional": notional
         })
         st.success(f"{action} {trade_type} at Strike {strike_price:.2f} added!")
@@ -60,14 +65,14 @@ if st.sidebar.button("Add Trade"):
 # Display Added Trades
 st.write("### Current Trades")
 for i, trade in enumerate(st.session_state.trades):
-    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']} (Maturity: {trade['maturity']} months)")
+    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']} (Maturity: {trade['maturity_months']} months, Date: {trade['maturity_date'].strftime('%Y-%m-%d')})")
 
 # Calculate Net Premium and Plot Trades
 if st.session_state.trades:
     net_premium = 0
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    # Plot each trade
+    # Plot each trade as a stair step
     for trade in st.session_state.trades:
         # Calculate option premium
         price = fx_option_pricer(
@@ -76,25 +81,26 @@ if st.session_state.trades:
             volatility,
             domestic_rate,
             foreign_rate,
-            trade["maturity"] / 12,  # Convert months to years
+            trade["maturity_months"] / 12,  # Convert months to years
             trade["notional"],
-            trade["type"].lower()
+            "call" if trade["type"] == "Max Price" else "put"
         )
         premium = -price if trade["action"] == "Buy" else price
         net_premium += premium
 
-        # Plot strike price as a horizontal line
-        color = "green" if trade["type"] == "Call" else "red"
-        label = f"{trade['type']} {trade['action']} (Strike: {trade['strike']}, Maturity: {trade['maturity']} months)"
+        # Plot strike price as a stair step
+        color = "green" if trade["type"] == "Max Price" else "red"
+        label = f"{trade['type']} {trade['action']} (Strike: {trade['strike']}, Date: {trade['maturity_date'].strftime('%Y-%m-%d')})"
         ax.hlines(
-            trade["strike"], xmin=0, xmax=trade["maturity"], color=color, linestyle="--", label=label
+            trade["strike"], xmin=today, xmax=trade["maturity_date"], color=color, linestyle="--", label=label
         )
 
     # Configure chart
-    ax.set_title("Trades Visualization")
-    ax.set_xlabel("Time to Maturity (Months)")
+    ax.set_title("Trades Visualization (Stair Step)")
+    ax.set_xlabel("Strike Date")
     ax.set_ylabel("Strike Prices (PLN)")
     ax.legend()
+    ax.grid(True)
     st.pyplot(fig)
 
     # Display Net Premium
