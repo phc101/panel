@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Black-Scholes Pricing Function
 def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, notional, option_type="call"):
@@ -20,9 +20,6 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
 
 # Streamlit App
 st.title("EUR/PLN FX Option Pricer with Trade Stacking")
-
-# Today's Date
-today = datetime.today()
 
 # Allow user to manually input the spot rate
 spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.5, step=0.01)
@@ -44,7 +41,6 @@ trade_type = st.sidebar.radio("Trade Type", ["Max Price", "Min Price"])
 action = st.sidebar.radio("Action", ["Buy", "Sell"])
 strike_price = st.sidebar.number_input(f"{trade_type} Strike Price", value=float(spot_rate), step=0.01)
 time_to_maturity_months = st.sidebar.number_input("Time to Maturity (in months)", value=3, step=1, min_value=1)
-time_to_maturity_date = today + timedelta(days=30 * time_to_maturity_months)
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 
 # Add Trade Button
@@ -55,7 +51,6 @@ if st.sidebar.button("Add Trade"):
             "action": action,
             "strike": strike_price,
             "maturity_months": time_to_maturity_months,
-            "maturity_date": time_to_maturity_date.strftime('%Y-%m-%d'),
             "notional": notional
         })
         st.success(f"{action} {trade_type} at Strike {strike_price:.2f} added!")
@@ -65,8 +60,7 @@ if st.sidebar.button("Add Trade"):
 # Display Added Trades
 st.write("### Current Trades")
 for i, trade in enumerate(st.session_state.trades):
-    maturity_date = trade.get("maturity_date", "Unknown Date")
-    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']} (Maturity: {trade['maturity_months']} months, Date: {maturity_date})")
+    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']} (Maturity: {trade['maturity_months']} months)")
 
 # Calculate Net Premium and Plot Trades
 if st.session_state.trades:
@@ -75,12 +69,12 @@ if st.session_state.trades:
 
     # Prepare data for stair-step plotting
     sorted_trades = sorted(st.session_state.trades, key=lambda x: x["maturity_months"])
-    maturity_dates = [today]  # Start from today's date
+    maturity_months = [0]  # Start from 0 months
     max_prices = [None]  # Placeholder for max prices
     min_prices = [None]  # Placeholder for min prices
 
     for trade in sorted_trades:
-        maturity_dates.append(datetime.strptime(trade["maturity_date"], '%Y-%m-%d'))
+        maturity_months.append(trade["maturity_months"])
         if trade["type"] == "Max Price":
             max_prices[-1] = trade["strike"]
             min_prices.append(min_prices[-1] if min_prices[-1] is not None else trade["strike"])
@@ -89,7 +83,7 @@ if st.session_state.trades:
             max_prices.append(max_prices[-1] if max_prices[-1] is not None else trade["strike"])
 
     # Fill placeholders for the last step
-    maturity_dates.append(maturity_dates[-1] + timedelta(days=30))
+    maturity_months.append(maturity_months[-1] + 1)
     max_prices.append(max_prices[-1])
     min_prices.append(min_prices[-1])
 
@@ -98,12 +92,12 @@ if st.session_state.trades:
     min_prices[0] = min_prices[1]
 
     # Plot the stair steps
-    ax.step(maturity_dates, max_prices, color="green", linestyle="--", label="Max Price (Call)")
-    ax.step(maturity_dates, min_prices, color="red", linestyle="--", label="Min Price (Put)")
+    ax.step(maturity_months, max_prices, color="green", linestyle="--", label="Max Price (Call)")
+    ax.step(maturity_months, min_prices, color="red", linestyle="--", label="Min Price (Put)")
 
     # Configure chart
     ax.set_title("Trades Visualization (Stair Step)")
-    ax.set_xlabel("Strike Date")
+    ax.set_xlabel("Time to Maturity (Months)")
     ax.set_ylabel("Strike Prices (PLN)")
     ax.grid(True)
     st.pyplot(fig)
