@@ -18,7 +18,7 @@ def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time
     return price * notional
 
 # Streamlit App
-st.title("EUR/PLN FX Option Pricer with Flat Min Price Option")
+st.title("EUR/PLN FX Option Pricer with Flat Price Options")
 
 # Allow user to manually input the spot rate
 spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.3150, step=0.0001, format="%.4f")
@@ -35,7 +35,8 @@ st.sidebar.header("Set Max and Min Prices")
 max_price = st.sidebar.number_input("Enter Max Price Strike", value=float(spot_rate + 0.1), step=0.0001, format="%.4f")
 min_price = st.sidebar.number_input("Enter Min Price Strike", value=float(spot_rate - 0.1), step=0.0001, format="%.4f")
 
-# Toggle for Flat Min Price
+# Toggles for Flat Prices
+flat_max_price = st.sidebar.checkbox("Flat Max Price", value=False)
 flat_min_price = st.sidebar.checkbox("Flat Min Price", value=False)
 
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
@@ -47,7 +48,7 @@ for i in range(12):
     trades.append({
         "type": "Max Price",
         "action": "Sell",
-        "strike": max_price + (i * 0.01),  # Increment max price by 0.01 for each trade
+        "strike": max_price if flat_max_price else max_price + (i * 0.01),  # Keep flat or increment by 0.01
         "maturity_months": i + 1,  # Maturity from 1 month to 12 months
         "notional": notional
     })
