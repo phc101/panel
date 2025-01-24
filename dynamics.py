@@ -31,7 +31,7 @@ st.sidebar.header("Set Max and Min Prices")
 max_price = st.sidebar.number_input("Enter Max Price Strike", value=spot_rate + 0.1, step=0.0001, format="%.4f")
 min_price = st.sidebar.number_input("Enter Min Price Strike", value=spot_rate - 0.1, step=0.0001, format="%.4f")
 
-flat_price = st.sidebar.checkbox("Flat Min Price with +1% Higher Max Price from Month 7")
+flat_price = st.sidebar.checkbox("Flat Max Price with +1% Higher Min Price from Month 7")
 
 notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
 
@@ -40,12 +40,12 @@ trades = []
 for i in range(12):
     maturity_date = datetime.now() + timedelta(days=30 * (i + 1))
     if flat_price:
-        # Keep Min Price flat and increase Max Price by 1% starting from month 7
-        max_price_adjusted = max_price * 1.01 if i + 1 >= 7 else max_price
+        # Keep Max Price flat and increase Min Price by 1% starting from month 7
+        min_price_adjusted = min_price * 1.01 if i + 1 >= 7 else min_price
         trades.append({
             "type": "Max Price",
             "action": "Sell",
-            "strike": max_price_adjusted,
+            "strike": max_price,
             "maturity_months": i + 1,
             "maturity_date": maturity_date.strftime("%Y-%m-%d"),
             "notional": notional
@@ -53,7 +53,7 @@ for i in range(12):
         trades.append({
             "type": "Min Price",
             "action": "Buy",
-            "strike": min_price,
+            "strike": min_price_adjusted,
             "maturity_months": i + 1,
             "maturity_date": maturity_date.strftime("%Y-%m-%d"),
             "notional": notional
