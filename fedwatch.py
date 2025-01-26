@@ -1,72 +1,32 @@
-import streamlit as st
-import requests
-from bs4 import BeautifulSoup
+import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
-# Title of the app
-st.title("CME FedWatch Tool Viewer")
-st.markdown("This app displays data from the CME FedWatch Tool, showcasing probabilities of interest rate changes.")
+def calculate_binomial_tree(prices, days=5, risk_free_rate=0.01):
+    # Calculate log returns and volatility
+    log_returns = np.log(prices[1:] / prices[:-1])
+    sigma = np.std(log_returns)
+    
+    # Binomial tree parameters
+    dt = 1 / 252  # 1 trading day
+    u = np.exp(sigma * np.sqrt(dt))
+    d = 1 / u
+    p = (np.exp(risk_free_rate * dt) - d) / (u - d)
+    
+    # Initialize the tree
+    tree = np.zeros((days + 1, days + 1))
+    tree[0, 0] = prices[-1]  # Current price
+    
+    # Build the tree
+    for i in range(1, days + 1):
+        for j in range(i + 1):
+            tree[j, i] = prices[-1] * (u ** (i - j)) * (d ** j)
+    
+    return tree, p
 
-# Function to fetch and parse data from CME FedWatch Tool
-def fetch_fedwatch_data(url):
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, "html.parser")
+# Example usage
+prices = np.random.uniform(4.4, 4.6, size=20)  # Replace with actual data
+binomial_tree, prob = calculate_binomial_tree(prices)
 
-        # Find the data table (adjust the selector based on the webpage structure)
-        table = soup.find("table")
-        if not table:
-            st.error("Could not find the data table on the webpage.")
-            return None
-
-        # Extract table headers and rows
-        headers = [th.text.strip() for th in table.find_all("th")]
-        rows = []
-        for tr in table.find_all("tr")[1:]:  # Skip header row
-            cells = [td.text.strip() for td in tr.find_all("td")]
-            rows.append(cells)
-
-        # Create a DataFrame
-        data = pd.DataFrame(rows, columns=headers)
-        return data
-
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error fetching data: {e}")
-        return None
-
-# URL for the CME FedWatch Tool
-url = "https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html"
-
-# Fetch data
-st.subheader("Interest Rate Probabilities")
-data = fetch_fedwatch_data(url)
-
-if data is not None:
-    # Display data
-    st.dataframe(data)
-
-    # Display probabilities as a bar chart
-    try:
-        probabilities = data.iloc[:, 1].str.replace('%', '').astype(float)  # Assuming second column holds probabilities
-        labels = data.iloc[:, 0]  # Assuming first column holds labels
-
-        plt.figure(figsize=(10, 6))
-        plt.bar(labels, probabilities, color="skyblue")
-        plt.title("Interest Rate Probabilities")
-        plt.ylabel("Probability (%)")
-        plt.xlabel("Rate")
-        plt.xticks(rotation=45)
-        st.pyplot(plt)
-    except Exception as e:
-        st.error(f"Error generating chart: {e}")
-
-# Notes
-st.markdown(
-    """
-    **Notes:**
-    - Data is sourced directly from the [CME FedWatch Tool]({url}).
-    - Ensure the structure of the webpage has not changed for accurate data parsing.
-    """
-)
+print("Binomial Tree:")
+print(binomial_tree)
+print("Probability of Up Movement:", prob)
