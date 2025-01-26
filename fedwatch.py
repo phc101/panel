@@ -7,6 +7,11 @@ def calculate_binomial_tree(prices, days=5, risk_free_rate=0.01):
     """
     Calculate a binomial tree based on the last 20 weekdays of prices.
     """
+    # Ensure prices are valid and positive
+    prices = np.array(prices)
+    if np.any(prices <= 0):
+        raise ValueError("Prices must be positive and non-zero for log calculations.")
+
     log_returns = np.log(prices[1:] / prices[:-1])
     sigma = np.std(log_returns)
     dt = 1 / 252  # One trading day
@@ -43,41 +48,48 @@ if uploaded_file is not None:
         # Filter out weekends
         data = data[data['Date'].dt.weekday < 5]
 
+        # Ensure 'Close' column is numeric and handle missing values
+        data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
+        data = data.dropna(subset=['Close'])
+
         # Get the last 20 weekdays of prices
         prices = data['Close'].values[-20:]
 
         if len(prices) < 20:
-            st.error("Not enough data. Please provide at least 20 weekdays of prices.")
+            st.error("Not enough data. Please provide at least 20 weekdays of valid prices.")
         else:
-            # Calculate binomial tree
-            tree, prob = calculate_binomial_tree(prices)
+            try:
+                # Calculate binomial tree
+                tree, prob = calculate_binomial_tree(prices)
 
-            # Display results
-            st.subheader("Binomial Tree")
-            st.write("Probability of Up Movement (p):", round(prob, 4))
+                # Display results
+                st.subheader("Binomial Tree")
+                st.write("Probability of Up Movement (p):", round(prob, 4))
 
-            # Convert tree to DataFrame for better display
-            tree_df = pd.DataFrame(tree)
-            tree_df.index.name = "Down Steps"
-            tree_df.columns.name = "Days"
+                # Convert tree to DataFrame for better display
+                tree_df = pd.DataFrame(tree)
+                tree_df.index.name = "Down Steps"
+                tree_df.columns.name = "Days"
 
-            st.write("Binomial Tree Table:")
-            st.dataframe(tree_df.style.format(precision=4))
+                st.write("Binomial Tree Table:")
+                st.dataframe(tree_df.style.format(precision=4))
 
-            # Plot the tree
-            st.subheader("Binomial Tree Chart")
+                # Plot the tree
+                st.subheader("Binomial Tree Chart")
 
-            fig, ax = plt.subplots(figsize=(10, 6))
-            for i in range(tree.shape[1]):
-                x = [i] * (i + 1)
-                y = tree[:i + 1, i]
-                ax.plot(x, y, 'o-', label=f"Day {i}")
+                fig, ax = plt.subplots(figsize=(10, 6))
+                for i in range(tree.shape[1]):
+                    x = [i] * (i + 1)
+                    y = tree[:i + 1, i]
+                    ax.plot(x, y, 'o-', label=f"Day {i}")
 
-            ax.set_title("Binomial Tree Price Forecast")
-            ax.set_xlabel("Days")
-            ax.set_ylabel("Price")
-            ax.grid(True, linestyle='--', alpha=0.7)
-            st.pyplot(fig)
+                ax.set_title("Binomial Tree Price Forecast")
+                ax.set_xlabel("Days")
+                ax.set_ylabel("Price")
+                ax.grid(True, linestyle='--', alpha=0.7)
+                st.pyplot(fig)
+            except ValueError as e:
+                st.error(f"Error in calculation: {e}")
     else:
         st.error("The uploaded file does not contain the required 'Date' and 'Close' columns.")
 else:
