@@ -50,11 +50,18 @@ for tab, pair in zip([tab1, tab2], ["EUR/PLN", "USD/PLN"]):
         st.header(f"{pair} Binomial Tree")
 
         # File uploader
-        uploaded_file = st.file_uploader(f"Upload a CSV file with historical {pair} prices", type="csv", key=pair)
+        uploaded_file = st.file_uploader(f"Upload a file with historical {pair} prices", type=["csv", "xlsx"], key=pair)
 
         if uploaded_file is not None:
-            # Load the data
-            data = pd.read_csv(uploaded_file)
+            # Load the data based on file type
+            if uploaded_file.name.endswith(".csv"):
+                data = pd.read_csv(uploaded_file)
+            elif uploaded_file.name.endswith(".xlsx"):
+                data = pd.read_excel(uploaded_file)
+            else:
+                st.error("Unsupported file format. Please upload a CSV or Excel file.")
+                continue
+
             st.write("Uploaded Data:", data.head())
 
             # Display column names for debugging
@@ -73,8 +80,8 @@ for tab, pair in zip([tab1, tab2], ["EUR/PLN", "USD/PLN"]):
             if 'date' in data.columns and 'close' in data.columns:
                 data['date'] = pd.to_datetime(data['date'])
 
-                # Replace commas with dots and convert 'close' to numeric
-                data['close'] = data['close'].str.replace(',', '.').astype(float)
+                # Replace commas with dots and convert 'close' to numeric if necessary
+                data['close'] = data['close'].astype(str).str.replace(',', '.').astype(float)
 
                 # Drop rows with missing values
                 data = data.dropna(subset=['close'])
@@ -146,4 +153,4 @@ for tab, pair in zip([tab1, tab2], ["EUR/PLN", "USD/PLN"]):
             else:
                 st.error("The uploaded file does not contain the required 'Date' and 'Close' columns.")
         else:
-            st.info(f"Please upload a CSV file for {pair} to proceed.")
+            st.info(f"Please upload a file for {pair} to proceed.")
