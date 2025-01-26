@@ -145,11 +145,15 @@ for tab, pair in zip([tab1, tab2], ["EUR/PLN", "USD/PLN"]):
                         # Plot the tree
                         st.subheader("Binomial Tree Chart")
 
-                        fig, ax = plt.subplots(figsize=(10, 6))
+                        fig, ax = plt.subplots(figsize=(12, 8))
                         for i in range(tree.shape[1]):
                             x = [i] * (i + 1)
                             y = tree[:i + 1, i]
                             ax.plot(x, y, 'o-', label=f"Day {i}")
+
+                            # Add price labels to nodes
+                            for j in range(i + 1):
+                                ax.text(i, tree[j, i], f"{tree[j, i]:.2f}", fontsize=8, ha='center', va='bottom')
 
                         # Highlight the most probable path
                         x_path = list(range(len(most_probable_path)))
