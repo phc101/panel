@@ -4,28 +4,24 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 
-def calculate_binomial_tree(prices, days=5):
+def calculate_binomial_tree(prices, volatility, days=5):
     """
-    Calculate a binomial tree based on the last 20 prices dynamically using volatility.
+    Calculate a binomial tree using provided volatility for formula.
     """
     # Ensure prices are valid and positive
     prices = np.array(prices)
     if np.any(prices <= 0):
         raise ValueError("Prices must be positive and non-zero for log calculations.")
 
-    # Calculate daily log returns and volatility
-    log_returns = np.log(prices[1:] / prices[:-1])
-    percentage_changes = prices[1:] / prices[:-1] - 1
-    sigma_log = np.std(log_returns)  # Volatility from log returns
-    sigma_percentage = np.std(percentage_changes)  # Volatility from percentage changes
-    annualized_sigma = sigma_percentage * np.sqrt(252)  # Annualized percentage change volatility
+    # Convert volatility to decimal
+    sigma = volatility / 100  # Convert percentage to decimal
     dt = 1 / 252  # One trading day
 
     # Calculate up, down factors, and probabilities
-    up = np.exp(sigma_log * np.sqrt(dt))
+    up = np.exp(sigma * np.sqrt(dt))
     down = 1 / up
-    p_up = 1 - norm.cdf(-sigma_log * np.sqrt(dt))  # Up probability
-    p_down = norm.cdf(-sigma_log * np.sqrt(dt))    # Down probability
+    p_up = (np.exp((sigma ** 2) * dt) - down) / (up - down)  # Up probability
+    p_down = 1 - p_up  # Down probability
 
     # Initialize the binomial tree and probability tree
     tree = np.zeros((days + 1, days + 1))
@@ -42,7 +38,7 @@ def calculate_binomial_tree(prices, days=5):
             if j < i:
                 probabilities[j, i] += probabilities[j, i - 1] * p_down
 
-    return tree, probabilities, up, down, p_up, sigma_log * 100, sigma_percentage * 100, annualized_sigma
+    return tree, probabilities, up, down, p_up
 
 # Streamlit UI
 st.title("Binomial Tree Price Forecaster")
@@ -76,43 +72,44 @@ for tab, pair in zip([tab1, tab2], ["EUR/PLN", "USD/PLN"]):
             data.columns = data.columns.str.strip().str.lower()
 
             # Allow user to map columns if required ones are missing
-            if 'date' not in data.columns or 'close' not in data.columns:
-                st.warning("The required columns 'Date' and 'Close' were not found. Please map them below:")
+            if 'date' not in data.columns or 'close' not in data.columns or 'volatility for formula' not in data.columns:
+                st.warning("The required columns 'Date', 'Close', and 'Volatility for Formula' were not found. Please map them below:")
                 date_col = st.selectbox("Select the Date column:", data.columns, key=f"{pair}_date")
                 close_col = st.selectbox("Select the Close column:", data.columns, key=f"{pair}_close")
-                data = data.rename(columns={date_col: 'date', close_col: 'close'})
+                vol_col = st.selectbox("Select the Volatility for Formula column:", data.columns, key=f"{pair}_vol")
+                data = data.rename(columns={date_col: 'date', close_col: 'close', vol_col: 'volatility for formula'})
 
-            if 'date' in data.columns and 'close' in data.columns:
+            if 'date' in data.columns and 'close' in data.columns and 'volatility for formula' in data.columns:
                 data['date'] = pd.to_datetime(data['date'])
 
                 # Replace commas with dots and convert 'close' to numeric if necessary
                 data['close'] = data['close'].astype(str).str.replace(',', '.').astype(float)
+                data['volatility for formula'] = data['volatility for formula'].astype(str).str.replace(',', '.').astype(float)
 
                 # Drop rows with missing values
-                data = data.dropna(subset=['close'])
+                data = data.dropna(subset=['close', 'volatility for formula'])
 
                 # Exclude weekends (Saturday = 5, Sunday = 6)
                 data = data[data['date'].dt.weekday < 5]
 
-                # Sort data by date and get the last 20 prices
+                # Sort data by date and get the last 20 prices and volatility
                 data = data.sort_values(by='date')
                 if len(data) < 20:
                     st.error("Not enough data. Please provide at least 20 valid weekday prices.")
                 else:
                     prices = data['close'].tail(20).values  # Select only the last 20 prices
+                    volatility = data['volatility for formula'].iloc[-1]  # Use the latest volatility
 
                     try:
                         # Calculate binomial tree
-                        tree, probabilities, up, down, p_up, sigma_log, sigma_pct, annualized_sigma = calculate_binomial_tree(prices)
+                        tree, probabilities, up, down, p_up = calculate_binomial_tree(prices, volatility)
 
                         # Display results
                         st.subheader("Binomial Tree")
                         st.write("Up Factor (u):", round(up, 6))
                         st.write("Down Factor (d):", round(down, 6))
                         st.write("Probability of Up Movement (p):", round(p_up, 4))
-                        st.write("Volatility from Log Returns (%):", round(sigma_log, 4))
-                        st.write("Volatility from Percentage Changes (%):", round(sigma_pct, 4))
-                        st.write("Annualized Volatility from Percentage Changes (%):", round(annualized_sigma, 4))
+                        st.write("Volatility for Formula (%):", round(volatility, 4))
 
                         # Convert tree to DataFrame for better display
                         tree_df = pd.DataFrame(tree)
@@ -159,6 +156,6 @@ for tab, pair in zip([tab1, tab2], ["EUR/PLN", "USD/PLN"]):
                     except ValueError as e:
                         st.error(f"Error in calculation: {e}")
             else:
-                st.error("The uploaded file does not contain the required 'Date' and 'Close' columns.")
+                st.error("The uploaded file does not contain the required 'Date', 'Close', and 'Volatility for Formula' columns.")
         else:
             st.info(f"Please upload a file for {pair} to proceed.")
