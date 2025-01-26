@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 def calculate_binomial_tree(prices, days=5, risk_free_rate=0.01):
     """
-    Calculate a binomial tree based on the last 20 weekdays of prices.
+    Calculate a binomial tree based on the last 20 prices.
     """
     # Ensure prices are valid and positive
     prices = np.array(prices)
@@ -45,17 +45,14 @@ if uploaded_file is not None:
     if 'Date' in data.columns and 'Close' in data.columns:
         data['Date'] = pd.to_datetime(data['Date'])
 
-        # Filter out weekends
-        data = data[data['Date'].dt.weekday < 5]
-
         # Ensure 'Close' column is numeric and handle missing values
         data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
         data = data.dropna(subset=['Close'])
 
-        # Sort data by date and get the last 20 weekdays of prices
+        # Sort data by date and get the last 20 prices
         data = data.sort_values(by='Date')
         if len(data) < 20:
-            st.error("Not enough data. Please provide at least 20 weekdays of valid prices.")
+            st.error("Not enough data. Please provide at least 20 valid prices.")
         else:
             prices = data['Close'].tail(20).values  # Select only the last 20 prices
 
