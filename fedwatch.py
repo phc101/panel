@@ -57,25 +57,30 @@ for tab, pair in zip([tab1, tab2], ["EUR/PLN", "USD/PLN"]):
             data = pd.read_csv(uploaded_file)
             st.write("Uploaded Data:", data.head())
 
-            # Ensure the data has a 'Date' column and convert it to datetime
-            if 'Date' in data.columns and 'Close' in data.columns:
-                data['Date'] = pd.to_datetime(data['Date'])
+            # Display column names for debugging
+            st.write("Columns in the uploaded file:", data.columns.tolist())
 
-                # Replace commas with dots and convert 'Close' to numeric
-                data['Close'] = data['Close'].str.replace(',', '.').astype(float)
+            # Normalize column names to handle potential mismatches
+            data.columns = data.columns.str.strip().str.lower()
+
+            if 'date' in data.columns and 'close' in data.columns:
+                data['date'] = pd.to_datetime(data['date'])
+
+                # Replace commas with dots and convert 'close' to numeric
+                data['close'] = data['close'].str.replace(',', '.').astype(float)
 
                 # Drop rows with missing values
-                data = data.dropna(subset=['Close'])
+                data = data.dropna(subset=['close'])
 
                 # Exclude weekends (Saturday = 5, Sunday = 6)
-                data = data[data['Date'].dt.weekday < 5]
+                data = data[data['date'].dt.weekday < 5]
 
                 # Sort data by date and get the last 20 prices
-                data = data.sort_values(by='Date')
+                data = data.sort_values(by='date')
                 if len(data) < 20:
                     st.error("Not enough data. Please provide at least 20 valid weekday prices.")
                 else:
-                    prices = data['Close'].tail(20).values  # Select only the last 20 prices
+                    prices = data['close'].tail(20).values  # Select only the last 20 prices
 
                     try:
                         # Calculate binomial tree
