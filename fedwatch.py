@@ -19,16 +19,22 @@ def calculate_binomial_tree(prices, days=5, risk_free_rate=0.01):
     d = 1 / u
     p = (np.exp(risk_free_rate * dt) - d) / (u - d)
 
-    # Initialize the binomial tree
+    # Initialize the binomial tree and probability tree
     tree = np.zeros((days + 1, days + 1))
+    probabilities = np.zeros((days + 1, days + 1))
     tree[0, 0] = prices[-1]
+    probabilities[0, 0] = 1  # Starting node has 100% probability
 
     # Build the tree
     for i in range(1, days + 1):
         for j in range(i + 1):
             tree[j, i] = prices[-1] * (u ** (i - j)) * (d ** j)
+            if j > 0:
+                probabilities[j, i] += probabilities[j - 1, i - 1] * p
+            if j < i:
+                probabilities[j, i] += probabilities[j, i - 1] * (1 - p)
 
-    return tree, p
+    return tree, probabilities, p
 
 # Streamlit UI
 st.title("EUR/PLN Binomial Tree Price Forecaster")
@@ -60,7 +66,7 @@ if uploaded_file is not None:
 
             try:
                 # Calculate binomial tree
-                tree, prob = calculate_binomial_tree(prices)
+                tree, probabilities, prob = calculate_binomial_tree(prices)
 
                 # Display results
                 st.subheader("Binomial Tree")
@@ -74,6 +80,21 @@ if uploaded_file is not None:
                 st.write("Binomial Tree Table:")
                 st.dataframe(tree_df.style.format(precision=4))
 
+                # Convert probabilities to DataFrame for better display
+                prob_df = pd.DataFrame(probabilities)
+                prob_df.index.name = "Down Steps"
+                prob_df.columns.name = "Days"
+
+                st.write("Probability Tree Table:")
+                st.dataframe(prob_df.style.format(precision=4))
+
+                # Identify the most probable path
+                most_probable_path = [np.argmax(probabilities[:, i]) for i in range(probabilities.shape[1])]
+                most_probable_prices = [tree[most_probable_path[i], i] for i in range(len(most_probable_path))]
+
+                st.subheader("Most Probable Path")
+                st.write("Most probable prices:", most_probable_prices)
+
                 # Plot the tree
                 st.subheader("Binomial Tree Chart")
 
@@ -83,10 +104,15 @@ if uploaded_file is not None:
                     y = tree[:i + 1, i]
                     ax.plot(x, y, 'o-', label=f"Day {i}")
 
+                # Highlight the most probable path
+                x_path = list(range(len(most_probable_path)))
+                ax.plot(x_path, most_probable_prices, 'r-o', label="Most Probable Path")
+
                 ax.set_title("Binomial Tree Price Forecast")
                 ax.set_xlabel("Days")
                 ax.set_ylabel("Price")
                 ax.grid(True, linestyle='--', alpha=0.7)
+                ax.legend()
                 st.pyplot(fig)
             except ValueError as e:
                 st.error(f"Error in calculation: {e}")
