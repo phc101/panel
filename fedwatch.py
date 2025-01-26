@@ -63,6 +63,13 @@ for tab, pair in zip([tab1, tab2], ["EUR/PLN", "USD/PLN"]):
             # Normalize column names to handle potential mismatches
             data.columns = data.columns.str.strip().str.lower()
 
+            # Allow user to map columns if required ones are missing
+            if 'date' not in data.columns or 'close' not in data.columns:
+                st.warning("The required columns 'Date' and 'Close' were not found. Please map them below:")
+                date_col = st.selectbox("Select the Date column:", data.columns, key=f"{pair}_date")
+                close_col = st.selectbox("Select the Close column:", data.columns, key=f"{pair}_close")
+                data = data.rename(columns={date_col: 'date', close_col: 'close'})
+
             if 'date' in data.columns and 'close' in data.columns:
                 data['date'] = pd.to_datetime(data['date'])
 
