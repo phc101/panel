@@ -3,21 +3,24 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-def calculate_binomial_tree(prices, days=5, risk_free_rate=0.01):
+def calculate_binomial_tree(prices, days=5):
     """
-    Calculate a binomial tree based on the last 20 prices.
+    Calculate a binomial tree based on the last 20 prices dynamically using volatility.
     """
     # Ensure prices are valid and positive
     prices = np.array(prices)
     if np.any(prices <= 0):
         raise ValueError("Prices must be positive and non-zero for log calculations.")
 
+    # Calculate daily log returns and volatility
     log_returns = np.log(prices[1:] / prices[:-1])
-    sigma = np.std(log_returns)
+    sigma = np.std(log_returns)  # Volatility
     dt = 1 / 252  # One trading day
-    u = np.exp(sigma * np.sqrt(dt))
-    d = 1 / u
-    p = (np.exp(risk_free_rate * dt) - d) / (u - d)
+
+    # Calculate up, down factors, and probabilities
+    up = np.exp(sigma * np.sqrt(dt))
+    down = 1 / up
+    p_up = 0.5  # Assuming equal probability for simplicity
 
     # Initialize the binomial tree and probability tree
     tree = np.zeros((days + 1, days + 1))
@@ -28,13 +31,13 @@ def calculate_binomial_tree(prices, days=5, risk_free_rate=0.01):
     # Build the tree
     for i in range(1, days + 1):
         for j in range(i + 1):
-            tree[j, i] = prices[-1] * (u ** (i - j)) * (d ** j)
+            tree[j, i] = prices[-1] * (up ** (i - j)) * (down ** j)
             if j > 0:
-                probabilities[j, i] += probabilities[j - 1, i - 1] * p
+                probabilities[j, i] += probabilities[j - 1, i - 1] * p_up
             if j < i:
-                probabilities[j, i] += probabilities[j, i - 1] * (1 - p)
+                probabilities[j, i] += probabilities[j, i - 1] * (1 - p_up)
 
-    return tree, probabilities, p
+    return tree, probabilities, up, down, p_up
 
 # Streamlit UI
 st.title("EUR/PLN Binomial Tree Price Forecaster")
@@ -69,11 +72,13 @@ if uploaded_file is not None:
 
             try:
                 # Calculate binomial tree
-                tree, probabilities, prob = calculate_binomial_tree(prices)
+                tree, probabilities, up, down, p_up = calculate_binomial_tree(prices)
 
                 # Display results
                 st.subheader("Binomial Tree")
-                st.write("Probability of Up Movement (p):", round(prob, 4))
+                st.write("Up Factor (u):", round(up, 6))
+                st.write("Down Factor (d):", round(down, 6))
+                st.write("Probability of Up Movement (p):", round(p_up, 4))
 
                 # Convert tree to DataFrame for better display
                 tree_df = pd.DataFrame(tree)
