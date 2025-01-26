@@ -45,8 +45,10 @@ if uploaded_file is not None:
     if 'Date' in data.columns and 'Close' in data.columns:
         data['Date'] = pd.to_datetime(data['Date'])
 
-        # Ensure 'Close' column is numeric and handle missing values
-        data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
+        # Replace commas with dots and convert 'Close' to numeric
+        data['Close'] = data['Close'].str.replace(',', '.').astype(float)
+
+        # Drop rows with missing values
         data = data.dropna(subset=['Close'])
 
         # Sort data by date and get the last 20 prices
