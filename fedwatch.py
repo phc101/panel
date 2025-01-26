@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.stats import norm
 
 def calculate_binomial_tree(prices, days=5):
     """
@@ -21,7 +22,8 @@ def calculate_binomial_tree(prices, days=5):
     # Calculate up, down factors, and probabilities
     up = np.exp(sigma * np.sqrt(dt))
     down = 1 / up
-    p_up = (np.exp((sigma ** 2) * dt) - down) / (up - down)
+    p_up = 1 - norm.cdf(-sigma * np.sqrt(dt))  # Up probability
+    p_down = norm.cdf(-sigma * np.sqrt(dt))    # Down probability
 
     # Initialize the binomial tree and probability tree
     tree = np.zeros((days + 1, days + 1))
@@ -36,7 +38,7 @@ def calculate_binomial_tree(prices, days=5):
             if j > 0:
                 probabilities[j, i] += probabilities[j - 1, i - 1] * p_up
             if j < i:
-                probabilities[j, i] += probabilities[j, i - 1] * (1 - p_up)
+                probabilities[j, i] += probabilities[j, i - 1] * p_down
 
     return tree, probabilities, up, down, p_up, sigma_percentage
 
