@@ -57,10 +57,13 @@ if uploaded_file is not None:
         # Drop rows with missing values
         data = data.dropna(subset=['Close'])
 
+        # Exclude weekends (Saturday = 5, Sunday = 6)
+        data = data[data['Date'].dt.weekday < 5]
+
         # Sort data by date and get the last 20 prices
         data = data.sort_values(by='Date')
         if len(data) < 20:
-            st.error("Not enough data. Please provide at least 20 valid prices.")
+            st.error("Not enough data. Please provide at least 20 valid weekday prices.")
         else:
             prices = data['Close'].tail(20).values  # Select only the last 20 prices
 
