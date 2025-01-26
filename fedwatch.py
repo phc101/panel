@@ -15,15 +15,17 @@ def calculate_binomial_tree(prices, days=5):
 
     # Calculate daily log returns and volatility
     log_returns = np.log(prices[1:] / prices[:-1])
-    sigma = np.std(log_returns)  # Volatility
-    sigma_percentage = sigma * 100  # Convert volatility to percentage
+    percentage_changes = prices[1:] / prices[:-1] - 1
+    sigma_log = np.std(log_returns)  # Volatility from log returns
+    sigma_percentage = np.std(percentage_changes)  # Volatility from percentage changes
+    annualized_sigma = sigma_percentage * np.sqrt(252)  # Annualized percentage change volatility
     dt = 1 / 252  # One trading day
 
     # Calculate up, down factors, and probabilities
-    up = np.exp(sigma * np.sqrt(dt))
+    up = np.exp(sigma_log * np.sqrt(dt))
     down = 1 / up
-    p_up = 1 - norm.cdf(-sigma * np.sqrt(dt))  # Up probability
-    p_down = norm.cdf(-sigma * np.sqrt(dt))    # Down probability
+    p_up = 1 - norm.cdf(-sigma_log * np.sqrt(dt))  # Up probability
+    p_down = norm.cdf(-sigma_log * np.sqrt(dt))    # Down probability
 
     # Initialize the binomial tree and probability tree
     tree = np.zeros((days + 1, days + 1))
@@ -40,7 +42,7 @@ def calculate_binomial_tree(prices, days=5):
             if j < i:
                 probabilities[j, i] += probabilities[j, i - 1] * p_down
 
-    return tree, probabilities, up, down, p_up, sigma_percentage
+    return tree, probabilities, up, down, p_up, sigma_log * 100, sigma_percentage * 100, annualized_sigma
 
 # Streamlit UI
 st.title("Binomial Tree Price Forecaster")
@@ -101,14 +103,16 @@ for tab, pair in zip([tab1, tab2], ["EUR/PLN", "USD/PLN"]):
 
                     try:
                         # Calculate binomial tree
-                        tree, probabilities, up, down, p_up, sigma_percentage = calculate_binomial_tree(prices)
+                        tree, probabilities, up, down, p_up, sigma_log, sigma_pct, annualized_sigma = calculate_binomial_tree(prices)
 
                         # Display results
                         st.subheader("Binomial Tree")
                         st.write("Up Factor (u):", round(up, 6))
                         st.write("Down Factor (d):", round(down, 6))
                         st.write("Probability of Up Movement (p):", round(p_up, 4))
-                        st.write("Volatility (20-day Standard Deviation, %):", round(sigma_percentage, 4))
+                        st.write("Volatility from Log Returns (%):", round(sigma_log, 4))
+                        st.write("Volatility from Percentage Changes (%):", round(sigma_pct, 4))
+                        st.write("Annualized Volatility from Percentage Changes (%):", round(annualized_sigma, 4))
 
                         # Convert tree to DataFrame for better display
                         tree_df = pd.DataFrame(tree)
