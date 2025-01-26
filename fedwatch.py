@@ -52,12 +52,13 @@ if uploaded_file is not None:
         data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
         data = data.dropna(subset=['Close'])
 
-        # Get the last 20 weekdays of prices
-        prices = data['Close'].values[-20:]
-
-        if len(prices) < 20:
+        # Sort data by date and get the last 20 weekdays of prices
+        data = data.sort_values(by='Date')
+        if len(data) < 20:
             st.error("Not enough data. Please provide at least 20 weekdays of valid prices.")
         else:
+            prices = data['Close'].tail(20).values  # Select only the last 20 prices
+
             try:
                 # Calculate binomial tree
                 tree, prob = calculate_binomial_tree(prices)
