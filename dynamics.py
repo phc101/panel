@@ -35,18 +35,16 @@ def monte_carlo_double_barrier(S, K, T, rd, rf, sigma, upper_barrier, lower_barr
 
     return np.exp(-rd * T) * np.mean(prices)
 
-def zero_cost_strategy(S, K1, K2, T, rd, rf, sigma, option_type):
-    if option_type == "call":
-        short_call = garman_kohlhagen(S, K1, T, rd, rf, sigma, "call")
-        long_call = garman_kohlhagen(S, K2, T, rd, rf, sigma, "call")
-        return long_call - short_call
-    elif option_type == "put":
-        short_put = garman_kohlhagen(S, K1, T, rd, rf, sigma, "put")
-        long_put = garman_kohlhagen(S, K2, T, rd, rf, sigma, "put")
-        return long_put - short_put
+def calculate_net_premium(S, strategies, rd, rf, T, sigma):
+    total_premium = 0
+    for strategy in strategies:
+        type_, K, option_type, position = strategy
+        price = garman_kohlhagen(S, K, T, rd, rf, sigma, option_type)
+        total_premium += price if position == "buy" else -price
+    return total_premium * S  # Convert to PLN
 
 def main():
-    st.title("EUR/PLN Barrier Option Pricer with Strategies")
+    st.title("EUR/PLN Double Barrier Option Pricer with Strategies")
 
     st.sidebar.header("Option Parameters")
     spot_price = st.sidebar.number_input("Spot Price (EUR/PLN)", value=4.21, step=0.01)
@@ -61,41 +59,29 @@ def main():
     lower_barrier = st.sidebar.number_input("Lower Barrier", value=3.95, step=0.01)
     adjusted_strike = st.sidebar.number_input("Adjusted Strike (if barrier breached)", value=4.15, step=0.01)
 
-    st.sidebar.header("Strategy Settings")
-    strategy = st.sidebar.selectbox("Select Strategy", ["None", "Zero-Cost Call Spread", "Zero-Cost Put Spread"])
-    strike_1 = st.sidebar.number_input("Strike 1", value=4.25, step=0.01)
-    strike_2 = st.sidebar.number_input("Strike 2", value=4.35, step=0.01)
+    st.sidebar.header("Strategies")
+    strategy_count = st.sidebar.number_input("Number of Strategies", value=2, step=1, min_value=1)
+    strategies = []
+    for i in range(strategy_count):
+        st.sidebar.subheader(f"Strategy {i + 1}")
+        option_type = st.sidebar.selectbox(f"Option Type (Strategy {i + 1})", ["call", "put"], key=f"type_{i}")
+        position = st.sidebar.selectbox(f"Position (Strategy {i + 1})", ["buy", "sell"], key=f"position_{i}")
+        strike = st.sidebar.number_input(f"Strike Price (Strategy {i + 1})", value=4.30, step=0.01, key=f"strike_{i}")
+        strategies.append((f"Strategy {i + 1}", strike, option_type, position))
 
     st.sidebar.header("Monte Carlo Settings")
     paths = st.sidebar.number_input("Simulation Paths", value=10000, step=1000)
 
-    option_type = st.selectbox("Option Type", ["call", "put"])
+    if st.button("Calculate"):
+        monte_carlo_price = monte_carlo_double_barrier(spot_price, strike_price, maturity, domestic_rate, foreign_rate, volatility, upper_barrier, lower_barrier, adjusted_strike, "call", paths)
+        net_premium = calculate_net_premium(spot_price, strategies, domestic_rate, foreign_rate, maturity, volatility)
 
-    if st.button("Calculate Price"):
-        analytical_price = garman_kohlhagen(spot_price, strike_price, maturity, domestic_rate, foreign_rate, volatility, option_type)
-        monte_carlo_price = monte_carlo_double_barrier(spot_price, strike_price, maturity, domestic_rate, foreign_rate, volatility, upper_barrier, lower_barrier, adjusted_strike, option_type, paths)
+        st.write(f"### Monte Carlo Double Barrier Price: {monte_carlo_price:.4f} EUR")
+        st.write(f"### Net Premium: {net_premium:.2f} PLN")
 
-        st.write(f"### Analytical Price: {analytical_price:.4f}")
-        st.write(f"### Monte Carlo Price: {monte_carlo_price:.4f}")
-
-        if strategy == "Zero-Cost Call Spread":
-            strategy_price = zero_cost_strategy(spot_price, strike_1, strike_2, maturity, domestic_rate, foreign_rate, volatility, "call")
-            st.write(f"### Zero-Cost Call Spread Net Premium: {strategy_price:.4f}")
-        elif strategy == "Zero-Cost Put Spread":
-            strategy_price = zero_cost_strategy(spot_price, strike_1, strike_2, maturity, domestic_rate, foreign_rate, volatility, "put")
-            st.write(f"### Zero-Cost Put Spread Net Premium: {strategy_price:.4f}")
-
-        st.write("#### Price Sensitivity Chart")
-        strikes = np.linspace(strike_price * 0.8, strike_price * 1.2, 50)
-        prices = [garman_kohlhagen(spot_price, K, maturity, domestic_rate, foreign_rate, volatility, option_type) for K in strikes]
-        
-        fig, ax = plt.subplots()
-        ax.plot(strikes, prices, label="Analytical Price")
-        ax.axvline(x=strike_price, color='red', linestyle='--', label="Strike Price")
-        ax.set_xlabel("Strike Price")
-        ax.set_ylabel("Option Price")
-        ax.legend()
-        st.pyplot(fig)
+        st.write("#### Strategy Details")
+        for strat in strategies:
+            st.write(f"- {strat[0]}: {strat[3]} {strat[2]} at strike {strat[1]} EUR")
 
 if __name__ == "__main__":
     main()
