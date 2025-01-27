@@ -9,15 +9,16 @@ def calculate_rate(spot, upper_barrier, lower_barrier, guaranteed_rate, breached
     return guaranteed_rate  # No barrier breach
 
 # Explanation of the trade
-st.title("Barrier Option Pricing with Breach Logic")
+st.title("Barrier Option Pricing with Net Position")
 st.write("""
 ### Trade Explanation:
 1. **Guaranteed Rate:** The client can sell EUR/PLN at a rate of 4.30 as long as no barriers are breached at expiry.
 2. **Barriers:**
    - **Upper Barrier:** 4.50
    - **Lower Barrier:** 3.95
-3. **Triggered Rate:** If any barrier is breached, the selling rate is reduced to 4.15.
+3. **Breached Rate:** If any barrier is breached, the selling rate is reduced to 4.15.
 4. **Spot Rate at Expiry:** Determines whether the barriers are breached.
+5. **Net Position:** Shows the overall outcome of the trade, including proceeds from the final rate compared to the market value at the spot rate.
 """)
 
 # Streamlit Inputs
@@ -30,6 +31,15 @@ yearly_notional = st.number_input("Enter Total Yearly Notional Amount (EUR)", va
 
 # Calculate the rate based on barriers
 final_rate = calculate_rate(spot_rate, upper_barrier, lower_barrier, guaranteed_rate, breached_rate)
+
+# Calculate proceeds from the trade
+proceeds = final_rate * yearly_notional
+
+# Calculate market value at spot
+market_value = spot_rate * yearly_notional
+
+# Calculate net position
+net_position = proceeds - market_value
 
 # Generate dates for the contractual period (monthly intervals)
 start_date = datetime(2025, 2, 1)  # Contractual start date
@@ -44,14 +54,17 @@ lower_barrier_values = [lower_barrier] * len(dates)
 fig, ax = plt.subplots(figsize=(12, 6))
 
 # Plot the guaranteed rate or breached rate
-ax.step(dates, rate_values, linestyle="--", color="blue", label=f"Rate (Final: {final_rate:.4f})")
+if spot_rate >= upper_barrier or spot_rate <= lower_barrier:
+    ax.step(dates, [breached_rate] * len(dates), linestyle="--", color="purple", label=f"Breached Rate: {breached_rate:.4f}")
+else:
+    ax.step(dates, [guaranteed_rate] * len(dates), linestyle="--", color="blue", label=f"Guaranteed Rate: {guaranteed_rate:.4f}")
 
 # Plot the barriers
 ax.plot(dates, upper_barrier_values, linestyle="-", color="red", label=f"Upper Barrier: {upper_barrier:.4f}")
 ax.plot(dates, lower_barrier_values, linestyle="-", color="green", label=f"Lower Barrier: {lower_barrier:.4f}")
 
 # Add labels and title
-ax.set_title("Barrier Option Pricing with Breach Logic", fontsize=14)
+ax.set_title("Barrier Option Pricing with Net Position", fontsize=14)
 ax.set_xlabel("Date", fontsize=12)
 ax.set_ylabel("Exchange Rate (EUR/PLN)", fontsize=12)
 ax.grid(alpha=0.3)
@@ -65,6 +78,12 @@ ax.legend()
 # Display the chart in Streamlit
 st.pyplot(fig)
 
-# Display the final rate
-st.write("### Final Rate")
-st.write(f"The final selling rate is **{final_rate:.4f} EUR/PLN** based on the barrier conditions.")
+# Display the final rate, proceeds, market value, and net position
+st.write("### Results")
+st.write(f"**Final Selling Rate:** {final_rate:.4f} EUR/PLN")
+st.write(f"**Proceeds from Trade:** {proceeds:,.2f} PLN")
+st.write(f"**Market Value at Spot:** {market_value:,.2f} PLN")
+if net_position > 0:
+    st.write(f"**Net Position (Profit):** {net_position:,.2f} PLN")
+else:
+    st.write(f"**Net Position (Loss):** {abs(net_position):,.2f} PLN")
