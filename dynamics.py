@@ -49,19 +49,25 @@ dates = [start_date + timedelta(days=30 * i) for i in range(12)]
 rate_values = [guaranteed_rate if spot_rate < upper_barrier and spot_rate > lower_barrier else breached_rate] * len(dates)
 upper_barrier_values = [upper_barrier] * len(dates)
 lower_barrier_values = [lower_barrier] * len(dates)
+breached_rate_values = [breached_rate] * len(dates)
 
 # Plot the chart
 fig, ax = plt.subplots(figsize=(12, 6))
 
 # Plot the guaranteed rate or breached rate
 if spot_rate >= upper_barrier or spot_rate <= lower_barrier:
-    ax.step(dates, [breached_rate] * len(dates), linestyle="--", color="purple", label=f"Breached Rate: {breached_rate:.4f}")
+    ax.step(dates, breached_rate_values, linestyle="--", color="purple", label=f"Breached Rate: {breached_rate:.4f}")
 else:
     ax.step(dates, [guaranteed_rate] * len(dates), linestyle="--", color="blue", label=f"Guaranteed Rate: {guaranteed_rate:.4f}")
 
 # Plot the barriers
 ax.plot(dates, upper_barrier_values, linestyle="-", color="red", label=f"Upper Barrier: {upper_barrier:.4f}")
 ax.plot(dates, lower_barrier_values, linestyle="-", color="green", label=f"Lower Barrier: {lower_barrier:.4f}")
+
+# Annotate the breached rate on the chart
+if spot_rate >= upper_barrier or spot_rate <= lower_barrier:
+    ax.annotate(f"Breached Rate: {breached_rate:.4f}", xy=(len(dates) - 1, breached_rate), xytext=(len(dates), breached_rate),
+                color="purple", fontsize=10, ha="left", va="center", arrowprops=dict(facecolor="purple", arrowstyle="->"))
 
 # Add labels and title
 ax.set_title("Barrier Option Pricing with Net Position", fontsize=14)
