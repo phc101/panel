@@ -2,6 +2,10 @@ import streamlit as st
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 
+# Function to calculate forward rate based on interest rate parity
+def calculate_forward_rate(spot, domestic_rate, foreign_rate, time_to_maturity_years):
+    return spot * (1 + domestic_rate * time_to_maturity_years) / (1 + foreign_rate * time_to_maturity_years)
+
 # Function to determine the rate based on barrier conditions
 def calculate_rate(spot, upper_barrier, lower_barrier, guaranteed_rate, breached_rate):
     if spot >= upper_barrier or spot <= lower_barrier:
@@ -9,7 +13,7 @@ def calculate_rate(spot, upper_barrier, lower_barrier, guaranteed_rate, breached
     return guaranteed_rate  # No barrier breach
 
 # Explanation of the trade
-st.title("Barrier Option Pricing with Net Premium")
+st.title("Barrier Option Pricing with Dynamic Parameters")
 st.write("""
 ### Trade Explanation:
 1. **Guaranteed Rate:** The client can sell EUR/PLN at a rate of 4.30 as long as no barriers are breached at expiry.
@@ -18,8 +22,8 @@ st.write("""
    - **Lower Barrier:** 3.95
 3. **Breached Rate:** If any barrier is breached, the selling rate is reduced to 4.15.
 4. **Spot Rate at Expiry:** Determines whether the barriers are breached.
-5. **Black-Scholes Parameters:** You can adjust volatility, domestic rates, and foreign rates dynamically.
-6. **Net Premium:** Shows the overall outcome of the trade.
+5. **Black-Scholes Parameters:** Adjust volatility, domestic rates, and foreign rates dynamically.
+6. **Net Premium:** Shows the overall outcome of the trade, dynamically adjusting with the parameters.
 """)
 
 # Sidebar for Black-Scholes parameters
@@ -48,8 +52,16 @@ else:
 # Calculate monthly notional
 monthly_notional = yearly_notional / num_maturities
 
+# Generate dates for the contractual period
+start_date = datetime(2025, 2, 1)  # Contractual start date
+dates = [start_date + timedelta(days=30 * i) for i in range(num_maturities)]
+
+# Use adjusted forward rate based on interest rate parity
+time_to_maturity_years = num_maturities / 12
+adjusted_forward_rate = calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, time_to_maturity_years)
+
 # Calculate the rate based on barriers
-final_rate = calculate_rate(spot_rate, upper_barrier, lower_barrier, guaranteed_rate, breached_rate)
+final_rate = calculate_rate(adjusted_forward_rate, upper_barrier, lower_barrier, guaranteed_rate, breached_rate)
 
 # Calculate proceeds from the trade
 proceeds = final_rate * yearly_notional
@@ -59,10 +71,6 @@ market_value = spot_rate * yearly_notional
 
 # Calculate net premium (difference between proceeds and market value)
 net_premium = proceeds - market_value
-
-# Generate dates for the contractual period
-start_date = datetime(2025, 2, 1)  # Contractual start date
-dates = [start_date + timedelta(days=30 * i) for i in range(num_maturities)]
 
 # Chart Data
 rate_values = [guaranteed_rate if spot_rate < upper_barrier and spot_rate > lower_barrier else breached_rate] * len(dates)
@@ -89,7 +97,7 @@ if spot_rate >= upper_barrier or spot_rate <= lower_barrier:
                 color="purple", fontsize=10, ha="left", va="center", arrowprops=dict(facecolor="purple", arrowstyle="->"))
 
 # Add labels and title
-ax.set_title("Barrier Option Pricing with Net Premium", fontsize=14)
+ax.set_title("Barrier Option Pricing with Dynamic Parameters", fontsize=14)
 ax.set_xlabel("Date", fontsize=12)
 ax.set_ylabel("Exchange Rate (EUR/PLN)", fontsize=12)
 ax.grid(alpha=0.3)
@@ -105,6 +113,7 @@ st.pyplot(fig)
 
 # Display the final rate, proceeds, market value, and net premium
 st.write("### Results")
+st.write(f"**Adjusted Forward Rate:** {adjusted_forward_rate:.4f} EUR/PLN")
 st.write(f"**Final Selling Rate:** {final_rate:.4f} EUR/PLN")
 st.write(f"**Proceeds from Trade:** {proceeds:,.2f} PLN")
 st.write(f"**Market Value at Spot:** {market_value:,.2f} PLN")
