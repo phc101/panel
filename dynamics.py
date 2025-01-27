@@ -34,8 +34,25 @@ def barrier_option_pricer(
 
     return price * notional
 
-# Streamlit Inputs
+# Explanation of the trade
 st.title("Barrier Option Pricing with Adjusted Premiums")
+st.write("""
+### Trade Explanation:
+This is a **Barrier Option Trade** with the following terms:
+1. **Guaranteed Rate:** You will sell EUR at a guaranteed rate of 4.2000 PLN as long as the barrier condition is not triggered.
+2. **Barrier Type:**
+   - **Knock-In:** The option only becomes active if the barrier is breached (e.g., EUR/PLN goes below or above a specific level).
+   - **Knock-Out:** The option ceases to exist if the barrier is breached.
+3. **Premium Adjustment:**
+   - The premium is adjusted dynamically based on whether the barrier condition is satisfied.
+   - If the barrier condition is breached for a knock-in, the premium will reduce by 20%.
+   - For a knock-out, the option is deactivated, and no premium is paid.
+4. **Trade Parameters:** The notional amount is 2,000,000 EUR, and the contract period spans 12 months starting from February 2025.
+
+This tool allows you to visualize the trade conditions and calculate the net premium dynamically.
+""")
+
+# Streamlit Inputs
 spot_rate = st.number_input("Enter Spot Rate (EUR/PLN)", value=4.2500, step=0.0001, format="%.4f")
 strike_price = st.number_input("Enter Strike Price (Guaranteed Rate)", value=4.2000, step=0.0001, format="%.4f")
 volatility = st.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
