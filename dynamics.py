@@ -35,8 +35,18 @@ def monte_carlo_double_barrier(S, K, T, rd, rf, sigma, upper_barrier, lower_barr
 
     return np.exp(-rd * T) * np.mean(prices)
 
+def zero_cost_strategy(S, K1, K2, T, rd, rf, sigma, option_type):
+    if option_type == "call":
+        short_call = garman_kohlhagen(S, K1, T, rd, rf, sigma, "call")
+        long_call = garman_kohlhagen(S, K2, T, rd, rf, sigma, "call")
+        return long_call - short_call
+    elif option_type == "put":
+        short_put = garman_kohlhagen(S, K1, T, rd, rf, sigma, "put")
+        long_put = garman_kohlhagen(S, K2, T, rd, rf, sigma, "put")
+        return long_put - short_put
+
 def main():
-    st.title("EUR/PLN Double Barrier Option Pricer")
+    st.title("EUR/PLN Barrier Option Pricer with Strategies")
 
     st.sidebar.header("Option Parameters")
     spot_price = st.sidebar.number_input("Spot Price (EUR/PLN)", value=4.21, step=0.01)
@@ -51,6 +61,11 @@ def main():
     lower_barrier = st.sidebar.number_input("Lower Barrier", value=3.95, step=0.01)
     adjusted_strike = st.sidebar.number_input("Adjusted Strike (if barrier breached)", value=4.15, step=0.01)
 
+    st.sidebar.header("Strategy Settings")
+    strategy = st.sidebar.selectbox("Select Strategy", ["None", "Zero-Cost Call Spread", "Zero-Cost Put Spread"])
+    strike_1 = st.sidebar.number_input("Strike 1", value=4.25, step=0.01)
+    strike_2 = st.sidebar.number_input("Strike 2", value=4.35, step=0.01)
+
     st.sidebar.header("Monte Carlo Settings")
     paths = st.sidebar.number_input("Simulation Paths", value=10000, step=1000)
 
@@ -62,6 +77,13 @@ def main():
 
         st.write(f"### Analytical Price: {analytical_price:.4f}")
         st.write(f"### Monte Carlo Price: {monte_carlo_price:.4f}")
+
+        if strategy == "Zero-Cost Call Spread":
+            strategy_price = zero_cost_strategy(spot_price, strike_1, strike_2, maturity, domestic_rate, foreign_rate, volatility, "call")
+            st.write(f"### Zero-Cost Call Spread Net Premium: {strategy_price:.4f}")
+        elif strategy == "Zero-Cost Put Spread":
+            strategy_price = zero_cost_strategy(spot_price, strike_1, strike_2, maturity, domestic_rate, foreign_rate, volatility, "put")
+            st.write(f"### Zero-Cost Put Spread Net Premium: {strategy_price:.4f}")
 
         st.write("#### Price Sensitivity Chart")
         strikes = np.linspace(strike_price * 0.8, strike_price * 1.2, 50)
