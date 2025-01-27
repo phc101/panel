@@ -9,7 +9,7 @@ def calculate_rate(spot, upper_barrier, lower_barrier, guaranteed_rate, breached
     return guaranteed_rate  # No barrier breach
 
 # Explanation of the trade
-st.title("Barrier Option Pricing with Net Position")
+st.title("Barrier Option Pricing with Breach Logic")
 st.write("""
 ### Trade Explanation:
 1. **Guaranteed Rate:** The client can sell EUR/PLN at a rate of 4.30 as long as no barriers are breached at expiry.
@@ -18,7 +18,7 @@ st.write("""
    - **Lower Barrier:** 3.95
 3. **Breached Rate:** If any barrier is breached, the selling rate is reduced to 4.15.
 4. **Spot Rate at Expiry:** Determines whether the barriers are breached.
-5. **Net Position:** Shows the overall outcome of the trade, including proceeds from the final rate compared to the market value at the spot rate.
+5. **Net Premium:** Shows the overall outcome of the trade, including proceeds from the breached rate compared to the market value at the spot rate.
 """)
 
 # Streamlit Inputs
@@ -38,8 +38,8 @@ proceeds = final_rate * yearly_notional
 # Calculate market value at spot
 market_value = spot_rate * yearly_notional
 
-# Calculate net position
-net_position = proceeds - market_value
+# Calculate net premium (difference between proceeds and market value)
+net_premium = proceeds - market_value
 
 # Generate dates for the contractual period (monthly intervals)
 start_date = datetime(2025, 2, 1)  # Contractual start date
@@ -70,7 +70,7 @@ if spot_rate >= upper_barrier or spot_rate <= lower_barrier:
                 color="purple", fontsize=10, ha="left", va="center", arrowprops=dict(facecolor="purple", arrowstyle="->"))
 
 # Add labels and title
-ax.set_title("Barrier Option Pricing with Net Position", fontsize=14)
+ax.set_title("Barrier Option Pricing with Breach Logic", fontsize=14)
 ax.set_xlabel("Date", fontsize=12)
 ax.set_ylabel("Exchange Rate (EUR/PLN)", fontsize=12)
 ax.grid(alpha=0.3)
@@ -89,7 +89,7 @@ st.write("### Results")
 st.write(f"**Final Selling Rate:** {final_rate:.4f} EUR/PLN")
 st.write(f"**Proceeds from Trade:** {proceeds:,.2f} PLN")
 st.write(f"**Market Value at Spot:** {market_value:,.2f} PLN")
-if net_position > 0:
-    st.write(f"**Net Position (Profit):** {net_position:,.2f} PLN")
+if net_premium > 0:
+    st.write(f"**Net Premium (Profit):** {net_premium:,.2f} PLN")
 else:
-    st.write(f"**Net Position (Loss):** {abs(net_position):,.2f} PLN")
+    st.write(f"**Net Premium (Loss):** {abs(net_premium):,.2f} PLN")
