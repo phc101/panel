@@ -1,116 +1,59 @@
 import streamlit as st
 import matplotlib.pyplot as plt
-from scipy.stats import norm
-import numpy as np
 from datetime import datetime, timedelta
 
-# Black-Scholes Pricing Function with Barrier Adjustment
-def barrier_option_pricer(
-    spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, option_type, barrier=None, barrier_type=None, triggered_rate=None
-):
-    d1 = (np.log(spot / strike) + (domestic_rate - foreign_rate + 0.5 * volatility**2) * time_to_maturity) / (volatility * np.sqrt(time_to_maturity))
-    d2 = d1 - volatility * np.sqrt(time_to_maturity)
-
-    # Calculate standard option price
-    if option_type.lower() == "call":
-        price = np.exp(-foreign_rate * time_to_maturity) * spot * norm.cdf(d1) - np.exp(-domestic_rate * time_to_maturity) * strike * norm.cdf(d2)
-    elif option_type.lower() == "put":
-        price = np.exp(-domestic_rate * time_to_maturity) * strike * norm.cdf(-d2) - np.exp(-foreign_rate * time_to_maturity) * spot * norm.cdf(-d1)
-    else:
-        raise ValueError("Invalid option type. Use 'call' or 'put'.")
-
-    # Adjust price for barriers
-    if barrier is not None and barrier_type is not None:
-        if barrier_type == "knock-in":
-            if option_type.lower() == "call" and spot < barrier:
-                price *= 0.8  # Adjust premium for knock-in condition (20% lower as an example)
-            elif option_type.lower() == "put" and spot > barrier:
-                price *= 0.8
-        elif barrier_type == "knock-out":
-            if option_type.lower() == "call" and spot >= barrier:
-                price = triggered_rate * time_to_maturity  # Apply triggered rate for remaining contracts
-            elif option_type.lower() == "put" and spot <= barrier:
-                price = triggered_rate * time_to_maturity
-
-    return price
+# Function to determine the rate based on barrier conditions
+def calculate_rate(spot, upper_barrier, lower_barrier, guaranteed_rate, breached_rate):
+    if spot >= upper_barrier or spot <= lower_barrier:
+        return breached_rate  # Barrier breached
+    return guaranteed_rate  # No barrier breach
 
 # Explanation of the trade
-st.title("Barrier Option Pricing with Adjusted Premiums")
+st.title("Barrier Option Pricing with Breach Logic")
 st.write("""
 ### Trade Explanation:
-This is a **Barrier Option Trade** with the following terms:
-1. **Yearly Notional Amount:** The total EUR volume for the year (e.g., 2,000,000 EUR) is divided equally across 12 monthly trades.
-2. **Guaranteed Rate:** You will sell EUR at a guaranteed rate of 4.2000 PLN as long as the barrier condition is not triggered.
-3. **Triggered Rate:** If the barrier is breached, the rate will change to a new level (e.g., 4.1500 PLN).
-4. **Barrier Type:**
-   - **Knock-In:** The option only becomes active if the barrier is breached (e.g., EUR/PLN goes below or above a specific level).
-   - **Knock-Out:** The option ceases to exist or changes to the triggered rate if the barrier is breached.
-5. **Premium Adjustment:**
-   - The premium is adjusted dynamically based on whether the barrier condition is satisfied.
-   - For knock-out, the rate changes for remaining contracts after the barrier is breached.
-
-This tool allows you to visualize the trade conditions and calculate the net premium dynamically.
+1. **Guaranteed Rate:** The client can sell EUR/PLN at a rate of 4.30 as long as no barriers are breached at expiry.
+2. **Barriers:**
+   - **Upper Barrier:** 4.50
+   - **Lower Barrier:** 3.95
+3. **Triggered Rate:** If any barrier is breached, the selling rate is reduced to 4.15.
+4. **Spot Rate at Expiry:** Determines whether the barriers are breached.
 """)
 
 # Streamlit Inputs
-spot_rate = st.number_input("Enter Spot Rate (EUR/PLN)", value=4.2500, step=0.0001, format="%.4f")
-strike_price = st.number_input("Enter Strike Price (Guaranteed Rate)", value=4.2000, step=0.0001, format="%.4f")
-volatility = st.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
-domestic_rate = st.number_input("Enter Domestic Rate (10-Year Polish Bond, %)", value=5.0, step=0.1) / 100
-foreign_rate = st.number_input("Enter Foreign Rate (10-Year German Bond, %)", value=2.5, step=0.1) / 100
+spot_rate = st.number_input("Enter Spot Rate at Expiry (EUR/PLN)", value=4.2100, step=0.0001, format="%.4f")
+upper_barrier = st.number_input("Enter Upper Barrier", value=4.5000, step=0.0001, format="%.4f")
+lower_barrier = st.number_input("Enter Lower Barrier", value=3.9500, step=0.0001, format="%.4f")
+guaranteed_rate = st.number_input("Enter Guaranteed Rate", value=4.3000, step=0.0001, format="%.4f")
+breached_rate = st.number_input("Enter Breached Rate", value=4.1500, step=0.0001, format="%.4f")
 yearly_notional = st.number_input("Enter Total Yearly Notional Amount (EUR)", value=2000000.0, step=1000.0)
-barrier = st.number_input("Enter Barrier Level", value=4.5000, step=0.0001, format="%.4f")
-barrier_type = st.selectbox("Select Barrier Type", ["knock-in", "knock-out"])
-triggered_rate = st.number_input("Enter Rate When Barrier Triggered", value=4.1500, step=0.0001, format="%.4f")
+
+# Calculate the rate based on barriers
+final_rate = calculate_rate(spot_rate, upper_barrier, lower_barrier, guaranteed_rate, breached_rate)
 
 # Generate dates for the contractual period (monthly intervals)
 start_date = datetime(2025, 2, 1)  # Contractual start date
 dates = [start_date + timedelta(days=30 * i) for i in range(12)]
-monthly_notional = yearly_notional / len(dates)  # Monthly notional amount
 
-# Calculate premiums with barriers
-premiums = []
-for i in range(len(dates)):
-    time_to_maturity = (dates[i] - datetime.now()).days / 365
-    if time_to_maturity > 0:  # Ensure time to maturity is positive
-        premium_per_eur = barrier_option_pricer(
-            spot_rate, strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity, "call", barrier, barrier_type, triggered_rate
-        )
-        monthly_premium = premium_per_eur * monthly_notional
-        premiums.append(monthly_premium)
-    else:
-        premiums.append(0)  # If time to maturity is zero or negative, no premium
-
-# Calculate the net premium
-net_premium = sum(premiums)
-
-# Display the net premium
-st.write("### Net Premium")
-if net_premium > 0:
-    st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
-else:
-    st.write(f"**Net Premium Paid:** {abs(net_premium):.2f} PLN")
+# Chart Data
+rate_values = [guaranteed_rate if spot_rate < upper_barrier and spot_rate > lower_barrier else breached_rate] * len(dates)
+upper_barrier_values = [upper_barrier] * len(dates)
+lower_barrier_values = [lower_barrier] * len(dates)
 
 # Plot the chart
 fig, ax = plt.subplots(figsize=(12, 6))
 
-# Plot the guaranteed rate
-ax.plot(dates, [strike_price] * len(dates), linestyle="--", color="blue", label=f"Guaranteed Rate: {strike_price:.4f}")
+# Plot the guaranteed rate or breached rate
+ax.step(dates, rate_values, linestyle="--", color="blue", label=f"Rate (Final: {final_rate:.4f})")
 
-# Plot the barrier
-ax.plot(dates, [barrier] * len(dates), linestyle="-", color="red", label=f"{barrier_type.capitalize()} Barrier: {barrier:.4f}")
-
-# Plot the triggered rate
-ax.plot(dates, [triggered_rate] * len(dates), linestyle="--", color="purple", label=f"Triggered Rate: {triggered_rate:.4f}")
-
-# Plot the premium values
-ax.plot(dates, [p / monthly_notional for p in premiums], linestyle="--", color="green", label="Adjusted Premium (PLN per EUR)")
+# Plot the barriers
+ax.plot(dates, upper_barrier_values, linestyle="-", color="red", label=f"Upper Barrier: {upper_barrier:.4f}")
+ax.plot(dates, lower_barrier_values, linestyle="-", color="green", label=f"Lower Barrier: {lower_barrier:.4f}")
 
 # Add labels and title
-ax.set_title("Barrier Option Pricing with Adjusted Premiums", fontsize=14)
+ax.set_title("Barrier Option Pricing with Breach Logic", fontsize=14)
 ax.set_xlabel("Date", fontsize=12)
-ax.set_ylabel("Exchange Rate / Premium (PLN)", fontsize=12)
-ax.set_ylim(4.0, 4.6)
+ax.set_ylabel("Exchange Rate (EUR/PLN)", fontsize=12)
 ax.grid(alpha=0.3)
 
 # Format x-axis for dates
@@ -121,3 +64,7 @@ ax.legend()
 
 # Display the chart in Streamlit
 st.pyplot(fig)
+
+# Display the final rate
+st.write("### Final Rate")
+st.write(f"The final selling rate is **{final_rate:.4f} EUR/PLN** based on the barrier conditions.")
