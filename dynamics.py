@@ -9,7 +9,7 @@ def calculate_rate(spot, upper_barrier, lower_barrier, guaranteed_rate, breached
     return guaranteed_rate  # No barrier breach
 
 # Explanation of the trade
-st.title("Barrier Option Pricing with Breach Logic")
+st.title("Barrier Option Pricing with Net Premium")
 st.write("""
 ### Trade Explanation:
 1. **Guaranteed Rate:** The client can sell EUR/PLN at a rate of 4.30 as long as no barriers are breached at expiry.
@@ -18,7 +18,8 @@ st.write("""
    - **Lower Barrier:** 3.95
 3. **Breached Rate:** If any barrier is breached, the selling rate is reduced to 4.15.
 4. **Spot Rate at Expiry:** Determines whether the barriers are breached.
-5. **Net Premium:** Shows the overall outcome of the trade, including proceeds from the breached rate compared to the market value at the spot rate.
+5. **Net Premium:** The overall difference between the proceeds from the final rate and the market value at the spot rate.
+6. **Maturity Dates:** Choose 6 or 12 maturity dates for the trade.
 """)
 
 # Streamlit Inputs
@@ -28,6 +29,16 @@ lower_barrier = st.number_input("Enter Lower Barrier", value=3.9500, step=0.0001
 guaranteed_rate = st.number_input("Enter Guaranteed Rate", value=4.3000, step=0.0001, format="%.4f")
 breached_rate = st.number_input("Enter Breached Rate", value=4.1500, step=0.0001, format="%.4f")
 yearly_notional = st.number_input("Enter Total Yearly Notional Amount (EUR)", value=2000000.0, step=1000.0)
+maturity_choice = st.radio("Choose Maturity Duration:", ["6 Months", "12 Months"])
+
+# Set number of maturity dates based on choice
+if maturity_choice == "6 Months":
+    num_maturities = 6
+else:
+    num_maturities = 12
+
+# Calculate monthly notional
+monthly_notional = yearly_notional / num_maturities
 
 # Calculate the rate based on barriers
 final_rate = calculate_rate(spot_rate, upper_barrier, lower_barrier, guaranteed_rate, breached_rate)
@@ -41,9 +52,9 @@ market_value = spot_rate * yearly_notional
 # Calculate net premium (difference between proceeds and market value)
 net_premium = proceeds - market_value
 
-# Generate dates for the contractual period (monthly intervals)
+# Generate dates for the contractual period
 start_date = datetime(2025, 2, 1)  # Contractual start date
-dates = [start_date + timedelta(days=30 * i) for i in range(12)]
+dates = [start_date + timedelta(days=30 * i) for i in range(num_maturities)]
 
 # Chart Data
 rate_values = [guaranteed_rate if spot_rate < upper_barrier and spot_rate > lower_barrier else breached_rate] * len(dates)
@@ -70,7 +81,7 @@ if spot_rate >= upper_barrier or spot_rate <= lower_barrier:
                 color="purple", fontsize=10, ha="left", va="center", arrowprops=dict(facecolor="purple", arrowstyle="->"))
 
 # Add labels and title
-ax.set_title("Barrier Option Pricing with Breach Logic", fontsize=14)
+ax.set_title("Barrier Option Pricing with Net Premium", fontsize=14)
 ax.set_xlabel("Date", fontsize=12)
 ax.set_ylabel("Exchange Rate (EUR/PLN)", fontsize=12)
 ax.grid(alpha=0.3)
@@ -84,7 +95,7 @@ ax.legend()
 # Display the chart in Streamlit
 st.pyplot(fig)
 
-# Display the final rate, proceeds, market value, and net position
+# Display the final rate, proceeds, market value, and net premium
 st.write("### Results")
 st.write(f"**Final Selling Rate:** {final_rate:.4f} EUR/PLN")
 st.write(f"**Proceeds from Trade:** {proceeds:,.2f} PLN")
