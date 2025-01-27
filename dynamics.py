@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 # Black-Scholes Pricing Function with Barrier Adjustment
 def barrier_option_pricer(
-    spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, option_type, barrier=None, barrier_type=None
+    spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, option_type, barrier=None, barrier_type=None, triggered_rate=None
 ):
     d1 = (np.log(spot / strike) + (domestic_rate - foreign_rate + 0.5 * volatility**2) * time_to_maturity) / (volatility * np.sqrt(time_to_maturity))
     d2 = d1 - volatility * np.sqrt(time_to_maturity)
@@ -28,9 +28,9 @@ def barrier_option_pricer(
                 price *= 0.8
         elif barrier_type == "knock-out":
             if option_type.lower() == "call" and spot >= barrier:
-                price = 0  # Knock-out condition met
+                price = triggered_rate * time_to_maturity  # Apply triggered rate for remaining contracts
             elif option_type.lower() == "put" and spot <= barrier:
-                price = 0
+                price = triggered_rate * time_to_maturity
 
     return price
 
@@ -41,14 +41,13 @@ st.write("""
 This is a **Barrier Option Trade** with the following terms:
 1. **Yearly Notional Amount:** The total EUR volume for the year (e.g., 2,000,000 EUR) is divided equally across 12 monthly trades.
 2. **Guaranteed Rate:** You will sell EUR at a guaranteed rate of 4.2000 PLN as long as the barrier condition is not triggered.
-3. **Barrier Type:**
+3. **Triggered Rate:** If the barrier is breached, the rate will change to a new level (e.g., 4.1500 PLN).
+4. **Barrier Type:**
    - **Knock-In:** The option only becomes active if the barrier is breached (e.g., EUR/PLN goes below or above a specific level).
-   - **Knock-Out:** The option ceases to exist if the barrier is breached.
-4. **Premium Adjustment:**
+   - **Knock-Out:** The option ceases to exist or changes to the triggered rate if the barrier is breached.
+5. **Premium Adjustment:**
    - The premium is adjusted dynamically based on whether the barrier condition is satisfied.
-   - If the barrier condition is breached for a knock-in, the premium will reduce by 20%.
-   - For a knock-out, the option is deactivated, and no premium is paid.
-5. **Trade Parameters:** Each monthly trade matures at the end of the month, and premiums are calculated accordingly.
+   - For knock-out, the rate changes for remaining contracts after the barrier is breached.
 
 This tool allows you to visualize the trade conditions and calculate the net premium dynamically.
 """)
@@ -62,6 +61,7 @@ foreign_rate = st.number_input("Enter Foreign Rate (10-Year German Bond, %)", va
 yearly_notional = st.number_input("Enter Total Yearly Notional Amount (EUR)", value=2000000.0, step=1000.0)
 barrier = st.number_input("Enter Barrier Level", value=4.5000, step=0.0001, format="%.4f")
 barrier_type = st.selectbox("Select Barrier Type", ["knock-in", "knock-out"])
+triggered_rate = st.number_input("Enter Rate When Barrier Triggered", value=4.1500, step=0.0001, format="%.4f")
 
 # Generate dates for the contractual period (monthly intervals)
 start_date = datetime(2025, 2, 1)  # Contractual start date
@@ -74,7 +74,7 @@ for i in range(len(dates)):
     time_to_maturity = (dates[i] - datetime.now()).days / 365
     if time_to_maturity > 0:  # Ensure time to maturity is positive
         premium_per_eur = barrier_option_pricer(
-            spot_rate, strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity, "call", barrier, barrier_type
+            spot_rate, strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity, "call", barrier, barrier_type, triggered_rate
         )
         monthly_premium = premium_per_eur * monthly_notional
         premiums.append(monthly_premium)
@@ -99,6 +99,9 @@ ax.plot(dates, [strike_price] * len(dates), linestyle="--", color="blue", label=
 
 # Plot the barrier
 ax.plot(dates, [barrier] * len(dates), linestyle="-", color="red", label=f"{barrier_type.capitalize()} Barrier: {barrier:.4f}")
+
+# Plot the triggered rate
+ax.plot(dates, [triggered_rate] * len(dates), linestyle="--", color="purple", label=f"Triggered Rate: {triggered_rate:.4f}")
 
 # Plot the premium values
 ax.plot(dates, [p / monthly_notional for p in premiums], linestyle="--", color="green", label="Adjusted Premium (PLN per EUR)")
