@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 # Black-Scholes Pricing Function with Barrier Adjustment
 def barrier_option_pricer(
-    spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, notional, option_type, barrier=None, barrier_type=None
+    spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, option_type, barrier=None, barrier_type=None
 ):
     d1 = (np.log(spot / strike) + (domestic_rate - foreign_rate + 0.5 * volatility**2) * time_to_maturity) / (volatility * np.sqrt(time_to_maturity))
     d2 = d1 - volatility * np.sqrt(time_to_maturity)
@@ -32,22 +32,23 @@ def barrier_option_pricer(
             elif option_type.lower() == "put" and spot <= barrier:
                 price = 0
 
-    return price * notional
+    return price
 
 # Explanation of the trade
 st.title("Barrier Option Pricing with Adjusted Premiums")
 st.write("""
 ### Trade Explanation:
 This is a **Barrier Option Trade** with the following terms:
-1. **Guaranteed Rate:** You will sell EUR at a guaranteed rate of 4.2000 PLN as long as the barrier condition is not triggered.
-2. **Barrier Type:**
+1. **Yearly Notional Amount:** The total EUR volume for the year (e.g., 2,000,000 EUR) is divided equally across 12 monthly trades.
+2. **Guaranteed Rate:** You will sell EUR at a guaranteed rate of 4.2000 PLN as long as the barrier condition is not triggered.
+3. **Barrier Type:**
    - **Knock-In:** The option only becomes active if the barrier is breached (e.g., EUR/PLN goes below or above a specific level).
    - **Knock-Out:** The option ceases to exist if the barrier is breached.
-3. **Premium Adjustment:**
+4. **Premium Adjustment:**
    - The premium is adjusted dynamically based on whether the barrier condition is satisfied.
    - If the barrier condition is breached for a knock-in, the premium will reduce by 20%.
    - For a knock-out, the option is deactivated, and no premium is paid.
-4. **Trade Parameters:** The notional amount is 2,000,000 EUR, and the contract period spans 12 months starting from February 2025.
+5. **Trade Parameters:** Each monthly trade matures at the end of the month, and premiums are calculated accordingly.
 
 This tool allows you to visualize the trade conditions and calculate the net premium dynamically.
 """)
@@ -58,23 +59,25 @@ strike_price = st.number_input("Enter Strike Price (Guaranteed Rate)", value=4.2
 volatility = st.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
 domestic_rate = st.number_input("Enter Domestic Rate (10-Year Polish Bond, %)", value=5.0, step=0.1) / 100
 foreign_rate = st.number_input("Enter Foreign Rate (10-Year German Bond, %)", value=2.5, step=0.1) / 100
-notional_amount = st.number_input("Enter Notional Amount (EUR)", value=2000000.0, step=1000.0)
+yearly_notional = st.number_input("Enter Total Yearly Notional Amount (EUR)", value=2000000.0, step=1000.0)
 barrier = st.number_input("Enter Barrier Level", value=4.5000, step=0.0001, format="%.4f")
 barrier_type = st.selectbox("Select Barrier Type", ["knock-in", "knock-out"])
 
 # Generate dates for the contractual period (monthly intervals)
 start_date = datetime(2025, 2, 1)  # Contractual start date
 dates = [start_date + timedelta(days=30 * i) for i in range(12)]
+monthly_notional = yearly_notional / len(dates)  # Monthly notional amount
 
 # Calculate premiums with barriers
 premiums = []
 for i in range(len(dates)):
     time_to_maturity = (dates[i] - datetime.now()).days / 365
     if time_to_maturity > 0:  # Ensure time to maturity is positive
-        premium = barrier_option_pricer(
-            spot_rate, strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity, notional_amount, "call", barrier, barrier_type
+        premium_per_eur = barrier_option_pricer(
+            spot_rate, strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity, "call", barrier, barrier_type
         )
-        premiums.append(premium)
+        monthly_premium = premium_per_eur * monthly_notional
+        premiums.append(monthly_premium)
     else:
         premiums.append(0)  # If time to maturity is zero or negative, no premium
 
@@ -98,7 +101,7 @@ ax.plot(dates, [strike_price] * len(dates), linestyle="--", color="blue", label=
 ax.plot(dates, [barrier] * len(dates), linestyle="-", color="red", label=f"{barrier_type.capitalize()} Barrier: {barrier:.4f}")
 
 # Plot the premium values
-ax.plot(dates, [p / notional_amount for p in premiums], linestyle="--", color="green", label="Adjusted Premium (PLN per EUR)")
+ax.plot(dates, [p / monthly_notional for p in premiums], linestyle="--", color="green", label="Adjusted Premium (PLN per EUR)")
 
 # Add labels and title
 ax.set_title("Barrier Option Pricing with Adjusted Premiums", fontsize=14)
