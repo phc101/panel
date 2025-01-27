@@ -61,6 +61,16 @@ for i in range(len(dates)):
     else:
         premiums.append(0)  # If time to maturity is zero or negative, no premium
 
+# Calculate the net premium
+net_premium = sum(premiums)
+
+# Display the net premium
+st.write("### Net Premium")
+if net_premium > 0:
+    st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
+else:
+    st.write(f"**Net Premium Paid:** {abs(net_premium):.2f} PLN")
+
 # Plot the chart
 fig, ax = plt.subplots(figsize=(12, 6))
 
