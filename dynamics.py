@@ -19,7 +19,7 @@ st.write("""
 3. **Breached Rate:** If any barrier is breached, the selling rate is reduced to 4.15.
 4. **Spot Rate at Expiry:** Determines whether the barriers are breached.
 5. **Net Premium:** The overall difference between the proceeds from the final rate and the market value at the spot rate.
-6. **Maturity Dates:** Choose 6 or 12 maturity dates for the trade.
+6. **Maturity Dates:** Choose 6 or 12 maturity dates for the trade, and the yearly volume will automatically adjust.
 """)
 
 # Streamlit Inputs
@@ -28,13 +28,15 @@ upper_barrier = st.number_input("Enter Upper Barrier", value=4.5000, step=0.0001
 lower_barrier = st.number_input("Enter Lower Barrier", value=3.9500, step=0.0001, format="%.4f")
 guaranteed_rate = st.number_input("Enter Guaranteed Rate", value=4.3000, step=0.0001, format="%.4f")
 breached_rate = st.number_input("Enter Breached Rate", value=4.1500, step=0.0001, format="%.4f")
-yearly_notional = st.number_input("Enter Total Yearly Notional Amount (EUR)", value=2000000.0, step=1000.0)
+base_yearly_notional = st.number_input("Enter Base Yearly Notional Amount (EUR for 12 months)", value=2000000.0, step=1000.0)
 maturity_choice = st.radio("Choose Maturity Duration:", ["6 Months", "12 Months"])
 
-# Set number of maturity dates based on choice
+# Adjust notional based on maturity choice
 if maturity_choice == "6 Months":
+    yearly_notional = base_yearly_notional / 2  # Adjust yearly volume for 6 months
     num_maturities = 6
 else:
+    yearly_notional = base_yearly_notional  # Use full yearly volume for 12 months
     num_maturities = 12
 
 # Calculate monthly notional
