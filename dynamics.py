@@ -1,148 +1,88 @@
-import streamlit as st
-import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
+import numpy as np
 from datetime import datetime, timedelta
 
-# Black-Scholes Pricing Function
-def fx_option_pricer(spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, notional, option_type="call"):
+# Black-Scholes Pricing Function with Barrier Adjustment
+def barrier_option_pricer(
+    spot, strike, volatility, domestic_rate, foreign_rate, time_to_maturity, notional, option_type, barrier=None, barrier_type=None
+):
     d1 = (np.log(spot / strike) + (domestic_rate - foreign_rate + 0.5 * volatility**2) * time_to_maturity) / (volatility * np.sqrt(time_to_maturity))
     d2 = d1 - volatility * np.sqrt(time_to_maturity)
 
+    # Calculate standard option price
     if option_type.lower() == "call":
         price = np.exp(-foreign_rate * time_to_maturity) * spot * norm.cdf(d1) - np.exp(-domestic_rate * time_to_maturity) * strike * norm.cdf(d2)
     elif option_type.lower() == "put":
         price = np.exp(-domestic_rate * time_to_maturity) * strike * norm.cdf(-d2) - np.exp(-foreign_rate * time_to_maturity) * spot * norm.cdf(-d1)
     else:
         raise ValueError("Invalid option type. Use 'call' or 'put'.")
-    
+
+    # Adjust price for barriers
+    if barrier is not None and barrier_type is not None:
+        if barrier_type == "knock-in":
+            if option_type.lower() == "call" and spot < barrier:
+                price *= 0.8  # Adjust premium for knock-in condition (20% lower as an example)
+            elif option_type.lower() == "put" and spot > barrier:
+                price *= 0.8
+        elif barrier_type == "knock-out":
+            if option_type.lower() == "call" and spot >= barrier:
+                price = 0  # Knock-out condition met
+            elif option_type.lower() == "put" and spot <= barrier:
+                price = 0
+
     return price * notional
 
-# Main App Content
-st.title("EUR/PLN Dynamic Forward Pricer")
+# Contract Conditions
+start_date = datetime(2025, 2, 1)  # Contractual start date
+end_date = datetime(2026, 1, 31)  # Contractual end date
+guaranteed_rate = 4.2000
+spot_rate = 4.2500  # Current spot rate
+volatility = 0.10  # Annualized volatility (10%)
+domestic_rate = 0.05  # Polish 10-year bond yield (5%)
+foreign_rate = 0.025  # German 10-year bond yield (2.5%)
+notional_amount = 2000000  # Total notional amount
+strike_price = guaranteed_rate  # Strike price at guaranteed rate
+barrier = 4.5000  # Knock-in or knock-out barrier
+barrier_type = "knock-in"  # Can be "knock-in" or "knock-out"
 
-# Choose Mode: Exporter or Importer
-st.sidebar.header("Choose Strategy")
-strategy = st.sidebar.radio(
-    "Select Strategy Type:",
-    options=["Exporter (Buy Put, Sell Call)", "Importer (Sell Put, Buy Call)"]
-)
+# Generate dates for the contractual period (monthly intervals)
+dates = [start_date + timedelta(days=30 * i) for i in range(12)]
 
-# Sidebar inputs
-spot_rate = st.sidebar.number_input("Enter Spot Rate (EUR/PLN)", value=4.3150, step=0.0001, format="%.4f")
-volatility = st.sidebar.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
-domestic_rate = st.sidebar.number_input("Polish 10-Year Bond Yield (Domestic Rate, %)", value=5.5, step=0.1) / 100
-foreign_rate = st.sidebar.number_input("German 10-Year Bond Yield (Foreign Rate, %)", value=2.5, step=0.1) / 100
-
-st.sidebar.header("Set Max and Min Prices")
-max_price = st.sidebar.number_input("Enter Max Price Strike", value=spot_rate + 0.1, step=0.0001, format="%.4f")
-min_price = st.sidebar.number_input("Enter Min Price Strike", value=spot_rate - 0.1, step=0.0001, format="%.4f")
-
-flat_max_price = st.sidebar.checkbox("Flat Max Price")
-flat_min_price = st.sidebar.checkbox("Flat Min Price")
-
-increase_min_price = st.sidebar.checkbox("+1% Min Price from Month 7")
-increase_max_price = st.sidebar.checkbox("+1% Max Price from Month 7")
-
-notional = st.sidebar.number_input("Notional Amount", value=100000.0, step=1000.0)
-
-# Dynamically Generate Trades
-trades = []
-for i in range(12):
-    maturity_date = datetime.now() + timedelta(days=30 * (i + 1))
-    if strategy == "Exporter (Buy Put, Sell Call)":
-        # Exporter: Buy Put, Sell Call
-        if flat_max_price:
-            max_price_adjusted = max_price
-        elif increase_max_price and i + 1 >= 7:
-            max_price_adjusted = max_price * (1 + 0.01 * (i - 6))  # Increment by 1% from Month 7 onward
-        else:
-            max_price_adjusted = max_price + (i * 0.01)
-
-        if flat_min_price:
-            min_price_adjusted = min_price
-        elif increase_min_price and i + 1 >= 7:
-            min_price_adjusted = min_price * (1 + 0.01 * (i - 6))  # Increment by 1% from Month 7 onward
-        else:
-            min_price_adjusted = min_price + (i * 0.01)
-
-        trades.append({"type": "Max Price", "action": "Sell", "strike": max_price_adjusted, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
-        trades.append({"type": "Min Price", "action": "Buy", "strike": min_price_adjusted, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
-
-    elif strategy == "Importer (Sell Put, Buy Call)":
-        # Importer: Sell Put, Buy Call
-        if flat_min_price:
-            min_price_adjusted = min_price
-        elif increase_min_price and i + 1 >= 7:
-            min_price_adjusted = min_price * (1 + 0.01 * (i - 6))  # Increment by 1% from Month 7 onward
-        else:
-            min_price_adjusted = min_price + (i * 0.01)
-
-        if flat_max_price:
-            max_price_adjusted = max_price
-        elif increase_max_price and i + 1 >= 7:
-            max_price_adjusted = max_price * (1 + 0.01 * (i - 6))  # Increment by 1% from Month 7 onward
-        else:
-            max_price_adjusted = max_price + (i * 0.01)
-
-        trades.append({"type": "Max Price", "action": "Buy", "strike": max_price_adjusted, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
-        trades.append({"type": "Min Price", "action": "Sell", "strike": min_price_adjusted, "maturity_months": i + 1, "maturity_date": maturity_date.strftime("%Y-%m-%d"), "notional": notional})
-
-# Calculate Net Premium
-net_premium = 0
-for trade in trades:
-    price = fx_option_pricer(
-        spot_rate,
-        trade["strike"],
-        volatility,
-        domestic_rate,
-        foreign_rate,
-        trade["maturity_months"] / 12,  # Convert months to years
-        trade["notional"],
-        "call" if trade["type"] == "Max Price" else "put"
+# Calculate premiums with barriers
+premiums = []
+for i in range(len(dates)):
+    time_to_maturity = (dates[i] - datetime.now()).days / 365
+    premium = barrier_option_pricer(
+        spot_rate, strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity, notional_amount, "call", barrier, barrier_type
     )
-    premium = -price if trade["action"] == "Buy" else price
-    net_premium += premium
+    premiums.append(premium)
 
-# Prepare data for the chart
-max_prices = [trade["strike"] for trade in trades if trade["type"] == "Max Price"]
-min_prices = [trade["strike"] for trade in trades if trade["type"] == "Min Price"]
-max_maturities = [trade["maturity_months"] for trade in trades if trade["type"] == "Max Price"]
-min_maturities = [trade["maturity_months"] for trade in trades if trade["type"] == "Min Price"]
+# Plot the chart
+fig, ax = plt.subplots(figsize=(12, 6))
 
-# Plot the Chart
-fig, ax = plt.subplots(figsize=(10, 6))
-if strategy == "Exporter (Buy Put, Sell Call)":
-    ax.step(max_maturities, max_prices, color="green", linestyle="--", label="Max Participation Price")
-    ax.step(min_maturities, min_prices, color="red", linestyle="--", label="Hedged Price")
-elif strategy == "Importer (Sell Put, Buy Call)":
-    ax.step(max_maturities, min_prices, color="green", linestyle="--", label="Max Participation Price")
-    ax.step(min_maturities, max_prices, color="red", linestyle="--", label="Hedged Price")
+# Plot the guaranteed rate
+ax.plot(dates, [guaranteed_rate] * len(dates), linestyle="--", color="blue", label=f"Guaranteed Rate: {guaranteed_rate:.4f}")
 
-ax.annotate("Max Participation Price", xy=(12, max_prices[-1]), xytext=(13, max_prices[-1]),
-            color="green", fontsize=10, ha="left", va="center")
-ax.annotate("Hedged Price", xy=(12, min_prices[-1]), xytext=(13, min_prices[-1]),
-            color="red", fontsize=10, ha="left", va="center")
-ax.annotate("Spot Price", xy=(0, spot_rate), xytext=(-1.0, spot_rate),
-            color="blue", fontsize=10, ha="right", va="center")
+# Plot the barrier
+ax.plot(dates, [barrier] * len(dates), linestyle="-", color="red", label=f"{barrier_type.capitalize()} Barrier: {barrier:.4f}")
 
-ax.set_title("Trades Visualization (Stair Step)")
-ax.set_xlabel("Time to Maturity (Months)")
-ax.set_ylabel("Strike Prices (PLN)")
-ax.grid(True, linewidth=0.5, alpha=0.3)
-ax.set_xlim(left=0, right=13)
-ax.set_ylim(min(min_prices) - 0.01, max(max_prices) + 0.01)
-st.pyplot(fig)
+# Plot the premium values
+ax.plot(dates, [p / notional_amount for p in premiums], linestyle="--", color="green", label="Adjusted Premium (PLN per EUR)")
 
-# Display Net Premium
-st.write("### Net Premium")
-if net_premium > 0:
-    st.write(f"**Net Premium Received:** {net_premium:.2f} PLN")
-else:
-    st.write(f"**Net Premium Paid:** {abs(net_premium):.2f} PLN")
+# Add labels and title
+ax.set_title("Barrier Option Pricing with Adjusted Premiums", fontsize=14)
+ax.set_xlabel("Date", fontsize=12)
+ax.set_ylabel("Exchange Rate / Premium (PLN)", fontsize=12)
+ax.set_ylim(4.0, 4.6)
+ax.grid(alpha=0.3)
 
-# Display Added Trades
-st.write("### Current Trades")
-for i, trade in enumerate(trades):
-    st.write(f"**Trade {i + 1}:** {trade['action']} {trade['type']} at Strike {trade['strike']:.4f} "
-             f"(Maturity: {trade['maturity_months']} months, Date: {trade['maturity_date']})")
+# Format x-axis for dates
+plt.xticks(dates, [date.strftime("%b %Y") for date in dates], rotation=45)
+
+# Add legend
+ax.legend()
+
+# Show the plot
+plt.tight_layout()
+plt.show()
