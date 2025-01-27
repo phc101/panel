@@ -35,16 +35,16 @@ def monte_carlo_double_barrier(S, K, T, rd, rf, sigma, upper_barrier, lower_barr
 
     return np.exp(-rd * T) * np.mean(prices)
 
-def calculate_net_premium(S, strategies, rd, rf, T, sigma):
+def calculate_net_premium(S, transactions, rd, rf, T, sigma):
     total_premium = 0
-    for strategy in strategies:
-        type_, K, option_type, position = strategy
+    for transaction in transactions:
+        type_, K, option_type, position = transaction
         price = garman_kohlhagen(S, K, T, rd, rf, sigma, option_type)
         total_premium += price if position == "buy" else -price
     return total_premium * S  # Convert to PLN
 
 def main():
-    st.title("EUR/PLN Double Barrier Option Pricer with Strategies")
+    st.title("EUR/PLN Double Barrier Option Pricer")
 
     st.sidebar.header("Option Parameters")
     spot_price = st.sidebar.number_input("Spot Price (EUR/PLN)", value=4.21, step=0.01)
@@ -59,29 +59,39 @@ def main():
     lower_barrier = st.sidebar.number_input("Lower Barrier", value=3.95, step=0.01)
     adjusted_strike = st.sidebar.number_input("Adjusted Strike (if barrier breached)", value=4.15, step=0.01)
 
-    st.sidebar.header("Strategies")
-    strategy_count = st.sidebar.number_input("Number of Strategies", value=2, step=1, min_value=1)
-    strategies = []
-    for i in range(strategy_count):
-        st.sidebar.subheader(f"Strategy {i + 1}")
-        option_type = st.sidebar.selectbox(f"Option Type (Strategy {i + 1})", ["call", "put"], key=f"type_{i}")
-        position = st.sidebar.selectbox(f"Position (Strategy {i + 1})", ["buy", "sell"], key=f"position_{i}")
-        strike = st.sidebar.number_input(f"Strike Price (Strategy {i + 1})", value=4.30, step=0.01, key=f"strike_{i}")
-        strategies.append((f"Strategy {i + 1}", strike, option_type, position))
+    st.sidebar.header("Transactions")
+    transaction_count = st.sidebar.radio("Number of Transactions", [6, 12])
+    transactions = []
+    for i in range(transaction_count):
+        st.sidebar.subheader(f"Transaction {i + 1}")
+        option_type = st.sidebar.selectbox(f"Option Type (Transaction {i + 1})", ["call", "put"], key=f"type_{i}")
+        position = st.sidebar.selectbox(f"Position (Transaction {i + 1})", ["buy", "sell"], key=f"position_{i}")
+        strike = st.sidebar.number_input(f"Strike Price (Transaction {i + 1})", value=4.30 + i * 0.01, step=0.01, key=f"strike_{i}")
+        transactions.append((f"Transaction {i + 1}", strike, option_type, position))
 
     st.sidebar.header("Monte Carlo Settings")
     paths = st.sidebar.number_input("Simulation Paths", value=10000, step=1000)
 
     if st.button("Calculate"):
         monte_carlo_price = monte_carlo_double_barrier(spot_price, strike_price, maturity, domestic_rate, foreign_rate, volatility, upper_barrier, lower_barrier, adjusted_strike, "call", paths)
-        net_premium = calculate_net_premium(spot_price, strategies, domestic_rate, foreign_rate, maturity, volatility)
+        net_premium = calculate_net_premium(spot_price, transactions, domestic_rate, foreign_rate, maturity, volatility)
 
         st.write(f"### Monte Carlo Double Barrier Price: {monte_carlo_price:.4f} EUR")
         st.write(f"### Net Premium: {net_premium:.2f} PLN")
 
-        st.write("#### Strategy Details")
-        for strat in strategies:
-            st.write(f"- {strat[0]}: {strat[3]} {strat[2]} at strike {strat[1]} EUR")
+        st.write("#### Transaction Details")
+        for transaction in transactions:
+            st.write(f"- {transaction[0]}: {transaction[3]} {transaction[2]} at strike {transaction[1]} EUR")
+
+        st.write("#### Payoff Chart")
+        fig, ax = plt.subplots()
+        strikes = [trans[1] for trans in transactions]
+        premiums = [garman_kohlhagen(spot_price, trans[1], maturity, domestic_rate, foreign_rate, volatility, trans[2]) for trans in transactions]
+        ax.bar(strikes, premiums, color=["green" if trans[3] == "buy" else "red" for trans in transactions])
+        ax.set_xlabel("Strike Price")
+        ax.set_ylabel("Premium (EUR)")
+        ax.set_title("Transaction Payoffs")
+        st.pyplot(fig)
 
 if __name__ == "__main__":
     main()
