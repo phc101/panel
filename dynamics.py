@@ -1,3 +1,4 @@
+import streamlit as st
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 import numpy as np
@@ -33,36 +34,38 @@ def barrier_option_pricer(
 
     return price * notional
 
-# Contract Conditions
-start_date = datetime(2025, 2, 1)  # Contractual start date
-end_date = datetime(2026, 1, 31)  # Contractual end date
-guaranteed_rate = 4.2000
-spot_rate = 4.2500  # Current spot rate
-volatility = 0.10  # Annualized volatility (10%)
-domestic_rate = 0.05  # Polish 10-year bond yield (5%)
-foreign_rate = 0.025  # German 10-year bond yield (2.5%)
-notional_amount = 2000000  # Total notional amount
-strike_price = guaranteed_rate  # Strike price at guaranteed rate
-barrier = 4.5000  # Knock-in or knock-out barrier
-barrier_type = "knock-in"  # Can be "knock-in" or "knock-out"
+# Streamlit Inputs
+st.title("Barrier Option Pricing with Adjusted Premiums")
+spot_rate = st.number_input("Enter Spot Rate (EUR/PLN)", value=4.2500, step=0.0001, format="%.4f")
+strike_price = st.number_input("Enter Strike Price (Guaranteed Rate)", value=4.2000, step=0.0001, format="%.4f")
+volatility = st.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
+domestic_rate = st.number_input("Enter Domestic Rate (10-Year Polish Bond, %)", value=5.0, step=0.1) / 100
+foreign_rate = st.number_input("Enter Foreign Rate (10-Year German Bond, %)", value=2.5, step=0.1) / 100
+notional_amount = st.number_input("Enter Notional Amount (EUR)", value=2000000.0, step=1000.0)
+barrier = st.number_input("Enter Barrier Level", value=4.5000, step=0.0001, format="%.4f")
+barrier_type = st.selectbox("Select Barrier Type", ["knock-in", "knock-out"])
 
 # Generate dates for the contractual period (monthly intervals)
+start_date = datetime(2025, 2, 1)  # Contractual start date
 dates = [start_date + timedelta(days=30 * i) for i in range(12)]
 
 # Calculate premiums with barriers
 premiums = []
 for i in range(len(dates)):
     time_to_maturity = (dates[i] - datetime.now()).days / 365
-    premium = barrier_option_pricer(
-        spot_rate, strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity, notional_amount, "call", barrier, barrier_type
-    )
-    premiums.append(premium)
+    if time_to_maturity > 0:  # Ensure time to maturity is positive
+        premium = barrier_option_pricer(
+            spot_rate, strike_price, volatility, domestic_rate, foreign_rate, time_to_maturity, notional_amount, "call", barrier, barrier_type
+        )
+        premiums.append(premium)
+    else:
+        premiums.append(0)  # If time to maturity is zero or negative, no premium
 
 # Plot the chart
 fig, ax = plt.subplots(figsize=(12, 6))
 
 # Plot the guaranteed rate
-ax.plot(dates, [guaranteed_rate] * len(dates), linestyle="--", color="blue", label=f"Guaranteed Rate: {guaranteed_rate:.4f}")
+ax.plot(dates, [strike_price] * len(dates), linestyle="--", color="blue", label=f"Guaranteed Rate: {strike_price:.4f}")
 
 # Plot the barrier
 ax.plot(dates, [barrier] * len(dates), linestyle="-", color="red", label=f"{barrier_type.capitalize()} Barrier: {barrier:.4f}")
@@ -83,6 +86,5 @@ plt.xticks(dates, [date.strftime("%b %Y") for date in dates], rotation=45)
 # Add legend
 ax.legend()
 
-# Show the plot
-plt.tight_layout()
-plt.show()
+# Display the chart in Streamlit
+st.pyplot(fig)
