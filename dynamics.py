@@ -15,28 +15,28 @@ def garman_kohlhagen(S, K, T, rd, rf, sigma, option_type):
         raise ValueError("Invalid option type. Use 'call' or 'put'.")
     return price
 
-def monte_carlo_barrier(S, K, T, rd, rf, sigma, barrier, option_type, paths):
+def monte_carlo_double_barrier(S, K, T, rd, rf, sigma, upper_barrier, lower_barrier, adjusted_strike, option_type, paths):
     dt = T / 252  # Daily steps
     prices = np.zeros(paths)
 
     for i in range(paths):
         path = [S]
+        breached = False
         for _ in range(int(T / dt)):
             dS = path[-1] * (rd - rf) * dt + sigma * path[-1] * np.sqrt(dt) * np.random.normal()
             path.append(path[-1] + dS)
 
-            if (option_type == "knock-out" and path[-1] >= barrier) or \
-               (option_type == "knock-in" and path[-1] <= barrier):
-                path[-1] = 0
-                break
+            if path[-1] >= upper_barrier or path[-1] <= lower_barrier:
+                breached = True
 
-        payoff = max(0, path[-1] - K) if option_type == "call" else max(0, K - path[-1])
+        final_strike = adjusted_strike if breached else K
+        payoff = max(0, path[-1] - final_strike) if option_type == "call" else max(0, final_strike - path[-1])
         prices[i] = payoff
 
     return np.exp(-rd * T) * np.mean(prices)
 
 def main():
-    st.title("EUR/PLN Barrier Option Pricer")
+    st.title("EUR/PLN Double Barrier Option Pricer")
 
     st.sidebar.header("Option Parameters")
     spot_price = st.sidebar.number_input("Spot Price (EUR/PLN)", value=4.21, step=0.01)
@@ -47,8 +47,9 @@ def main():
     maturity = st.sidebar.number_input("Time to Maturity (Years)", value=0.5, step=0.1)
 
     st.sidebar.header("Barrier Settings")
-    barrier_type = st.sidebar.selectbox("Barrier Type", ["knock-in", "knock-out"])
-    barrier_level = st.sidebar.number_input("Barrier Level", value=4.50, step=0.01)
+    upper_barrier = st.sidebar.number_input("Upper Barrier", value=4.50, step=0.01)
+    lower_barrier = st.sidebar.number_input("Lower Barrier", value=3.95, step=0.01)
+    adjusted_strike = st.sidebar.number_input("Adjusted Strike (if barrier breached)", value=4.15, step=0.01)
 
     st.sidebar.header("Monte Carlo Settings")
     paths = st.sidebar.number_input("Simulation Paths", value=10000, step=1000)
@@ -57,7 +58,7 @@ def main():
 
     if st.button("Calculate Price"):
         analytical_price = garman_kohlhagen(spot_price, strike_price, maturity, domestic_rate, foreign_rate, volatility, option_type)
-        monte_carlo_price = monte_carlo_barrier(spot_price, strike_price, maturity, domestic_rate, foreign_rate, volatility, barrier_level, barrier_type, paths)
+        monte_carlo_price = monte_carlo_double_barrier(spot_price, strike_price, maturity, domestic_rate, foreign_rate, volatility, upper_barrier, lower_barrier, adjusted_strike, option_type, paths)
 
         st.write(f"### Analytical Price: {analytical_price:.4f}")
         st.write(f"### Monte Carlo Price: {monte_carlo_price:.4f}")
