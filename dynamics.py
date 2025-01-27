@@ -18,9 +18,15 @@ st.write("""
    - **Lower Barrier:** 3.95
 3. **Breached Rate:** If any barrier is breached, the selling rate is reduced to 4.15.
 4. **Spot Rate at Expiry:** Determines whether the barriers are breached.
-5. **Net Premium:** The overall difference between the proceeds from the final rate and the market value at the spot rate.
-6. **Maturity Dates:** Choose 6 or 12 maturity dates for the trade, and the yearly volume will automatically adjust.
+5. **Black-Scholes Parameters:** You can adjust volatility, domestic rates, and foreign rates dynamically.
+6. **Net Premium:** Shows the overall outcome of the trade.
 """)
+
+# Sidebar for Black-Scholes parameters
+st.sidebar.header("Black-Scholes Parameters")
+volatility = st.sidebar.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
+domestic_rate = st.sidebar.number_input("Enter Domestic Rate (10-Year Polish Bond, %)", value=5.5, step=0.1) / 100
+foreign_rate = st.sidebar.number_input("Enter Foreign Rate (10-Year German Bond, %)", value=2.5, step=0.1) / 100
 
 # Streamlit Inputs
 spot_rate = st.number_input("Enter Spot Rate at Expiry (EUR/PLN)", value=4.2100, step=0.0001, format="%.4f")
