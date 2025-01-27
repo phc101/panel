@@ -1,97 +1,123 @@
 import streamlit as st
-import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import norm
+from datetime import datetime, timedelta
 
-def garman_kohlhagen(S, K, T, rd, rf, sigma, option_type):
-    d1 = (np.log(S / K) + (rd - rf + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
+# Function to calculate forward rate based on interest rate parity
+def calculate_forward_rate(spot, domestic_rate, foreign_rate, time_to_maturity_years):
+    return spot * (1 + domestic_rate * time_to_maturity_years) / (1 + foreign_rate * time_to_maturity_years)
 
-    if option_type == "call":
-        price = np.exp(-rf * T) * S * norm.cdf(d1) - np.exp(-rd * T) * K * norm.cdf(d2)
-    elif option_type == "put":
-        price = np.exp(-rd * T) * K * norm.cdf(-d2) - np.exp(-rf * T) * S * norm.cdf(-d1)
-    else:
-        raise ValueError("Invalid option type. Use 'call' or 'put'.")
-    return price
+# Function to determine the rate based on barrier conditions
+def calculate_rate(spot, upper_barrier, lower_barrier, guaranteed_rate, breached_rate):
+    if spot >= upper_barrier or spot <= lower_barrier:
+        return breached_rate  # Barrier breached
+    return guaranteed_rate  # No barrier breach
 
-def monte_carlo_double_barrier(S, K, T, rd, rf, sigma, upper_barrier, lower_barrier, adjusted_strike, option_type, paths):
-    dt = T / 252  # Daily steps
-    prices = np.zeros(paths)
+# Explanation of the trade
+st.title("Barrier Option Pricing with Dynamic Parameters")
+st.write("""
+### Trade Explanation:
+1. **Guaranteed Rate:** The client can sell EUR/PLN at a rate of 4.30 as long as no barriers are breached at expiry.
+2. **Barriers:**
+   - **Upper Barrier:** 4.50
+   - **Lower Barrier:** 3.95
+3. **Breached Rate:** If any barrier is breached, the selling rate is reduced to 4.15.
+4. **Spot Rate at Expiry:** Determines whether the barriers are breached.
+5. **Black-Scholes Parameters:** Adjust volatility, domestic rates, and foreign rates dynamically.
+6. **Net Premium:** Shows the overall outcome of the trade, dynamically adjusting with the parameters.
+""")
 
-    for i in range(paths):
-        path = [S]
-        breached = False
-        for _ in range(int(T / dt)):
-            dS = path[-1] * (rd - rf) * dt + sigma * path[-1] * np.sqrt(dt) * np.random.normal()
-            path.append(path[-1] + dS)
+# Sidebar for Black-Scholes parameters
+st.sidebar.header("Black-Scholes Parameters")
+volatility = st.sidebar.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
+domestic_rate = st.sidebar.number_input("Enter Domestic Rate (10-Year Polish Bond, %)", value=5.5, step=0.1) / 100
+foreign_rate = st.sidebar.number_input("Enter Foreign Rate (10-Year German Bond, %)", value=2.5, step=0.1) / 100
 
-            if path[-1] >= upper_barrier or path[-1] <= lower_barrier:
-                breached = True
+# Streamlit Inputs
+spot_rate = st.number_input("Enter Spot Rate at Expiry (EUR/PLN)", value=4.2100, step=0.0001, format="%.4f")
+upper_barrier = st.number_input("Enter Upper Barrier", value=4.5000, step=0.0001, format="%.4f")
+lower_barrier = st.number_input("Enter Lower Barrier", value=3.9500, step=0.0001, format="%.4f")
+guaranteed_rate = st.number_input("Enter Guaranteed Rate", value=4.3000, step=0.0001, format="%.4f")
+breached_rate = st.number_input("Enter Breached Rate", value=4.1500, step=0.0001, format="%.4f")
+base_yearly_notional = st.number_input("Enter Base Yearly Notional Amount (EUR for 12 months)", value=2000000.0, step=1000.0)
+maturity_choice = st.radio("Choose Maturity Duration:", ["6 Months", "12 Months"])
 
-        final_strike = adjusted_strike if breached else K
-        payoff = max(0, path[-1] - final_strike) if option_type == "call" else max(0, final_strike - path[-1])
-        prices[i] = payoff
+# Adjust notional based on maturity choice
+if maturity_choice == "6 Months":
+    yearly_notional = base_yearly_notional / 2  # Adjust yearly volume for 6 months
+    num_maturities = 6
+else:
+    yearly_notional = base_yearly_notional  # Use full yearly volume for 12 months
+    num_maturities = 12
 
-    return np.exp(-rd * T) * np.mean(prices)
+# Calculate monthly notional
+monthly_notional = yearly_notional / num_maturities
 
-def calculate_net_premium(S, transactions, rd, rf, T, sigma):
-    total_premium = 0
-    for transaction in transactions:
-        type_, K, option_type, position = transaction
-        price = garman_kohlhagen(S, K, T, rd, rf, sigma, option_type)
-        total_premium += price if position == "buy" else -price
-    return total_premium * S  # Convert to PLN
+# Generate dates for the contractual period
+start_date = datetime(2025, 2, 1)  # Contractual start date
+dates = [start_date + timedelta(days=30 * i) for i in range(num_maturities)]
 
-def main():
-    st.title("EUR/PLN Double Barrier Option Pricer")
+# Use adjusted forward rate based on interest rate parity
+time_to_maturity_years = num_maturities / 12
+adjusted_forward_rate = calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, time_to_maturity_years)
 
-    st.sidebar.header("Option Parameters")
-    spot_price = st.sidebar.number_input("Spot Price (EUR/PLN)", value=4.21, step=0.01)
-    strike_price = st.sidebar.number_input("Strike Price", value=4.30, step=0.01)
-    domestic_rate = st.sidebar.number_input("Domestic Risk-Free Rate (%)", value=6.0, step=0.1) / 100
-    foreign_rate = st.sidebar.number_input("Foreign Risk-Free Rate (%)", value=2.5, step=0.1) / 100
-    volatility = st.sidebar.number_input("Volatility (%)", value=15.0, step=0.1) / 100
-    maturity = st.sidebar.number_input("Time to Maturity (Years)", value=0.5, step=0.1)
+# Calculate the rate based on barriers
+final_rate = calculate_rate(adjusted_forward_rate, upper_barrier, lower_barrier, guaranteed_rate, breached_rate)
 
-    st.sidebar.header("Barrier Settings")
-    upper_barrier = st.sidebar.number_input("Upper Barrier", value=4.50, step=0.01)
-    lower_barrier = st.sidebar.number_input("Lower Barrier", value=3.95, step=0.01)
-    adjusted_strike = st.sidebar.number_input("Adjusted Strike (if barrier breached)", value=4.15, step=0.01)
+# Calculate proceeds from the trade
+proceeds = final_rate * yearly_notional
 
-    st.sidebar.header("Transactions")
-    transaction_count = st.sidebar.radio("Number of Transactions", [6, 12])
-    transactions = []
-    for i in range(transaction_count):
-        st.sidebar.subheader(f"Transaction {i + 1}")
-        option_type = st.sidebar.selectbox(f"Option Type (Transaction {i + 1})", ["call", "put"], key=f"type_{i}")
-        position = st.sidebar.selectbox(f"Position (Transaction {i + 1})", ["buy", "sell"], key=f"position_{i}")
-        strike = st.sidebar.number_input(f"Strike Price (Transaction {i + 1})", value=4.30 + i * 0.01, step=0.01, key=f"strike_{i}")
-        transactions.append((f"Transaction {i + 1}", strike, option_type, position))
+# Calculate market value at spot
+market_value = spot_rate * yearly_notional
 
-    st.sidebar.header("Monte Carlo Settings")
-    paths = st.sidebar.number_input("Simulation Paths", value=10000, step=1000)
+# Calculate net premium (difference between proceeds and market value)
+net_premium = proceeds - market_value
 
-    if st.button("Calculate"):
-        monte_carlo_price = monte_carlo_double_barrier(spot_price, strike_price, maturity, domestic_rate, foreign_rate, volatility, upper_barrier, lower_barrier, adjusted_strike, "call", paths)
-        net_premium = calculate_net_premium(spot_price, transactions, domestic_rate, foreign_rate, maturity, volatility)
+# Chart Data
+rate_values = [guaranteed_rate if spot_rate < upper_barrier and spot_rate > lower_barrier else breached_rate] * len(dates)
+upper_barrier_values = [upper_barrier] * len(dates)
+lower_barrier_values = [lower_barrier] * len(dates)
+breached_rate_values = [breached_rate] * len(dates)
 
-        st.write(f"### Monte Carlo Double Barrier Price: {monte_carlo_price:.4f} EUR")
-        st.write(f"### Net Premium: {net_premium:.2f} PLN")
+# Plot the chart
+fig, ax = plt.subplots(figsize=(12, 6))
 
-        st.write("#### Transaction Details")
-        for transaction in transactions:
-            st.write(f"- {transaction[0]}: {transaction[3]} {transaction[2]} at strike {transaction[1]} EUR")
+# Plot the guaranteed rate or breached rate
+if spot_rate >= upper_barrier or spot_rate <= lower_barrier:
+    ax.step(dates, breached_rate_values, linestyle="--", color="purple", label=f"Breached Rate: {breached_rate:.4f}")
+else:
+    ax.step(dates, [guaranteed_rate] * len(dates), linestyle="--", color="blue", label=f"Guaranteed Rate: {guaranteed_rate:.4f}")
 
-        st.write("#### Payoff Chart")
-        fig, ax = plt.subplots()
-        strikes = [trans[1] for trans in transactions]
-        premiums = [garman_kohlhagen(spot_price, trans[1], maturity, domestic_rate, foreign_rate, volatility, trans[2]) for trans in transactions]
-        ax.bar(strikes, premiums, color=["green" if trans[3] == "buy" else "red" for trans in transactions])
-        ax.set_xlabel("Strike Price")
-        ax.set_ylabel("Premium (EUR)")
-        ax.set_title("Transaction Payoffs")
-        st.pyplot(fig)
+# Plot the barriers
+ax.plot(dates, upper_barrier_values, linestyle="-", color="red", label=f"Upper Barrier: {upper_barrier:.4f}")
+ax.plot(dates, lower_barrier_values, linestyle="-", color="green", label=f"Lower Barrier: {lower_barrier:.4f}")
 
-if __name__ == "__main__":
-    main()
+# Annotate the breached rate on the chart
+if spot_rate >= upper_barrier or spot_rate <= lower_barrier:
+    ax.annotate(f"Breached Rate: {breached_rate:.4f}", xy=(len(dates) - 1, breached_rate), xytext=(len(dates), breached_rate),
+                color="purple", fontsize=10, ha="left", va="center", arrowprops=dict(facecolor="purple", arrowstyle="->"))
+
+# Add labels and title
+ax.set_title("Barrier Option Pricing with Dynamic Parameters", fontsize=14)
+ax.set_xlabel("Date", fontsize=12)
+ax.set_ylabel("Exchange Rate (EUR/PLN)", fontsize=12)
+ax.grid(alpha=0.3)
+
+# Format x-axis for dates
+plt.xticks(dates, [date.strftime("%b %Y") for date in dates], rotation=45)
+
+# Add legend
+ax.legend()
+
+# Display the chart in Streamlit
+st.pyplot(fig)
+
+# Display the final rate, proceeds, market value, and net premium
+st.write("### Results")
+st.write(f"**Adjusted Forward Rate:** {adjusted_forward_rate:.4f} EUR/PLN")
+st.write(f"**Final Selling Rate:** {final_rate:.4f} EUR/PLN")
+st.write(f"**Proceeds from Trade:** {proceeds:,.2f} PLN")
+st.write(f"**Market Value at Spot:** {market_value:,.2f} PLN")
+if net_premium > 0:
+    st.write(f"**Net Premium (Profit):** {net_premium:,.2f} PLN")
+else:
+    st.write(f"**Net Premium (Loss):** {abs(net_premium):,.2f} PLN")
