@@ -19,7 +19,14 @@ def operational_questionnaire():
         
         # Calculate net exposure
         net_exposure = inflows - outflows
-        st.write(f"**Net Exposure:** {net_exposure:.2f} base currency")
+        if net_exposure > 0:
+            exposure_type = "Net Exporter"
+        elif net_exposure < 0:
+            exposure_type = "Net Importer"
+        else:
+            exposure_type = "Neutral (No Net Exposure)"
+        
+        st.write(f"**Net Exposure:** {net_exposure:.2f} base currency ({exposure_type})")
 
         # Seasonality
         has_seasonality = st.radio("Is there quarterly seasonality in your flows?", ["No", "Yes"])
@@ -53,6 +60,7 @@ def operational_questionnaire():
                 "inflows": inflows,
                 "outflows": outflows,
                 "net_exposure": net_exposure,
+                "exposure_type": exposure_type,
                 "has_seasonality": has_seasonality,
                 "quarterly_distribution": quarterly_distribution,
                 "risk_tolerance": risk_tolerance,
