@@ -19,13 +19,13 @@ def operational_questionnaire():
         
         # Calculate net exposure
         net_exposure = inflows - outflows
+        exposure_type = "Neutral (No Net Exposure)"
         if net_exposure > 0:
             exposure_type = "Net Exporter"
         elif net_exposure < 0:
             exposure_type = "Net Importer"
-        else:
-            exposure_type = "Neutral (No Net Exposure)"
         
+        # Display net exposure and classification
         st.write(f"**Net Exposure:** {net_exposure:.2f} base currency ({exposure_type})")
 
         # Seasonality
