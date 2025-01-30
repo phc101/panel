@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 from scipy.stats import norm
 
 # Function to calculate historical VaR and CVaR
-def calculate_var_cvar(returns, confidence_level=0.95, time_horizon=21):
+def calculate_var_cvar(returns, confidence_level=0.95, time_horizon=21, notional=100000):
     if len(returns) >= time_horizon:
-        var = np.percentile(returns, (1 - confidence_level) * 100) * np.sqrt(time_horizon)
-        cvar = returns[returns <= var].mean() * np.sqrt(time_horizon)
+        var = np.percentile(returns, (1 - confidence_level) * 100) * np.sqrt(time_horizon) * notional
+        cvar = returns[returns <= var / notional].mean() * np.sqrt(time_horizon) * notional
     else:
         var, cvar = np.nan, np.nan
     return var, cvar
@@ -50,9 +50,9 @@ if uploaded_file:
         notional = st.number_input("Notional Amount (EUR)", value=100000, step=1000)
         direction = st.radio("Contract Type", ["Sell", "Buy"], index=0)
         
-        # Allow user to set custom start date for 6-month forward strip
+        # Allow user to set custom start date for 12-month forward strip
         start_date = st.date_input("Select Start Date for Forward Strip", df.index.min().date())
-        forward_dates = {i: start_date + pd.DateOffset(months=i) for i in range(1, 7)}
+        forward_dates = {i: start_date + pd.DateOffset(months=i) for i in range(1, 13)}
         available_dates = df.index
         settlement_results = {}
         
@@ -67,13 +67,13 @@ if uploaded_file:
                 settlement_price = df.loc[nearest_date, "Close"]
                 spot_price = df.loc[nearest_date, "Spot"] if nearest_date in df.index else settlement_price
                 net_margin = calculate_net_margin(strike_price, settlement_price, notional, direction)
-                var, cvar = calculate_var_cvar(df["Returns"].dropna(), confidence_level, time_horizon=months * 21)
+                var, cvar = calculate_var_cvar(df["Returns"].dropna(), confidence_level, time_horizon=months * 21, notional=notional)
                 net_impact = net_margin - var  # Difference between forward hedge and VaR estimate
                 settlement_results[f"{months}M"] = {
                     "Spot": spot_price,
                     "Net Margin": net_margin,
-                    "VaR": var,
-                    "CVaR": cvar,
+                    "VaR (PLN)": var,
+                    "CVaR (PLN)": cvar,
                     "Net Impact": net_impact
                 }
         
@@ -87,9 +87,9 @@ if uploaded_file:
             # Visualization
             st.subheader("Comparison: VaR & CVaR vs. Net Margin")
             fig, ax = plt.subplots()
-            if "VaR" in settlement_df.columns and "CVaR" in settlement_df.columns:
-                ax.bar(settlement_df.index.astype(str), settlement_df["VaR"], label="VaR", alpha=0.7)
-                ax.bar(settlement_df.index.astype(str), settlement_df["CVaR"], label="CVaR", alpha=0.7)
+            if "VaR (PLN)" in settlement_df.columns and "CVaR (PLN)" in settlement_df.columns:
+                ax.bar(settlement_df.index.astype(str), settlement_df["VaR (PLN)"], label="VaR (PLN)", alpha=0.7)
+                ax.bar(settlement_df.index.astype(str), settlement_df["CVaR (PLN)"], label="CVaR (PLN)", alpha=0.7)
             ax.plot(settlement_df.index.astype(str), settlement_df["Net Margin"], marker='o', linestyle='-', color='red', label="Net Margin")
             ax.bar(settlement_df.index.astype(str), settlement_df["Net Impact"], color=["green" if x > 0 else "red" for x in settlement_df["Net Impact"]], alpha=0.6, label="Net Impact")
             ax.set_ylabel("PLN")
