@@ -21,18 +21,20 @@ def calculate_net_margin(strike_price, settlement_price, notional, direction="Se
 st.title("VaR & CVaR vs. Forward Settlement Net Margin")
 
 # File upload for EUR/PLN historical data
-uploaded_file = st.file_uploader("Upload CSV file with EUR/PLN Close Prices", type=["csv"])
+uploaded_file = st.file_uploader("Upload Excel file with EUR/PLN Close Prices", type=["xlsx"])
 if uploaded_file:
-    df = pd.read_csv(uploaded_file)
+    df = pd.read_excel(uploaded_file)
     
     # Ensure the "Date" column exists
     if "Date" not in df.columns:
-        st.error("CSV file must contain a 'Date' column.")
+        st.error("Excel file must contain a 'Date' column.")
     else:
         df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
         df.dropna(subset=["Date"], inplace=True)
         df.sort_values(by="Date", inplace=True)
         df.set_index("Date", inplace=True)
+        df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
+        df.dropna(subset=["Close"], inplace=True)
         df["Returns"] = df["Close"].pct_change().dropna()
 
         # User input for VaR parameters
