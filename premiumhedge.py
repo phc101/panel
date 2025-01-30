@@ -58,8 +58,8 @@ if uploaded_file:
                 var, cvar = calculate_var_cvar(df["Returns"].dropna(), confidence_level, time_horizon=months * 21)
                 settlement_results[f"{months}M"] = {
                     "Net Margin": net_margin,
-                    "VaR": var,
-                    "CVaR": cvar
+                    "VaR": var if var is not None else np.nan,
+                    "CVaR": cvar if cvar is not None else np.nan
                 }
         
         # Display settlement results
@@ -70,8 +70,11 @@ if uploaded_file:
         # Visualization
         st.subheader("Comparison: VaR & CVaR vs. Net Margin")
         fig, ax = plt.subplots()
-        ax.bar(settlement_df.index, settlement_df["VaR"], label="VaR", alpha=0.7)
-        ax.bar(settlement_df.index, settlement_df["CVaR"], label="CVaR", alpha=0.7)
+        if "VaR" in settlement_df.columns and "CVaR" in settlement_df.columns:
+            ax.bar(settlement_df.index, settlement_df["VaR"], label="VaR", alpha=0.7)
+            ax.bar(settlement_df.index, settlement_df["CVaR"], label="CVaR", alpha=0.7)
+        else:
+            st.warning("VaR or CVaR values are missing. Please check the input data.")
         ax.plot(settlement_df.index, settlement_df["Net Margin"], marker='o', linestyle='-', color='red', label="Net Margin")
         ax.set_ylabel("PLN")
         ax.set_title("VaR, CVaR vs. Net Margin Over Time")
