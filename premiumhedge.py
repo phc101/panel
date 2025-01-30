@@ -39,13 +39,13 @@ if uploaded_file:
 
         # User input for VaR parameters
         confidence_level = st.slider("Select Confidence Level for VaR & CVaR", 0.90, 0.99, 0.95)
-        time_horizons = [21, 42, 63, 126]  # Approx. 1M, 2M, 3M, 6M in trading days
+        time_horizons = {21: "1M", 42: "2M", 63: "3M", 126: "6M"}  # Approx. 1M, 2M, 3M, 6M in trading days
         
         # Calculate VaR & CVaR
         results = {}
-        for t in time_horizons:
+        for t, label in time_horizons.items():
             var, cvar = calculate_var_cvar(df["Returns"].dropna(), confidence_level)
-            results[f"{t} Days"] = {"VaR": var * np.sqrt(t), "CVaR": cvar * np.sqrt(t)}
+            results[label] = {"VaR": var * np.sqrt(t), "CVaR": cvar * np.sqrt(t)}
         
         risk_df = pd.DataFrame(results).T
         risk_df.index.name = "Time Horizon"
@@ -59,32 +59,41 @@ if uploaded_file:
         st.subheader("Forward Contract Inputs")
         strike_price = st.number_input("Forward Strike Price", value=4.30, step=0.01)
         notional = st.number_input("Notional Amount (EUR)", value=100000, step=1000)
-        settlement_price = st.number_input("Settlement Spot Price", value=4.21, step=0.01)
         direction = st.radio("Contract Type", ["Sell", "Buy"], index=0)
         
-        # Allow user to set forward settlement dates for comparison
-        settlement_dates = st.multiselect("Select Settlement Dates", df.index.strftime('%Y-%m-%d').tolist(), default=df.index.strftime('%Y-%m-%d').tolist()[:6])
+        # Allow user to set custom start date for 6-month forward strip
+        start_date = st.date_input("Select Start Date for Forward Strip", df.index.min().date())
+        forward_dates = {label: start_date + pd.DateOffset(months=int(label[0])) for label in time_horizons.values()}
         settlement_results = {}
-        for date in settlement_dates:
-            date_obj = pd.to_datetime(date)
-            if date_obj in df.index:
-                settlement_price = df.loc[date_obj, "Close"]
+        
+        for label, date in forward_dates.items():
+            if date in df.index:
+                settlement_price = df.loc[date, "Close"]
                 net_margin = calculate_net_margin(strike_price, settlement_price, notional, direction)
-                settlement_results[date] = net_margin
+                settlement_results[label] = {
+                    "Net Margin": net_margin,
+                    "VaR": risk_df.loc[label, "VaR"],
+                    "CVaR": risk_df.loc[label, "CVaR"]
+                }
         
         # Display settlement results
-        settlement_df = pd.DataFrame.from_dict(settlement_results, orient='index', columns=["Net Margin"])
-        st.subheader("Net Margin for Selected Settlement Dates")
+        settlement_df = pd.DataFrame.from_dict(settlement_results, orient='index')
+        st.subheader("Net Margin vs. VaR & CVaR for Forward Strip")
         st.dataframe(settlement_df)
         
         # Visualization
         st.subheader("Comparison: VaR & CVaR vs. Net Margin")
         fig, ax = plt.subplots()
-        ax.bar(risk_df.index, risk_df["VaR"], label="VaR", alpha=0.7)
-        ax.bar(risk_df.index, risk_df["CVaR"], label="CVaR", alpha=0.7)
-        for date, margin in settlement_results.items():
-            ax.axhline(y=margin, linestyle='--', label=f'Net Margin {date}')
+        ax.bar(settlement_df.index, settlement_df["VaR"], label="VaR", alpha=0.7)
+        ax.bar(settlement_df.index, settlement_df["CVaR"], label="CVaR", alpha=0.7)
+        ax.plot(settlement_df.index, settlement_df["Net Margin"], marker='o', linestyle='-', color='red', label="Net Margin")
         ax.set_ylabel("PLN")
-        ax.set_title("VaR, CVaR vs. Net Margin")
+        ax.set_title("VaR, CVaR vs. Net Margin Over Time")
         ax.legend()
+        ax.text(0.5, -0.2, "This chart compares Value at Risk (VaR) and Conditional Value at Risk (CVaR) with the net margin for the forward strip, ensuring the correct time frame comparison.", ha='center', va='bottom', transform=ax.transAxes, fontsize=10)
         st.pyplot(fig)
+        
+        # Display total outcome in PLN
+        total_outcome = settlement_df["Net Margin"].sum()
+        st.subheader("Total Net Margin Outcome")
+        st.metric("Total Net Margin (PLN)", f"{total_outcome:,.2f}")
