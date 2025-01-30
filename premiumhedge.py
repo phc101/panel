@@ -6,8 +6,11 @@ from scipy.stats import norm
 
 # Function to calculate historical VaR and CVaR
 def calculate_var_cvar(returns, confidence_level=0.95, time_horizon=21):
-    var = np.percentile(returns, (1 - confidence_level) * 100) * np.sqrt(time_horizon)
-    cvar = returns[returns <= var].mean() * np.sqrt(time_horizon)
+    if len(returns) >= time_horizon:
+        var = np.percentile(returns, (1 - confidence_level) * 100) * np.sqrt(time_horizon)
+        cvar = returns[returns <= var].mean() * np.sqrt(time_horizon)
+    else:
+        var, cvar = np.nan, np.nan
     return var, cvar
 
 # Function to calculate net margin from forward settlement
@@ -36,7 +39,7 @@ if uploaded_file:
         df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
         df.dropna(subset=["Close"], inplace=True)
         df["Returns"] = df["Close"].pct_change().dropna()
-        df["Spot"] = df["Close"].shift(-1)  # Assume next day's price as the spot reference
+        df["Spot"] = df["Close"].shift(-1)
 
         # User input for VaR parameters
         confidence_level = st.slider("Select Confidence Level for VaR & CVaR", 0.90, 0.99, 0.95)
@@ -50,19 +53,22 @@ if uploaded_file:
         # Allow user to set custom start date for 6-month forward strip
         start_date = st.date_input("Select Start Date for Forward Strip", df.index.min().date())
         forward_dates = {i: start_date + pd.DateOffset(months=i) for i in range(1, 7)}
+        available_dates = df.index
         settlement_results = {}
         
         for months, date in forward_dates.items():
-            if date in df.index:
-                settlement_price = df.loc[date, "Close"]
-                spot_price = df.loc[date, "Spot"] if date in df.index else settlement_price
+            nearest_date = available_dates[available_dates.get_loc(date, method='nearest')] if date in available_dates else None
+
+            if nearest_date:
+                settlement_price = df.loc[nearest_date, "Close"]
+                spot_price = df.loc[nearest_date, "Spot"] if nearest_date in df.index else settlement_price
                 net_margin = calculate_net_margin(strike_price, settlement_price, notional, direction)
                 var, cvar = calculate_var_cvar(df["Returns"].dropna(), confidence_level, time_horizon=months * 21)
                 settlement_results[f"{months}M"] = {
                     "Spot": spot_price,
                     "Net Margin": net_margin,
-                    "VaR": var if var is not None else np.nan,
-                    "CVaR": cvar if cvar is not None else np.nan
+                    "VaR": var,
+                    "CVaR": cvar
                 }
         
         # Display settlement results
@@ -78,8 +84,6 @@ if uploaded_file:
             if "VaR" in settlement_df.columns and "CVaR" in settlement_df.columns:
                 ax.bar(settlement_df.index.astype(str), settlement_df["VaR"], label="VaR", alpha=0.7)
                 ax.bar(settlement_df.index.astype(str), settlement_df["CVaR"], label="CVaR", alpha=0.7)
-            else:
-                st.warning("VaR or CVaR values are missing. Please check the input data.")
             ax.plot(settlement_df.index.astype(str), settlement_df["Net Margin"], marker='o', linestyle='-', color='red', label="Net Margin")
             ax.set_ylabel("PLN")
             ax.set_title("VaR, CVaR vs. Net Margin Over Time")
