@@ -57,11 +57,9 @@ if uploaded_file:
         settlement_results = {}
         
         for months, date in forward_dates.items():
-            nearest_date = None
-            if not available_dates.empty:
-                index_pos = available_dates.get_indexer([date], method='nearest')[0]
-                if index_pos >= 0:
-                    nearest_date = available_dates[index_pos]
+            # Find the last day of the month in the dataset
+            month_end_dates = df[df.index.to_period("M") == date.to_period("M")].index
+            nearest_date = month_end_dates.max() if not month_end_dates.empty else None
             
             if nearest_date and nearest_date in df.index:
                 settlement_price = df.loc[nearest_date, "Close"]
