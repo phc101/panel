@@ -36,6 +36,7 @@ if uploaded_file:
         df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
         df.dropna(subset=["Close"], inplace=True)
         df["Returns"] = df["Close"].pct_change().dropna()
+        df["Spot"] = df["Close"].shift(-1)  # Assume next day's price as the spot reference
 
         # User input for VaR parameters
         confidence_level = st.slider("Select Confidence Level for VaR & CVaR", 0.90, 0.99, 0.95)
@@ -54,9 +55,11 @@ if uploaded_file:
         for months, date in forward_dates.items():
             if date in df.index:
                 settlement_price = df.loc[date, "Close"]
+                spot_price = df.loc[date, "Spot"] if date in df.index else settlement_price
                 net_margin = calculate_net_margin(strike_price, settlement_price, notional, direction)
                 var, cvar = calculate_var_cvar(df["Returns"].dropna(), confidence_level, time_horizon=months * 21)
                 settlement_results[f"{months}M"] = {
+                    "Spot": spot_price,
                     "Net Margin": net_margin,
                     "VaR": var if var is not None else np.nan,
                     "CVaR": cvar if cvar is not None else np.nan
