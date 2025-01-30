@@ -22,9 +22,9 @@ date_selected = None
 if uploaded_file is not None:
     try:
         if uploaded_file.name.endswith(".csv"):
-            spot_data = pd.read_csv(uploaded_file, parse_dates=[0])
+            spot_data = pd.read_csv(uploaded_file, parse_dates=[0], dayfirst=True)
         else:
-            spot_data = pd.read_excel(uploaded_file, parse_dates=[0])
+            spot_data = pd.read_excel(uploaded_file, parse_dates=[0], dayfirst=True)
         
         spot_data.columns = ["Date", "Close"]  # Ensure correct column names
         st.write("Uploaded Data:")
