@@ -67,22 +67,26 @@ if uploaded_file:
         st.subheader("Net Margin vs. VaR & CVaR for Forward Strip")
         st.dataframe(settlement_df)
         
-        # Visualization
-        st.subheader("Comparison: VaR & CVaR vs. Net Margin")
-        fig, ax = plt.subplots()
-        if "VaR" in settlement_df.columns and "CVaR" in settlement_df.columns:
-            ax.bar(settlement_df.index, settlement_df["VaR"], label="VaR", alpha=0.7)
-            ax.bar(settlement_df.index, settlement_df["CVaR"], label="CVaR", alpha=0.7)
+        # Ensure required columns exist
+        if not settlement_df.empty and "Net Margin" in settlement_df.columns:
+            # Visualization
+            st.subheader("Comparison: VaR & CVaR vs. Net Margin")
+            fig, ax = plt.subplots()
+            if "VaR" in settlement_df.columns and "CVaR" in settlement_df.columns:
+                ax.bar(settlement_df.index.astype(str), settlement_df["VaR"], label="VaR", alpha=0.7)
+                ax.bar(settlement_df.index.astype(str), settlement_df["CVaR"], label="CVaR", alpha=0.7)
+            else:
+                st.warning("VaR or CVaR values are missing. Please check the input data.")
+            ax.plot(settlement_df.index.astype(str), settlement_df["Net Margin"], marker='o', linestyle='-', color='red', label="Net Margin")
+            ax.set_ylabel("PLN")
+            ax.set_title("VaR, CVaR vs. Net Margin Over Time")
+            ax.legend()
+            ax.text(0.5, -0.2, "This chart compares Value at Risk (VaR) and Conditional Value at Risk (CVaR) with the net margin for each forward contract, ensuring accurate time horizon alignment.", ha='center', va='bottom', transform=ax.transAxes, fontsize=10)
+            st.pyplot(fig)
+            
+            # Display total outcome in PLN
+            total_outcome = settlement_df["Net Margin"].sum()
+            st.subheader("Total Net Margin Outcome")
+            st.metric("Total Net Margin (PLN)", f"{total_outcome:,.2f}")
         else:
-            st.warning("VaR or CVaR values are missing. Please check the input data.")
-        ax.plot(settlement_df.index, settlement_df["Net Margin"], marker='o', linestyle='-', color='red', label="Net Margin")
-        ax.set_ylabel("PLN")
-        ax.set_title("VaR, CVaR vs. Net Margin Over Time")
-        ax.legend()
-        ax.text(0.5, -0.2, "This chart compares Value at Risk (VaR) and Conditional Value at Risk (CVaR) with the net margin for each forward contract, ensuring accurate time horizon alignment.", ha='center', va='bottom', transform=ax.transAxes, fontsize=10)
-        st.pyplot(fig)
-        
-        # Display total outcome in PLN
-        total_outcome = settlement_df["Net Margin"].sum()
-        st.subheader("Total Net Margin Outcome")
-        st.metric("Total Net Margin (PLN)", f"{total_outcome:,.2f}")
+            st.error("No valid data found for Net Margin. Please check your input data.")
