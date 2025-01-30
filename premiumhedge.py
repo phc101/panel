@@ -26,13 +26,13 @@ if uploaded_file is not None:
         else:
             spot_data = pd.read_excel(uploaded_file, parse_dates=[0])
         
-        spot_data.columns = ["Date", "Spot"]  # Ensure correct column names
+        spot_data.columns = ["Date", "Close"]  # Ensure correct column names
         st.write("Uploaded Data:")
         st.dataframe(spot_data)
         
         # Date selection
         date_selected = st.selectbox("Select Start Date for Forward Strip", spot_data["Date"])
-        spot_rate = spot_data.loc[spot_data["Date"] == date_selected, "Spot"].values[0]
+        spot_rate = spot_data.loc[spot_data["Date"] == date_selected, "Close"].values[0]
     except Exception as e:
         st.error(f"Error reading file: {e}")
 
@@ -64,7 +64,7 @@ if spot_data is not None:
     settlement_data = []
     for m, fwd_rate in zip(maturities, df["Forward Rate"]):
         settlement_date = date_selected + pd.DateOffset(months=m)
-        actual_spot = spot_data.loc[spot_data["Date"] == settlement_date, "Spot"].values[0] if settlement_date in spot_data["Date"].values else None
+        actual_spot = spot_data.loc[spot_data["Date"] == settlement_date, "Close"].values[0] if settlement_date in spot_data["Date"].values else None
         settlement_result = (actual_spot - fwd_rate) * notional if actual_spot is not None else None
         settlement_data.append([settlement_date, fwd_rate, actual_spot, settlement_result])
     
