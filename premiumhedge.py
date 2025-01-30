@@ -16,24 +16,23 @@ st.title("EUR/PLN Forward Calculator")
 # File Upload
 uploaded_file = st.file_uploader("Upload CSV or Excel file with dates and closing spot prices", type=["csv", "xlsx"])
 spot_rate = None
+spot_data = None
 
+date_selected = None
 if uploaded_file is not None:
     try:
         if uploaded_file.name.endswith(".csv"):
-            spot_data = pd.read_csv(uploaded_file)
+            spot_data = pd.read_csv(uploaded_file, parse_dates=[0])
         else:
-            spot_data = pd.read_excel(uploaded_file)
+            spot_data = pd.read_excel(uploaded_file, parse_dates=[0])
         
+        spot_data.columns = ["Date", "Spot"]  # Ensure correct column names
         st.write("Uploaded Data:")
         st.dataframe(spot_data)
         
-        # Ensure the second column contains valid numeric values
-        if len(spot_data.columns) >= 2:
-            spot_rate = pd.to_numeric(spot_data.iloc[-1, 1], errors='coerce')
-            if np.isnan(spot_rate):
-                st.error("Error: The spot rate extracted from the file is not a valid number. Please check the file format.")
-        else:
-            st.error("Error: The uploaded file does not contain enough columns.")
+        # Date selection
+        date_selected = st.selectbox("Select Start Date for Forward Strip", spot_data["Date"])
+        spot_rate = spot_data.loc[spot_data["Date"] == date_selected, "Spot"].values[0]
     except Exception as e:
         st.error(f"Error reading file: {e}")
 
@@ -59,6 +58,19 @@ df = pd.DataFrame(data, columns=["Maturity (Months)", "Forward Rate", "Forward P
 # Display table
 st.write("### Forward Rates Table")
 st.dataframe(df, hide_index=True)
+
+# Settlement against each forward
+if spot_data is not None:
+    settlement_data = []
+    for m, fwd_rate in zip(maturities, df["Forward Rate"]):
+        settlement_date = date_selected + pd.DateOffset(months=m)
+        actual_spot = spot_data.loc[spot_data["Date"] == settlement_date, "Spot"].values[0] if settlement_date in spot_data["Date"].values else None
+        settlement_result = (actual_spot - fwd_rate) * notional if actual_spot is not None else None
+        settlement_data.append([settlement_date, fwd_rate, actual_spot, settlement_result])
+    
+    settlement_df = pd.DataFrame(settlement_data, columns=["Settlement Date", "Forward Rate", "Actual Spot", "Net Settlement Result"])
+    st.write("### Settlement Results")
+    st.dataframe(settlement_df, hide_index=True)
 
 # Plot forward rates
 if not df.empty:
