@@ -16,13 +16,13 @@ spot_rate = st.number_input("Spot Rate (EUR/PLN)", value=4.21, format="%.4f")
 domestic_rate = st.number_input("Domestic Risk-Free Rate (%)", value=5.0, format="%.2f") / 100
 foreign_rate = st.number_input("Foreign Risk-Free Rate (%)", value=2.5, format="%.2f") / 100
 notional = st.number_input("Notional Amount (EUR)", value=1000000, format="%.0f")
-maturities = [1, 3, 6, 12]
+maturities = list(range(1, 13))
 
 # Calculate forward rates
 data = []
 for m in maturities:
     forward_rate = calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, m)
-    forward_points = round((forward_rate - spot_rate) * 10000, 2)  # Forward points in pips
+    forward_points = round((forward_rate - spot_rate), 4)  # Forward points in pips
     data.append([m, forward_rate, forward_points])
 
 df = pd.DataFrame(data, columns=["Maturity (Months)", "Forward Rate", "Forward Points (pips)"])
