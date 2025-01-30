@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 from scipy.stats import norm
 
 # Function to calculate historical VaR and CVaR
-def calculate_var_cvar(returns, confidence_level=0.95):
-    var = np.percentile(returns, (1 - confidence_level) * 100)
-    cvar = returns[returns <= var].mean()
+def calculate_var_cvar(returns, confidence_level=0.95, time_horizon=21):
+    var = np.percentile(returns, (1 - confidence_level) * 100) * np.sqrt(time_horizon)
+    cvar = returns[returns <= var].mean() * np.sqrt(time_horizon)
     return var, cvar
 
 # Function to calculate net margin from forward settlement
@@ -39,21 +39,6 @@ if uploaded_file:
 
         # User input for VaR parameters
         confidence_level = st.slider("Select Confidence Level for VaR & CVaR", 0.90, 0.99, 0.95)
-        time_horizons = {21: "1M", 42: "2M", 63: "3M", 126: "6M"}  # Approx. 1M, 2M, 3M, 6M in trading days
-        
-        # Calculate VaR & CVaR
-        results = {}
-        for t, label in time_horizons.items():
-            var, cvar = calculate_var_cvar(df["Returns"].dropna(), confidence_level)
-            results[label] = {"VaR": var * np.sqrt(t), "CVaR": cvar * np.sqrt(t)}
-        
-        risk_df = pd.DataFrame(results).T
-        risk_df.index.name = "Time Horizon"
-        risk_df.columns = ["VaR", "CVaR"]
-        
-        # Display risk metrics
-        st.subheader("Risk Estimates (VaR & CVaR)")
-        st.dataframe(risk_df)
         
         # User input for forward contract
         st.subheader("Forward Contract Inputs")
@@ -63,17 +48,18 @@ if uploaded_file:
         
         # Allow user to set custom start date for 6-month forward strip
         start_date = st.date_input("Select Start Date for Forward Strip", df.index.min().date())
-        forward_dates = {label: start_date + pd.DateOffset(months=int(label[0])) for label in time_horizons.values()}
+        forward_dates = {i: start_date + pd.DateOffset(months=i) for i in range(1, 7)}
         settlement_results = {}
         
-        for label, date in forward_dates.items():
+        for months, date in forward_dates.items():
             if date in df.index:
                 settlement_price = df.loc[date, "Close"]
                 net_margin = calculate_net_margin(strike_price, settlement_price, notional, direction)
-                settlement_results[label] = {
+                var, cvar = calculate_var_cvar(df["Returns"].dropna(), confidence_level, time_horizon=months * 21)
+                settlement_results[f"{months}M"] = {
                     "Net Margin": net_margin,
-                    "VaR": risk_df.loc[label, "VaR"],
-                    "CVaR": risk_df.loc[label, "CVaR"]
+                    "VaR": var,
+                    "CVaR": cvar
                 }
         
         # Display settlement results
@@ -90,7 +76,7 @@ if uploaded_file:
         ax.set_ylabel("PLN")
         ax.set_title("VaR, CVaR vs. Net Margin Over Time")
         ax.legend()
-        ax.text(0.5, -0.2, "This chart compares Value at Risk (VaR) and Conditional Value at Risk (CVaR) with the net margin for the forward strip, ensuring the correct time frame comparison.", ha='center', va='bottom', transform=ax.transAxes, fontsize=10)
+        ax.text(0.5, -0.2, "This chart compares Value at Risk (VaR) and Conditional Value at Risk (CVaR) with the net margin for each forward contract, ensuring accurate time horizon alignment.", ha='center', va='bottom', transform=ax.transAxes, fontsize=10)
         st.pyplot(fig)
         
         # Display total outcome in PLN
