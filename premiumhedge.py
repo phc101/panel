@@ -68,11 +68,13 @@ if uploaded_file:
                 spot_price = df.loc[nearest_date, "Spot"] if nearest_date in df.index else settlement_price
                 net_margin = calculate_net_margin(strike_price, settlement_price, notional, direction)
                 var, cvar = calculate_var_cvar(df["Returns"].dropna(), confidence_level, time_horizon=months * 21)
+                net_impact = net_margin - var  # Difference between forward hedge and VaR estimate
                 settlement_results[f"{months}M"] = {
                     "Spot": spot_price,
                     "Net Margin": net_margin,
                     "VaR": var,
-                    "CVaR": cvar
+                    "CVaR": cvar,
+                    "Net Impact": net_impact
                 }
         
         # Display settlement results
@@ -89,15 +91,18 @@ if uploaded_file:
                 ax.bar(settlement_df.index.astype(str), settlement_df["VaR"], label="VaR", alpha=0.7)
                 ax.bar(settlement_df.index.astype(str), settlement_df["CVaR"], label="CVaR", alpha=0.7)
             ax.plot(settlement_df.index.astype(str), settlement_df["Net Margin"], marker='o', linestyle='-', color='red', label="Net Margin")
+            ax.bar(settlement_df.index.astype(str), settlement_df["Net Impact"], color=["green" if x > 0 else "red" for x in settlement_df["Net Impact"]], alpha=0.6, label="Net Impact")
             ax.set_ylabel("PLN")
             ax.set_title("VaR, CVaR vs. Net Margin Over Time")
             ax.legend()
-            ax.text(0.5, -0.2, "This chart compares Value at Risk (VaR) and Conditional Value at Risk (CVaR) with the net margin for each forward contract, ensuring accurate time horizon alignment.", ha='center', va='bottom', transform=ax.transAxes, fontsize=10)
+            ax.text(0.5, -0.2, "This chart compares Value at Risk (VaR) and Conditional Value at Risk (CVaR) with the net margin for each forward contract, ensuring accurate time horizon alignment. Net Impact measures if the hedge sufficiently covers risk.", ha='center', va='bottom', transform=ax.transAxes, fontsize=10)
             st.pyplot(fig)
             
             # Display total outcome in PLN
             total_outcome = settlement_df["Net Margin"].sum()
-            st.subheader("Total Net Margin Outcome")
+            total_net_impact = settlement_df["Net Impact"].sum()
+            st.subheader("Total Net Margin and Net Impact Outcome")
             st.metric("Total Net Margin (PLN)", f"{total_outcome:,.2f}")
+            st.metric("Total Net Impact (PLN)", f"{total_net_impact:,.2f}")
         else:
             st.error("No valid data found for Net Margin. Please check your input data.")
