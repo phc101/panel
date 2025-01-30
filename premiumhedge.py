@@ -66,8 +66,8 @@ if uploaded_file:
         settlement_dates = st.multiselect("Select Settlement Dates", df.index.strftime('%Y-%m-%d').tolist(), default=df.index.strftime('%Y-%m-%d').tolist()[:6])
         settlement_results = {}
         for date in settlement_dates:
-            settlement_price = df.loc[date, "Close"] if date in df.index.strftime('%Y-%m-%d').tolist() else None
-            if settlement_price:
+            if date in df.index.strftime('%Y-%m-%d').tolist():
+                settlement_price = df.loc[pd.to_datetime(date), "Close"]
                 net_margin = calculate_net_margin(strike_price, settlement_price, notional, direction)
                 settlement_results[date] = net_margin
         
