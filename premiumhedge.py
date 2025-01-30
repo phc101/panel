@@ -57,9 +57,12 @@ if uploaded_file:
         settlement_results = {}
         
         for months, date in forward_dates.items():
-            nearest_date = available_dates[available_dates.get_indexer([date], method='nearest')][0] if not available_dates.empty else None
-            nearest_date = available_dates[nearest_date] if nearest_date is not None and nearest_date >= 0 else None
-
+            nearest_date = None
+            if not available_dates.empty:
+                index_pos = available_dates.get_indexer([date], method='nearest')[0]
+                if index_pos >= 0:
+                    nearest_date = available_dates[index_pos]
+            
             if nearest_date and nearest_date in df.index:
                 settlement_price = df.loc[nearest_date, "Close"]
                 spot_price = df.loc[nearest_date, "Spot"] if nearest_date in df.index else settlement_price
