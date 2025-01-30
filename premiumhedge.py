@@ -45,7 +45,7 @@ if uploaded_file:
         df["Returns"] = df["Close"].pct_change().dropna()
         
         # User selects a start date for the forward strip
-        start_date = st.date_input("Select Start Date for Forward Strip", df.index.min().date())
+        start_date = pd.Timestamp(st.date_input("Select Start Date for Forward Strip", df.index.min().date()))
         if start_date not in df.index:
             st.error("Selected date is not in the dataset. Please select a valid date.")
         else:
@@ -59,7 +59,7 @@ if uploaded_file:
             # Generate 12-month forward strip
             settlement_results = {}
             for months in range(1, 13):
-                forward_start = pd.Timestamp(start_date) + pd.DateOffset(months=months)
+                forward_start = start_date + pd.DateOffset(months=months)
                 month_end_dates = df[df.index.to_period("M") == forward_start.to_period("M")].index
                 settlement_date = month_end_dates.max() if not month_end_dates.empty else None
                 
