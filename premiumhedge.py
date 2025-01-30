@@ -11,8 +11,19 @@ def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, maturity_mont
 # Streamlit App
 st.title("EUR/PLN Forward Calculator")
 
-# User Inputs
-spot_rate = st.number_input("Spot Rate (EUR/PLN)", value=4.21, format="%.4f")
+# File Upload
+uploaded_file = st.file_uploader("Upload CSV or Excel file with dates and closing spot prices", type=["csv", "xlsx"])
+if uploaded_file is not None:
+    if uploaded_file.name.endswith(".csv"):
+        spot_data = pd.read_csv(uploaded_file)
+    else:
+        spot_data = pd.read_excel(uploaded_file)
+    st.write("Uploaded Data:")
+    st.dataframe(spot_data)
+    spot_rate = spot_data.iloc[-1, 1]  # Assume last closing price as spot rate
+else:
+    spot_rate = st.number_input("Spot Rate (EUR/PLN)", value=4.21, format="%.4f")
+
 domestic_rate = st.number_input("Domestic Risk-Free Rate (%)", value=5.0, format="%.2f") / 100
 foreign_rate = st.number_input("Foreign Risk-Free Rate (%)", value=2.5, format="%.2f") / 100
 notional = st.number_input("Notional Amount (EUR)", value=1000000, format="%.0f")
