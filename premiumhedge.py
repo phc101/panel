@@ -32,6 +32,14 @@ def fetch_interest_rates():
     """
     return {'PLN': 0.05, 'EUR': 0.03, 'USD': 0.04}  # Example static rates
 
+def input_interest_rates():
+    st.sidebar.header("Interest Rates")
+    pln_rate = st.sidebar.number_input("Domestic (PLN) Interest Rate", min_value=0.0, max_value=1.0, value=0.05, step=0.001)
+    eur_rate = st.sidebar.number_input("Foreign (EUR) Interest Rate", min_value=0.0, max_value=1.0, value=0.03, step=0.001)
+    usd_rate = st.sidebar.number_input("Foreign (USD) Interest Rate", min_value=0.0, max_value=1.0, value=0.04, step=0.001)
+    
+    st.session_state['interest_rates'] = {'PLN': pln_rate, 'EUR': eur_rate, 'USD': usd_rate}
+
 def calculate_forward_rates():
     """
     Calculate forward rates based on interest rate parity formula, accounting for net exposure.
