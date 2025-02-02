@@ -8,6 +8,24 @@ def initialize_session():
     if 'data' not in st.session_state:
         st.session_state['data'] = pd.DataFrame(columns=['Month', 'Currency', 'Inflow', 'Outflow', 'Net Exposure', 'Budget Rate', 'VaR 95% (%)', 'VaR 95% Nominal', 'VaR 99% (%)', 'VaR 99% Nominal', 'Forward Rate'])
 
+def fetch_exchange_rates(currency_code, start_date, end_date):
+    """
+    Fetch historical exchange rates for a given currency against PLN from the NBP API.
+    """
+    url = f'https://api.nbp.pl/api/exchangerates/rates/a/{currency_code}/{start_date}/{end_date}/?format=json'
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        rates = pd.DataFrame(data['rates'])
+        rates['date'] = pd.to_datetime(rates['effectiveDate'])
+        rates.set_index('date', inplace=True)
+        rates.rename(columns={'mid': f'{currency_code}_PLN'}, inplace=True)
+        rates['returns'] = np.log(rates[f'{currency_code}_PLN'] / rates[f'{currency_code}_PLN'].shift(1))
+        rates.dropna(inplace=True)
+        return rates
+    else:
+        return pd.DataFrame()
+
 def input_interest_rates():
     st.sidebar.header("Interest Rates")
     pln_rate = st.sidebar.number_input("Domestic (PLN) Interest Rate", min_value=0.0, max_value=1.0, value=0.05, step=0.001)
@@ -36,38 +54,6 @@ def input_expected_flows():
     if st.sidebar.button("Save Data"):
         st.session_state['data'] = data
         st.success("Data saved successfully!")
-
-def calculate_var(returns, horizon, confidence_level):
-    if len(returns) == 0:
-        return np.nan
-    sorted_returns = np.sort(returns)
-    index = int((1 - confidence_level) * len(sorted_returns))
-    daily_var = abs(sorted_returns[index])
-    return daily_var * np.sqrt(horizon)
-
-def calculate_risk():
-    if 'data' in st.session_state and not st.session_state['data'].empty:
-        total_var_95_nominal = 0
-        total_var_99_nominal = 0
-        
-        for month in range(1, 13):
-            var_95 = calculate_var(st.session_state['returns'], horizon=month, confidence_level=0.95)
-            var_99 = calculate_var(st.session_state['returns'], horizon=month, confidence_level=0.99)
-            nominal_95 = abs(st.session_state['data'].at[month-1, 'Net Exposure'] * var_95)
-            nominal_99 = abs(st.session_state['data'].at[month-1, 'Net Exposure'] * var_99)
-            
-            st.session_state['data'].at[month-1, 'VaR 95% (%)'] = var_95 * 100
-            st.session_state['data'].at[month-1, 'VaR 95% Nominal'] = nominal_95
-            st.session_state['data'].at[month-1, 'VaR 99% (%)'] = var_99 * 100
-            st.session_state['data'].at[month-1, 'VaR 99% Nominal'] = nominal_99
-            
-            total_var_95_nominal += nominal_95
-            total_var_99_nominal += nominal_99
-        
-        st.subheader("Total Nominal VaR")
-        st.write(f"Total 95% Confidence Level VaR: {total_var_95_nominal:.2f}")
-        st.write(f"Total 99% Confidence Level VaR: {total_var_99_nominal:.2f}")
-        st.write(f"Your maximum amount to lose in the next 12 months is {total_var_99_nominal:.2f} at 99% confidence.")
 
 def main():
     st.title("FX Risk Management Tool")
