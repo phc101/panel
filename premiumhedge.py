@@ -24,15 +24,16 @@ def fetch_exchange_rates(currency_code, start_date, end_date):
     else:
         return pd.DataFrame()
 
-def calculate_var(returns, confidence_level=0.95):
+def calculate_var(returns, horizon, confidence_level=0.95):
     """
-    Calculate the Value at Risk (VaR) using the historical method.
+    Calculate the Value at Risk (VaR) for different time horizons.
     """
     if len(returns) == 0:
         return np.nan
     sorted_returns = np.sort(returns)
     index = int((1 - confidence_level) * len(sorted_returns))
-    return abs(sorted_returns[index])
+    daily_var = abs(sorted_returns[index])
+    return daily_var * np.sqrt(horizon)
 
 def input_expected_flows():
     st.sidebar.header("Expected Cash Flows")
@@ -54,19 +55,6 @@ def input_expected_flows():
     if st.sidebar.button("Save Data"):
         st.session_state['data'] = data
         st.success("Data saved successfully!")
-    
-    # CSV Upload Description
-    st.sidebar.markdown("**Upload CSV Format:**")
-    st.sidebar.text("Month (YYYY-MM), Currency (EUR/USD), Inflow, Outflow, Budget Rate")
-    st.sidebar.text("Example:")
-    st.sidebar.text("2025-01, EUR, 10000, 5000, 4.30")
-    
-    # Upload CSV Option
-    uploaded_file = st.sidebar.file_uploader("Upload CSV File", type=['csv'])
-    if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-        st.session_state['data'] = df
-        st.success("CSV uploaded successfully!")
 
 def main():
     st.title("FX Risk Management Tool")
@@ -86,14 +74,15 @@ def main():
     if not rates.empty:
         rates['returns'] = np.log(rates[f'{currency}_PLN'] / rates[f'{currency}_PLN'].shift(1))
         rates.dropna(inplace=True)
-        var_95 = calculate_var(rates['returns'], confidence_level=0.95)
         
-        # Calculate VaR for each month
-        st.session_state['data']['VaR (%)'] = var_95 * 100
-        st.session_state['data']['VaR Nominal'] = (st.session_state['data']['Inflow'] - st.session_state['data']['Outflow']) * (var_95)
+        # Calculate VaR for different horizons
+        for month in range(1, 13):
+            var_95 = calculate_var(rates['returns'], horizon=month, confidence_level=0.95)
+            st.session_state['data'].at[month-1, 'VaR (%)'] = var_95 * 100
+            st.session_state['data'].at[month-1, 'VaR Nominal'] = (st.session_state['data'].at[month-1, 'Inflow'] - st.session_state['data'].at[month-1, 'Outflow']) * var_95
         
         st.subheader(f"Value at Risk (VaR) for {currency}/PLN")
-        st.write(f"With a 95% confidence level, the maximum expected daily loss is {var_95*100:.2f}%.")
+        st.write(f"With a 95% confidence level, the maximum expected daily loss is {calculate_var(rates['returns'], 1, 0.95) * 100:.2f}%.")
         
         min_price, max_price = rates[f'{currency}_PLN'].min(), rates[f'{currency}_PLN'].max()
         st.line_chart(rates[[f'{currency}_PLN']].rename(columns={f'{currency}_PLN': 'Exchange Rate'}).clip(lower=min_price-0.01, upper=max_price+0.01), 
