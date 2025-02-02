@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 def initialize_session():
     if 'data' not in st.session_state:
-        st.session_state['data'] = pd.DataFrame(columns=['Month', 'Currency', 'Inflow', 'Outflow', 'Budget Rate'])
+        st.session_state['data'] = pd.DataFrame(columns=['Month', 'Currency', 'Inflow', 'Outflow', 'Budget Rate', 'VaR (%)', 'VaR Nominal'])
 
 def fetch_exchange_rates(currency_code, start_date, end_date):
     """
@@ -41,7 +41,7 @@ def input_expected_flows():
     # Data Input Table
     num_months = 12
     months = pd.date_range(start=pd.Timestamp.today(), periods=num_months, freq='M').strftime('%Y-%m')
-    data = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0.00]*num_months})
+    data = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0.00]*num_months, 'VaR (%)': [0.00]*num_months, 'VaR Nominal': [0.00]*num_months})
     
     data = st.sidebar.data_editor(data, use_container_width=True)
     
@@ -88,6 +88,10 @@ def main():
         rates.dropna(inplace=True)
         var_95 = calculate_var(rates['returns'], confidence_level=0.95)
         
+        # Calculate VaR for each month
+        st.session_state['data']['VaR (%)'] = var_95 * 100
+        st.session_state['data']['VaR Nominal'] = (st.session_state['data']['Inflow'] - st.session_state['data']['Outflow']) * (var_95)
+        
         st.subheader(f"Value at Risk (VaR) for {currency}/PLN")
         st.write(f"With a 95% confidence level, the maximum expected daily loss is {var_95*100:.2f}%.")
         
@@ -98,6 +102,11 @@ def main():
                       use_container_width=True, height=400)
     else:
         st.error("No exchange rate data available for the selected currency and date range.")
+    
+    # Display updated data with VaR
+    if not st.session_state['data'].empty:
+        st.subheader("Updated Expected Flows with VaR")
+        st.dataframe(st.session_state['data'])
 
 if __name__ == "__main__":
     main()
