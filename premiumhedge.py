@@ -40,6 +40,27 @@ def input_interest_rates():
     
     st.session_state['interest_rates'] = {'PLN': pln_rate, 'EUR': eur_rate, 'USD': usd_rate}
 
+def input_expected_flows():
+    st.sidebar.header("Expected Cash Flows")
+    currency = st.sidebar.selectbox("Select Currency", ["EUR", "USD"])
+    
+    num_months = 12
+    months = pd.date_range(start=pd.Timestamp.today(), periods=num_months, freq='M').strftime('%Y-%m')
+    if 'data' not in st.session_state or st.session_state['data'].empty:
+        st.session_state['data'] = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0.00]*num_months})
+    
+    data = st.sidebar.data_editor(st.session_state['data'], use_container_width=True)
+    
+    # Auto-fill Budget Rate
+    if 'Budget Rate' in data.columns:
+        first_value = data.loc[0, 'Budget Rate']
+        if first_value != 0.00:
+            data['Budget Rate'] = first_value
+    
+    if st.sidebar.button("Save Data"):
+        st.session_state['data'] = data
+        st.success("Data saved successfully!")
+
 def calculate_forward_rates():
     """
     Calculate forward rates based on interest rate parity formula, accounting for net exposure.
