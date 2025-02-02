@@ -10,7 +10,7 @@ def initialize_session():
 
 def fetch_live_forward_rates(currency):
     """
-    Fetch live forward rates for EUR/PLN and USD/PLN from FactSet API.
+    Fetch live forward rates for EUR/PLN and USD/PLN from FactSet API with debugging.
     """
     factset_api_key = "YOUR_FACTSET_API_KEY"  # Replace with your actual API key
     url = f'https://api.factset.com/v1/fx/forwards?currency={currency}PLN&tenors=1M,2M,3M,6M,12M'
@@ -18,14 +18,25 @@ def fetch_live_forward_rates(currency):
         "Accept": "application/json",
         "Authorization": f"Bearer {factset_api_key}"
     }
+    
+    # Debugging: Print request URL
+    st.write(f"Fetching forward rates from: {url}")
     response = requests.get(url, headers=headers)
     
     if response.status_code == 200:
         data = response.json()
-        forward_rates = {tenor: data["data"][tenor] for tenor in ["1M", "2M", "3M", "6M", "12M"]}
-        return forward_rates
+        st.write("API Response:", data)  # Debugging output
+        
+        try:
+            forward_rates = {tenor: data["data"][tenor] for tenor in ["1M", "2M", "3M", "6M", "12M"]}
+            return forward_rates
+        except KeyError:
+            st.error("Unexpected API response format. Check API documentation.")
+            st.write("Response Data:", data)
+            return {}
     else:
-        st.error("Failed to fetch live forward rates from FactSet API.")
+        st.error(f"Failed to fetch live forward rates. Status Code: {response.status_code}")
+        st.write("Response Text:", response.text)  # Debugging output
         return {}
 
 def input_expected_flows():
