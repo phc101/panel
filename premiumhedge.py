@@ -6,99 +6,64 @@ from datetime import datetime, timedelta
 
 def initialize_session():
     if 'data' not in st.session_state:
-        st.session_state['data'] = pd.DataFrame(columns=['Month', 'Currency', 'Inflow', 'Outflow', 'Budget Rate', 'VaR 95% (%)', 'VaR 95% Nominal', 'VaR 99% (%)', 'VaR 99% Nominal'])
+        st.session_state['data'] = pd.DataFrame(columns=['Month', 'Currency', 'Inflow', 'Outflow', 'Budget Rate', 'VaR 95% (%)', 'VaR 95% Nominal', 'VaR 99% (%)', 'VaR 99% Nominal', 'Forward Rate'])
 
-def fetch_exchange_rates(currency_code, start_date, end_date):
+def fetch_interest_rates():
     """
-    Fetch historical exchange rates for a given currency against PLN from the NBP API.
+    Fetches domestic (PLN) and foreign (EUR/USD) interest rates.
+    This function can be modified to pull data from an API or accept user input.
     """
-    url = f'https://api.nbp.pl/api/exchangerates/rates/a/{currency_code}/{start_date}/{end_date}/?format=json'
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        rates = pd.DataFrame(data['rates'])
-        rates['date'] = pd.to_datetime(rates['effectiveDate'])
-        rates.set_index('date', inplace=True)
-        rates.rename(columns={'mid': f'{currency_code}_PLN'}, inplace=True)
-        return rates
-    else:
-        return pd.DataFrame()
+    return {'PLN': 0.05, 'EUR': 0.03, 'USD': 0.04}  # Example static rates
 
-def calculate_var(returns, horizon, confidence_level):
+def calculate_forward_rates():
     """
-    Calculate the Value at Risk (VaR) for different time horizons.
+    Calculate forward rates based on interest rate parity formula.
     """
-    if len(returns) == 0:
-        return np.nan
-    sorted_returns = np.sort(returns)
-    index = int((1 - confidence_level) * len(sorted_returns))
-    daily_var = abs(sorted_returns[index])
-    return daily_var * np.sqrt(horizon)
+    if 'data' in st.session_state and not st.session_state['data'].empty:
+        spot_rate = st.session_state['spot_rate']
+        interest_rates = fetch_interest_rates()
+        
+        for month in range(1, 13):
+            T = month / 12  # Convert months to years
+            currency = st.session_state['data'].at[month-1, 'Currency']
+            r_domestic = interest_rates['PLN']
+            r_foreign = interest_rates[currency]
+            
+            forward_rate = spot_rate * ((1 + r_foreign * T) / (1 + r_domestic * T))
+            st.session_state['data'].at[month-1, 'Forward Rate'] = round(forward_rate, 4)
 
-def input_expected_flows():
-    st.sidebar.header("Expected Cash Flows")
-    currency = st.sidebar.selectbox("Select Currency", ["EUR", "USD"])
+def input_interest_rates():
+    st.sidebar.header("Interest Rates")
+    pln_rate = st.sidebar.number_input("Domestic (PLN) Interest Rate", min_value=0.0, max_value=1.0, value=0.05, step=0.001)
+    eur_rate = st.sidebar.number_input("Foreign (EUR) Interest Rate", min_value=0.0, max_value=1.0, value=0.03, step=0.001)
+    usd_rate = st.sidebar.number_input("Foreign (USD) Interest Rate", min_value=0.0, max_value=1.0, value=0.04, step=0.001)
     
-    # Data Input Table
-    num_months = 12
-    months = pd.date_range(start=pd.Timestamp.today(), periods=num_months, freq='M').strftime('%Y-%m')
-    if 'data' not in st.session_state or st.session_state['data'].empty:
-        st.session_state['data'] = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0.00]*num_months, 'VaR 95% (%)': [0.00]*num_months, 'VaR 95% Nominal': [0.00]*num_months, 'VaR 99% (%)': [0.00]*num_months, 'VaR 99% Nominal': [0.00]*num_months})
-    
-    data = st.sidebar.data_editor(st.session_state['data'], use_container_width=True)
-    
-    # Auto-fill Budget Rate
-    if 'Budget Rate' in data.columns:
-        first_value = data.loc[0, 'Budget Rate']
-        if first_value != 0.00:
-            data['Budget Rate'] = first_value
-    
-    if st.sidebar.button("Save Data"):
-        st.session_state['data'] = data
-        st.success("Data saved successfully!")
+    st.session_state['interest_rates'] = {'PLN': pln_rate, 'EUR': eur_rate, 'USD': usd_rate}
 
 def main():
     st.title("FX Risk Management Tool")
     initialize_session()
+    input_interest_rates()
     input_expected_flows()
     
     if not st.session_state['data'].empty:
         st.subheader("Saved Expected Flows")
         st.dataframe(st.session_state['data'])
     
-    # Fetch historical data
+    # Fetch historical spot rate (latest exchange rate)
     end_date = datetime.today()
     start_date = end_date - timedelta(days=365)
     currency = "EUR" if "EUR" in st.session_state['data']['Currency'].unique() else "USD"
     rates = fetch_exchange_rates(currency, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
     
     if not rates.empty:
-        rates['returns'] = np.log(rates[f'{currency}_PLN'] / rates[f'{currency}_PLN'].shift(1))
-        rates.dropna(inplace=True)
+        spot_rate = rates[f'{currency}_PLN'].iloc[-1]  # Latest exchange rate
+        st.session_state['spot_rate'] = spot_rate
         
-        # Calculate VaR for different horizons at 95% and 99%
-        total_var_95_nominal = 0
-        total_var_99_nominal = 0
+        calculate_forward_rates()
         
-        for month in range(1, 13):
-            var_95 = calculate_var(rates['returns'], horizon=month, confidence_level=0.95)
-            var_99 = calculate_var(rates['returns'], horizon=month, confidence_level=0.99)
-            nominal_95 = abs((st.session_state['data'].at[month-1, 'Inflow'] - st.session_state['data'].at[month-1, 'Outflow']) * var_95)
-            nominal_99 = abs((st.session_state['data'].at[month-1, 'Inflow'] - st.session_state['data'].at[month-1, 'Outflow']) * var_99)
-            
-            st.session_state['data'].at[month-1, 'VaR 95% (%)'] = var_95 * 100
-            st.session_state['data'].at[month-1, 'VaR 95% Nominal'] = nominal_95
-            st.session_state['data'].at[month-1, 'VaR 99% (%)'] = var_99 * 100
-            st.session_state['data'].at[month-1, 'VaR 99% Nominal'] = nominal_99
-            
-            total_var_95_nominal += nominal_95
-            total_var_99_nominal += nominal_99
-        
-        num_cashflow_months = len(st.session_state['data'])
-        st.subheader("Total Nominal VaR")
-        st.write(f"Total 95% Confidence Level VaR: {total_var_95_nominal:.2f} {currency}")
-        st.write(f"Total 99% Confidence Level VaR: {total_var_99_nominal:.2f} {currency}")
-        st.write(f"Your maximum amount to lose in the next {num_cashflow_months} months is {total_var_99_nominal:.2f} {currency} at 99% confidence.")
+        st.subheader(f"Calculated Forward Rates (Based on Spot {spot_rate:.4f})")
+        st.dataframe(st.session_state['data'][['Month', 'Forward Rate']])
         
         # Fixing chart scaling
         min_price = 4.15
@@ -110,9 +75,9 @@ def main():
     else:
         st.error("No exchange rate data available for the selected currency and date range.")
     
-    # Display updated data with VaR
+    # Display updated data with Forward Rates
     if not st.session_state['data'].empty:
-        st.subheader("Updated Expected Flows with VaR")
+        st.subheader("Updated Expected Flows with Forward Rates")
         st.dataframe(st.session_state['data'])
 
 if __name__ == "__main__":
