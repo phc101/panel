@@ -54,6 +54,19 @@ def input_expected_flows():
     if st.sidebar.button("Save Data"):
         st.session_state['data'] = data
         st.success("Data saved successfully!")
+    
+    # CSV Upload Description
+    st.sidebar.markdown("**Upload CSV Format:**")
+    st.sidebar.text("Month (YYYY-MM), Currency (EUR/USD), Inflow, Outflow, Budget Rate")
+    st.sidebar.text("Example:")
+    st.sidebar.text("2025-01, EUR, 10000, 5000, 4.30")
+    
+    # Upload CSV Option
+    uploaded_file = st.sidebar.file_uploader("Upload CSV File", type=['csv'])
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+        st.session_state['data'] = df
+        st.success("CSV uploaded successfully!")
 
 def main():
     st.title("FX Risk Management Tool")
@@ -78,8 +91,7 @@ def main():
         st.subheader(f"Value at Risk (VaR) for {currency}/PLN")
         st.write(f"With a 95% confidence level, the maximum expected daily loss is {var_95*100:.2f}%.")
         
-        min_price, max_price = rates[f'{currency}_PLN'].min(), rates[f'{currency}_PLN'].max()
-        buffer = (max_price - min_price) * 0.05
+        min_price, max_price = rates[f'{currency}_PLN'].min() - 0.0100, rates[f'{currency}_PLN'].max() + 0.0100
         st.line_chart(rates[[f'{currency}_PLN']].rename(columns={f'{currency}_PLN': 'Exchange Rate'}), 
                       use_container_width=True, height=400)
         st.line_chart(rates[['returns']].rename(columns={'returns': 'Daily Returns'}), 
