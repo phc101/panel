@@ -100,9 +100,10 @@ def main():
         st.write(f"Total 99% Confidence Level VaR: {total_var_99_nominal:.2f} {currency}")
         st.write(f"Your maximum amount to lose in the next {num_cashflow_months} months is {total_var_99_nominal:.2f} {currency} at 99% confidence.")
         
-        min_price, max_price = rates[f'{currency}_PLN'].min(), rates[f'{currency}_PLN'].max()
-        buffer = 0.01
-        scaled_rates = rates[[f'{currency}_PLN']].clip(lower=min_price - buffer, upper=max_price + buffer)
+        # Fixing chart scaling
+        min_price = 4.15
+        max_price = 4.40
+        scaled_rates = rates[[f'{currency}_PLN']].clip(lower=min_price, upper=max_price)
         
         st.line_chart(scaled_rates.rename(columns={f'{currency}_PLN': 'Exchange Rate'}), use_container_width=True, height=400)
         st.line_chart(rates[['returns']].rename(columns={'returns': 'Daily Returns'}), use_container_width=True, height=400)
