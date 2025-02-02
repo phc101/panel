@@ -8,45 +8,26 @@ def initialize_session():
     if 'data' not in st.session_state:
         st.session_state['data'] = pd.DataFrame(columns=['Month', 'Currency', 'Inflow', 'Outflow', 'Net Exposure', 'Budget Rate', 'VaR 95% (%)', 'VaR 95% Nominal', 'VaR 99% (%)', 'VaR 99% Nominal', 'Forward Rate'])
 
-def input_interest_rates():
-    st.sidebar.header("Interest Rates")
-    pln_rate = st.sidebar.number_input("Domestic (PLN) Interest Rate", min_value=0.0, max_value=1.0, value=0.05, step=0.001)
-    eur_rate = st.sidebar.number_input("Foreign (EUR) Interest Rate", min_value=0.0, max_value=1.0, value=0.03, step=0.001)
-    usd_rate = st.sidebar.number_input("Foreign (USD) Interest Rate", min_value=0.0, max_value=1.0, value=0.04, step=0.001)
+def input_expected_flows():
+    st.sidebar.header("Expected Cash Flows")
+    currency = st.sidebar.selectbox("Select Currency", ["EUR", "USD"])
     
-    st.session_state['interest_rates'] = {'PLN': pln_rate, 'EUR': eur_rate, 'USD': usd_rate}
-
-def calculate_var(returns, horizon, confidence_level):
-    if len(returns) == 0:
-        return np.nan
-    sorted_returns = np.sort(returns)
-    index = int((1 - confidence_level) * len(sorted_returns))
-    daily_var = abs(sorted_returns[index])
-    return daily_var * np.sqrt(horizon)
-
-def calculate_risk():
-    if 'data' in st.session_state and not st.session_state['data'].empty and 'returns' in st.session_state:
-        total_var_95_nominal = 0
-        total_var_99_nominal = 0
-        
-        for month in range(1, 13):
-            var_95 = calculate_var(st.session_state['returns'], horizon=month, confidence_level=0.95)
-            var_99 = calculate_var(st.session_state['returns'], horizon=month, confidence_level=0.99)
-            nominal_95 = abs(st.session_state['data'].at[month-1, 'Net Exposure'] * var_95)
-            nominal_99 = abs(st.session_state['data'].at[month-1, 'Net Exposure'] * var_99)
-            
-            st.session_state['data'].at[month-1, 'VaR 95% (%)'] = var_95 * 100
-            st.session_state['data'].at[month-1, 'VaR 95% Nominal'] = nominal_95
-            st.session_state['data'].at[month-1, 'VaR 99% (%)'] = var_99 * 100
-            st.session_state['data'].at[month-1, 'VaR 99% Nominal'] = nominal_99
-            
-            total_var_95_nominal += nominal_95
-            total_var_99_nominal += nominal_99
-        
-        st.subheader("Total Nominal VaR")
-        st.write(f"Total 95% Confidence Level VaR: {total_var_95_nominal:.2f}")
-        st.write(f"Total 99% Confidence Level VaR: {total_var_99_nominal:.2f}")
-        st.write(f"Your maximum amount to lose in the next 12 months is {total_var_99_nominal:.2f} at 99% confidence.")
+    num_months = 12
+    months = pd.date_range(start=pd.Timestamp.today(), periods=num_months, freq='M').strftime('%Y-%m')
+    if 'data' not in st.session_state or st.session_state['data'].empty:
+        st.session_state['data'] = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0.00]*num_months})
+    
+    data = st.sidebar.data_editor(st.session_state['data'], use_container_width=True)
+    
+    # Auto-fill Budget Rate
+    if 'Budget Rate' in data.columns:
+        first_value = data.loc[0, 'Budget Rate']
+        if first_value != 0.00:
+            data['Budget Rate'] = first_value
+    
+    if st.sidebar.button("Save Data"):
+        st.session_state['data'] = data
+        st.success("Data saved successfully!")
 
 def main():
     st.title("FX Risk Management Tool")
