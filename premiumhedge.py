@@ -17,9 +17,21 @@ def input_expected_flows():
     
     data = st.sidebar.data_editor(data, use_container_width=True)
     
+    # Auto-fill Budget Rate
+    if 'Budget Rate' in data.columns:
+        first_value = data.loc[0, 'Budget Rate']
+        if first_value != 0.00:
+            data['Budget Rate'] = first_value
+    
     if st.sidebar.button("Save Data"):
         st.session_state['data'] = data
         st.success("Data saved successfully!")
+    
+    # CSV Upload Description
+    st.sidebar.markdown("**Upload CSV Format:**")
+    st.sidebar.text("Month (YYYY-MM), Currency (EUR/USD), Inflow, Outflow, Budget Rate")
+    st.sidebar.text("Example:")
+    st.sidebar.text("2025-01, EUR, 10000, 5000, 4.30")
     
     # Upload CSV Option
     uploaded_file = st.sidebar.file_uploader("Upload CSV File", type=['csv'])
