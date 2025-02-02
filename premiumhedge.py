@@ -10,15 +10,22 @@ def initialize_session():
 
 def fetch_live_forward_rates(currency):
     """
-    Fetch live forward rates for EUR/PLN and USD/PLN from an external API provider.
+    Fetch live forward rates for EUR/PLN and USD/PLN from FactSet API.
     """
-    url = f'https://api.exchangerate.host/forward?base={currency}&symbols=PLN'
-    response = requests.get(url)
+    factset_api_key = "YOUR_FACTSET_API_KEY"  # Replace with your actual API key
+    url = f'https://api.factset.com/v1/fx/forwards?currency={currency}PLN&tenors=1M,2M,3M,6M,12M'
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {factset_api_key}"
+    }
+    response = requests.get(url, headers=headers)
+    
     if response.status_code == 200:
         data = response.json()
-        forward_rates = {str(i+1): data['rates']['PLN'] * (1 + 0.002 * (i+1)) for i in range(12)}  # Example forward rate curve
+        forward_rates = {tenor: data["data"][tenor] for tenor in ["1M", "2M", "3M", "6M", "12M"]}
         return forward_rates
     else:
+        st.error("Failed to fetch live forward rates from FactSet API.")
         return {}
 
 def input_expected_flows():
@@ -56,9 +63,12 @@ def main():
     forward_rates = fetch_live_forward_rates(currency)
     
     if forward_rates:
-        st.session_state['data']['Forward Rate'] = [forward_rates[str(i+1)] for i in range(12)]
+        forward_mapping = {"1M": 0, "2M": 1, "3M": 2, "6M": 5, "12M": 11}
+        for tenor, idx in forward_mapping.items():
+            if tenor in forward_rates:
+                st.session_state['data'].at[idx, 'Forward Rate'] = forward_rates[tenor]
         
-        st.subheader("Live Forward Rates from API")
+        st.subheader("Live Forward Rates from FactSet API")
         st.dataframe(st.session_state['data'][['Month', 'Forward Rate']])
     else:
         st.error("Failed to fetch live forward rates.")
