@@ -20,6 +20,8 @@ def fetch_exchange_rates(currency_code, start_date, end_date):
         rates['date'] = pd.to_datetime(rates['effectiveDate'])
         rates.set_index('date', inplace=True)
         rates.rename(columns={'mid': f'{currency_code}_PLN'}, inplace=True)
+        rates['returns'] = np.log(rates[f'{currency_code}_PLN'] / rates[f'{currency_code}_PLN'].shift(1))
+        rates.dropna(inplace=True)
         return rates
     else:
         return pd.DataFrame()
@@ -41,14 +43,14 @@ def calculate_forward_rates():
         for month in range(1, 13):
             T = month / 12  # Convert months to years
             currency = st.session_state['data'].at[month-1, 'Currency']
-            net_exposure = st.session_state['data'].at[month-1, 'Outflow'] - st.session_state['data'].at[month-1, 'Inflow']
+            net_exposure = st.session_state['data'].at[month-1, 'Inflow'] - st.session_state['data'].at[month-1, 'Outflow']
             
             if net_exposure > 0:
-                # Importer (buying foreign currency, selling PLN)
+                # Exporter (selling foreign currency, buying PLN)
                 r_domestic = interest_rates['PLN']
                 r_foreign = interest_rates[currency]
             else:
-                # Exporter (selling foreign currency, buying PLN)
+                # Importer (buying foreign currency, selling PLN)
                 r_domestic = interest_rates[currency]
                 r_foreign = interest_rates['PLN']
             
@@ -56,32 +58,10 @@ def calculate_forward_rates():
             st.session_state['data'].at[month-1, 'Forward Rate'] = round(forward_rate, 4)
             st.session_state['data'].at[month-1, 'Net Exposure'] = net_exposure
 
-def input_interest_rates():
-    st.sidebar.header("Interest Rates")
-    pln_rate = st.sidebar.number_input("Domestic (PLN) Interest Rate", min_value=0.0, max_value=1.0, value=0.05, step=0.001)
-    eur_rate = st.sidebar.number_input("Foreign (EUR) Interest Rate", min_value=0.0, max_value=1.0, value=0.03, step=0.001)
-    usd_rate = st.sidebar.number_input("Foreign (USD) Interest Rate", min_value=0.0, max_value=1.0, value=0.04, step=0.001)
-    
-    st.session_state['interest_rates'] = {'PLN': pln_rate, 'EUR': eur_rate, 'USD': usd_rate}
-
-def input_expected_flows():
-    st.sidebar.header("Expected Cash Flows")
-    currency = st.sidebar.selectbox("Select Currency", ["EUR", "USD"])
-    
-    num_months = 12
-    months = pd.date_range(start=pd.Timestamp.today(), periods=num_months, freq='M').strftime('%Y-%m')
-    if 'data' not in st.session_state or st.session_state['data'].empty:
-        st.session_state['data'] = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0.00]*num_months})
-    
-    data = st.sidebar.data_editor(st.session_state['data'], use_container_width=True)
-    
-    if st.sidebar.button("Save Data"):
-        st.session_state['data'] = data
-        st.success("Data saved successfully!")
-
 def main():
     st.title("FX Risk Management Tool")
     initialize_session()
+    
     input_interest_rates()
     input_expected_flows()
     
