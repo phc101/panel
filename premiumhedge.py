@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 def initialize_session():
     if 'data' not in st.session_state:
-        st.session_state['data'] = pd.DataFrame(columns=['Month', 'Currency', 'Inflow', 'Outflow', 'Budget Rate', 'VaR (%)', 'VaR Nominal'])
+        st.session_state['data'] = pd.DataFrame(columns=['Month', 'Currency', 'Inflow', 'Outflow', 'Budget Rate', 'VaR 95% (%)', 'VaR 95% Nominal', 'VaR 99% (%)', 'VaR 99% Nominal'])
 
 def fetch_exchange_rates(currency_code, start_date, end_date):
     """
@@ -24,7 +24,7 @@ def fetch_exchange_rates(currency_code, start_date, end_date):
     else:
         return pd.DataFrame()
 
-def calculate_var(returns, horizon, confidence_level=0.95):
+def calculate_var(returns, horizon, confidence_level):
     """
     Calculate the Value at Risk (VaR) for different time horizons.
     """
@@ -43,7 +43,7 @@ def input_expected_flows():
     num_months = 12
     months = pd.date_range(start=pd.Timestamp.today(), periods=num_months, freq='M').strftime('%Y-%m')
     if 'data' not in st.session_state or st.session_state['data'].empty:
-        st.session_state['data'] = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0.00]*num_months, 'VaR (%)': [0.00]*num_months, 'VaR Nominal': [0.00]*num_months})
+        st.session_state['data'] = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0.00]*num_months, 'VaR 95% (%)': [0.00]*num_months, 'VaR 95% Nominal': [0.00]*num_months, 'VaR 99% (%)': [0.00]*num_months, 'VaR 99% Nominal': [0.00]*num_months})
     
     data = st.sidebar.data_editor(st.session_state['data'], use_container_width=True)
     
@@ -76,14 +76,17 @@ def main():
         rates['returns'] = np.log(rates[f'{currency}_PLN'] / rates[f'{currency}_PLN'].shift(1))
         rates.dropna(inplace=True)
         
-        # Calculate VaR for different horizons
+        # Calculate VaR for different horizons at 95% and 99%
         for month in range(1, 13):
             var_95 = calculate_var(rates['returns'], horizon=month, confidence_level=0.95)
-            st.session_state['data'].at[month-1, 'VaR (%)'] = var_95 * 100
-            st.session_state['data'].at[month-1, 'VaR Nominal'] = (st.session_state['data'].at[month-1, 'Inflow'] - st.session_state['data'].at[month-1, 'Outflow']) * var_95
+            var_99 = calculate_var(rates['returns'], horizon=month, confidence_level=0.99)
+            st.session_state['data'].at[month-1, 'VaR 95% (%)'] = var_95 * 100
+            st.session_state['data'].at[month-1, 'VaR 95% Nominal'] = (st.session_state['data'].at[month-1, 'Inflow'] - st.session_state['data'].at[month-1, 'Outflow']) * var_95
+            st.session_state['data'].at[month-1, 'VaR 99% (%)'] = var_99 * 100
+            st.session_state['data'].at[month-1, 'VaR 99% Nominal'] = (st.session_state['data'].at[month-1, 'Inflow'] - st.session_state['data'].at[month-1, 'Outflow']) * var_99
         
         st.subheader(f"Value at Risk (VaR) for {currency}/PLN")
-        st.write(f"With a 95% confidence level, the maximum expected daily loss is {calculate_var(rates['returns'], 1, 0.95) * 100:.2f}%.")
+        st.write(f"With a 99% confidence level, the maximum expected daily loss is {calculate_var(rates['returns'], 1, 0.99) * 100:.2f}%.")
         
         min_price, max_price = rates[f'{currency}_PLN'].min(), rates[f'{currency}_PLN'].max()
         st.line_chart(rates[[f'{currency}_PLN']].rename(columns={f'{currency}_PLN': 'Exchange Rate'}).clip(lower=min_price-0.01, upper=max_price+0.01), 
