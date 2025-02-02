@@ -8,6 +8,14 @@ def initialize_session():
     if 'data' not in st.session_state:
         st.session_state['data'] = pd.DataFrame(columns=['Month', 'Currency', 'Inflow', 'Outflow', 'Net Exposure', 'Budget Rate', 'VaR 95% (%)', 'VaR 95% Nominal', 'VaR 99% (%)', 'VaR 99% Nominal', 'Forward Rate'])
 
+def input_interest_rates():
+    st.sidebar.header("Interest Rates")
+    pln_rate = st.sidebar.number_input("Domestic (PLN) Interest Rate", min_value=0.0, max_value=1.0, value=0.05, step=0.001)
+    eur_rate = st.sidebar.number_input("Foreign (EUR) Interest Rate", min_value=0.0, max_value=1.0, value=0.03, step=0.001)
+    usd_rate = st.sidebar.number_input("Foreign (USD) Interest Rate", min_value=0.0, max_value=1.0, value=0.04, step=0.001)
+    
+    st.session_state['interest_rates'] = {'PLN': pln_rate, 'EUR': eur_rate, 'USD': usd_rate}
+
 def calculate_var(returns, horizon, confidence_level):
     if len(returns) == 0:
         return np.nan
