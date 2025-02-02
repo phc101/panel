@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+from requests.auth import HTTPBasicAuth
 from datetime import datetime, timedelta
 
 def initialize_session():
@@ -10,27 +11,33 @@ def initialize_session():
 
 def fetch_live_forward_rates(currency):
     """
-    Fetch live forward rates for EUR/PLN and USD/PLN from FactSet API with debugging.
+    Fetch live forward rates for EUR/PLN and USD/PLN from FactSet API with correct authentication.
     """
-    factset_api_key = "YOUR_FACTSET_API_KEY"  # Replace with your actual API key
-    url = f'https://api.factset.com/v1/fx/forwards?currency={currency}PLN&tenors=1M,2M,3M,6M,12M'
-    headers = {
-        "Accept": "application/json",
-        "Authorization": f"Bearer {factset_api_key}"
+    factset_username = "YOUR_FACTSET_USERNAME"  # Replace with your FactSet username
+    factset_password = "YOUR_FACTSET_PASSWORD"  # Replace with your FactSet password
+    url = "https://api.factset.com/v1/pricing/fx/forwards"
+    
+    params = {
+        "ids": f"{currency}PLN",
+        "fields": "mid,1M,2M,3M,6M,12M"
     }
     
-    # Debugging: Print request URL
-    st.write(f"Fetching forward rates from: {url}")
-    response = requests.get(url, headers=headers)
+    headers = {
+        "Accept": "application/json"
+    }
+    
+    # Debugging: Print request details
+    st.write(f"Fetching forward rates from: {url}", params)
+    response = requests.get(url, headers=headers, params=params, auth=HTTPBasicAuth(factset_username, factset_password))
     
     if response.status_code == 200:
         data = response.json()
         st.write("API Response:", data)  # Debugging output
         
         try:
-            forward_rates = {tenor: data["data"][tenor] for tenor in ["1M", "2M", "3M", "6M", "12M"]}
+            forward_rates = {tenor: data["data"][0][tenor] for tenor in ["1M", "2M", "3M", "6M", "12M"]}
             return forward_rates
-        except KeyError:
+        except (KeyError, IndexError):
             st.error("Unexpected API response format. Check API documentation.")
             st.write("Response Data:", data)
             return {}
