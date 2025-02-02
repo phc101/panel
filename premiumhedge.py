@@ -99,8 +99,10 @@ def main():
         st.write(f"Total 99% Confidence Level VaR: {total_var_99_nominal:.2f} {currency}")
         
         min_price, max_price = rates[f'{currency}_PLN'].min(), rates[f'{currency}_PLN'].max()
+        buffer = 0.01  # Add buffer to min and max for better readability
+        scaled_rates = rates[[f'{currency}_PLN']].clip(lower=min_price - buffer, upper=max_price + buffer)
         
-        st.line_chart(rates[[f'{currency}_PLN']].rename(columns={f'{currency}_PLN': 'Exchange Rate'}), use_container_width=True, height=400, y_min=min_price, y_max=max_price)
+        st.line_chart(scaled_rates.rename(columns={f'{currency}_PLN': 'Exchange Rate'}), use_container_width=True, height=400)
         st.line_chart(rates[['returns']].rename(columns={'returns': 'Daily Returns'}), use_container_width=True, height=400)
     else:
         st.error("No exchange rate data available for the selected currency and date range.")
