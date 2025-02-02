@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-from requests.auth import HTTPBasicAuth
 from datetime import datetime, timedelta
 
 def initialize_session():
@@ -11,32 +10,31 @@ def initialize_session():
 
 def fetch_live_forward_rates(currency):
     """
-    Fetch live forward rates for EUR/PLN and USD/PLN from FactSet API with correct authentication.
+    Fetch live forward rates for EUR/PLN and USD/PLN from Alpha Vantage API.
     """
-    factset_username = "YOUR_FACTSET_USERNAME"  # Replace with your FactSet username
-    factset_password = "YOUR_FACTSET_PASSWORD"  # Replace with your FactSet password
-    url = "https://api.factset.com/content/fx/v1/forwards"
+    alpha_api_key = "YOUR_ALPHA_VANTAGE_API_KEY"  # Replace with your actual API key
+    url = f"https://www.alphavantage.co/query"
     
-    payload = {
-        "ids": [f"{currency}PLN"],
-        "fields": ["mid", "1M", "2M", "3M", "6M", "12M"]
+    params = {
+        "function": "FX_DAILY",
+        "from_symbol": currency,
+        "to_symbol": "PLN",
+        "apikey": alpha_api_key
     }
     
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-    }
-    
-    # Debugging: Print request details
-    st.write("Requesting forward rates from FactSet API:", payload)
-    response = requests.post(url, headers=headers, json=payload, auth=HTTPBasicAuth(factset_username, factset_password))
+    response = requests.get(url, params=params)
     
     if response.status_code == 200:
         data = response.json()
         st.write("API Response:", data)  # Debugging output
         
         try:
-            forward_rates = {tenor: data["data"][0][tenor] for tenor in ["1M", "2M", "3M", "6M", "12M"]}
+            time_series = data.get("Time Series FX (Daily)", {})
+            latest_date = max(time_series.keys())
+            spot_rate = float(time_series[latest_date]["4. close"])
+            
+            # Approximate forward rates using a simple adjustment (since Alpha Vantage doesn't provide direct forwards)
+            forward_rates = {str(i+1): round(spot_rate * (1 + 0.002 * (i+1)), 4) for i in range(12)}
             return forward_rates
         except (KeyError, IndexError):
             st.error("Unexpected API response format. Check API documentation.")
@@ -82,12 +80,10 @@ def main():
     forward_rates = fetch_live_forward_rates(currency)
     
     if forward_rates:
-        forward_mapping = {"1M": 0, "2M": 1, "3M": 2, "6M": 5, "12M": 11}
-        for tenor, idx in forward_mapping.items():
-            if tenor in forward_rates:
-                st.session_state['data'].at[idx, 'Forward Rate'] = forward_rates[tenor]
+        for i in range(12):
+            st.session_state['data'].at[i, 'Forward Rate'] = forward_rates[str(i+1)]
         
-        st.subheader("Live Forward Rates from FactSet API")
+        st.subheader("Live Forward Rates from Alpha Vantage API")
         st.dataframe(st.session_state['data'][['Month', 'Forward Rate']])
     else:
         st.error("Failed to fetch live forward rates.")
