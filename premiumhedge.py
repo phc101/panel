@@ -83,23 +83,23 @@ def main():
         for month in range(1, 13):
             var_95 = calculate_var(rates['returns'], horizon=month, confidence_level=0.95)
             var_99 = calculate_var(rates['returns'], horizon=month, confidence_level=0.99)
-            nominal_95 = (st.session_state['data'].at[month-1, 'Inflow'] - st.session_state['data'].at[month-1, 'Outflow']) * var_95
-            nominal_99 = (st.session_state['data'].at[month-1, 'Inflow'] - st.session_state['data'].at[month-1, 'Outflow']) * var_99
+            nominal_95 = abs((st.session_state['data'].at[month-1, 'Inflow'] - st.session_state['data'].at[month-1, 'Outflow']) * var_95)
+            nominal_99 = abs((st.session_state['data'].at[month-1, 'Inflow'] - st.session_state['data'].at[month-1, 'Outflow']) * var_99)
             
             st.session_state['data'].at[month-1, 'VaR 95% (%)'] = var_95 * 100
             st.session_state['data'].at[month-1, 'VaR 95% Nominal'] = nominal_95
             st.session_state['data'].at[month-1, 'VaR 99% (%)'] = var_99 * 100
             st.session_state['data'].at[month-1, 'VaR 99% Nominal'] = nominal_99
             
-            total_var_95_nominal += abs(nominal_95)
-            total_var_99_nominal += abs(nominal_99)
+            total_var_95_nominal += nominal_95
+            total_var_99_nominal += nominal_99
         
         st.subheader("Total Nominal VaR")
         st.write(f"Total 95% Confidence Level VaR: {total_var_95_nominal:.2f} {currency}")
         st.write(f"Total 99% Confidence Level VaR: {total_var_99_nominal:.2f} {currency}")
         
         min_price, max_price = rates[f'{currency}_PLN'].min(), rates[f'{currency}_PLN'].max()
-        buffer = 0.01  # Add buffer to min and max for better readability
+        buffer = 0.01
         scaled_rates = rates[[f'{currency}_PLN']].clip(lower=min_price - buffer, upper=max_price + buffer)
         
         st.line_chart(scaled_rates.rename(columns={f'{currency}_PLN': 'Exchange Rate'}), use_container_width=True, height=400)
