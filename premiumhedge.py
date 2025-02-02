@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 def initialize_session():
     if 'data' not in st.session_state:
-        st.session_state['data'] = pd.DataFrame(columns=['Month', 'Currency', 'Inflow', 'Outflow', 'Budget Rate', 'VaR 95% (%)', 'VaR 95% Nominal', 'VaR 99% (%)', 'VaR 99% Nominal', 'Forward Rate'])
+        st.session_state['data'] = pd.DataFrame(columns=['Month', 'Currency', 'Inflow', 'Outflow', 'Net Exposure', 'Budget Rate', 'VaR 95% (%)', 'VaR 95% Nominal', 'VaR 99% (%)', 'VaR 99% Nominal', 'Forward Rate'])
 
 def fetch_exchange_rates(currency_code, start_date, end_date):
     """
@@ -32,7 +32,7 @@ def fetch_interest_rates():
 
 def calculate_forward_rates():
     """
-    Calculate forward rates based on interest rate parity formula.
+    Calculate forward rates based on interest rate parity formula, accounting for net exposure.
     """
     if 'data' in st.session_state and not st.session_state['data'].empty and 'spot_rate' in st.session_state:
         spot_rate = st.session_state['spot_rate']
@@ -41,11 +41,20 @@ def calculate_forward_rates():
         for month in range(1, 13):
             T = month / 12  # Convert months to years
             currency = st.session_state['data'].at[month-1, 'Currency']
-            r_domestic = interest_rates['PLN']
-            r_foreign = interest_rates[currency]
+            net_exposure = st.session_state['data'].at[month-1, 'Outflow'] - st.session_state['data'].at[month-1, 'Inflow']
+            
+            if net_exposure > 0:
+                # Importer (buying foreign currency, selling PLN)
+                r_domestic = interest_rates['PLN']
+                r_foreign = interest_rates[currency]
+            else:
+                # Exporter (selling foreign currency, buying PLN)
+                r_domestic = interest_rates[currency]
+                r_foreign = interest_rates['PLN']
             
             forward_rate = spot_rate * ((1 + r_foreign * T) / (1 + r_domestic * T))
             st.session_state['data'].at[month-1, 'Forward Rate'] = round(forward_rate, 4)
+            st.session_state['data'].at[month-1, 'Net Exposure'] = net_exposure
 
 def input_interest_rates():
     st.sidebar.header("Interest Rates")
@@ -92,7 +101,7 @@ def main():
         calculate_forward_rates()
         
         st.subheader(f"Calculated Forward Rates (Based on Spot {spot_rate:.4f})")
-        st.dataframe(st.session_state['data'][['Month', 'Forward Rate']])
+        st.dataframe(st.session_state['data'][['Month', 'Net Exposure', 'Forward Rate']])
         
         min_price = 4.15
         max_price = 4.40
