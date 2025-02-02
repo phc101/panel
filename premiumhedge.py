@@ -94,9 +94,11 @@ def main():
             total_var_95_nominal += nominal_95
             total_var_99_nominal += nominal_99
         
+        num_cashflow_months = len(st.session_state['data'])
         st.subheader("Total Nominal VaR")
         st.write(f"Total 95% Confidence Level VaR: {total_var_95_nominal:.2f} {currency}")
         st.write(f"Total 99% Confidence Level VaR: {total_var_99_nominal:.2f} {currency}")
+        st.write(f"Your maximum amount to lose in the next {num_cashflow_months} months is {total_var_99_nominal:.2f} {currency} at 99% confidence.")
         
         min_price, max_price = rates[f'{currency}_PLN'].min(), rates[f'{currency}_PLN'].max()
         buffer = 0.01
