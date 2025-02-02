@@ -91,8 +91,8 @@ def main():
         st.subheader(f"Value at Risk (VaR) for {currency}/PLN")
         st.write(f"With a 95% confidence level, the maximum expected daily loss is {var_95*100:.2f}%.")
         
-        min_price, max_price = rates[f'{currency}_PLN'].min() - 0.0100, rates[f'{currency}_PLN'].max() + 0.0100
-        st.line_chart(rates[[f'{currency}_PLN']].rename(columns={f'{currency}_PLN': 'Exchange Rate'}), 
+        min_price, max_price = rates[f'{currency}_PLN'].min(), rates[f'{currency}_PLN'].max()
+        st.line_chart(rates[[f'{currency}_PLN']].rename(columns={f'{currency}_PLN': 'Exchange Rate'}).clip(lower=min_price-0.01, upper=max_price+0.01), 
                       use_container_width=True, height=400)
         st.line_chart(rates[['returns']].rename(columns={'returns': 'Daily Returns'}), 
                       use_container_width=True, height=400)
