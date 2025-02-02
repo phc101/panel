@@ -13,7 +13,7 @@ def input_expected_flows():
     # Data Input Table
     num_months = 12
     months = pd.date_range(start=pd.Timestamp.today(), periods=num_months, freq='M').strftime('%Y-%m')
-    data = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0]*num_months})
+    data = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0.00]*num_months})
     
     data = st.sidebar.data_editor(data, use_container_width=True)
     
