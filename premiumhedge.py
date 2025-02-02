@@ -55,6 +55,32 @@ def input_expected_flows():
         st.session_state['data'] = data
         st.success("Data saved successfully!")
 
+def calculate_forward_rates():
+    """
+    Calculate forward rates based on interest rate parity formula, accounting for net exposure.
+    """
+    if 'data' in st.session_state and not st.session_state['data'].empty and 'spot_rate' in st.session_state:
+        spot_rate = st.session_state['spot_rate']
+        interest_rates = st.session_state.get('interest_rates', {})
+        
+        for month in range(1, 13):
+            T = month / 12  # Convert months to years
+            currency = st.session_state['data'].at[month-1, 'Currency']
+            net_exposure = st.session_state['data'].at[month-1, 'Inflow'] - st.session_state['data'].at[month-1, 'Outflow']
+            
+            if net_exposure > 0:
+                # Exporter (selling foreign currency, buying PLN)
+                r_domestic = interest_rates['PLN']
+                r_foreign = interest_rates[currency]
+            else:
+                # Importer (buying foreign currency, selling PLN)
+                r_domestic = interest_rates[currency]
+                r_foreign = interest_rates['PLN']
+            
+            forward_rate = spot_rate * ((1 + r_foreign * T) / (1 + r_domestic * T))
+            st.session_state['data'].at[month-1, 'Forward Rate'] = round(forward_rate, 4)
+            st.session_state['data'].at[month-1, 'Net Exposure'] = net_exposure
+
 def main():
     st.title("FX Risk Management Tool")
     initialize_session()
