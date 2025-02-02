@@ -42,9 +42,10 @@ def input_expected_flows():
     # Data Input Table
     num_months = 12
     months = pd.date_range(start=pd.Timestamp.today(), periods=num_months, freq='M').strftime('%Y-%m')
-    data = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0.00]*num_months, 'VaR (%)': [0.00]*num_months, 'VaR Nominal': [0.00]*num_months})
+    if 'data' not in st.session_state or st.session_state['data'].empty:
+        st.session_state['data'] = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0.00]*num_months, 'VaR (%)': [0.00]*num_months, 'VaR Nominal': [0.00]*num_months})
     
-    data = st.sidebar.data_editor(data, use_container_width=True)
+    data = st.sidebar.data_editor(st.session_state['data'], use_container_width=True)
     
     # Auto-fill Budget Rate
     if 'Budget Rate' in data.columns:
