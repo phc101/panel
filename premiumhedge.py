@@ -15,20 +15,21 @@ def fetch_live_forward_rates(currency):
     """
     factset_username = "YOUR_FACTSET_USERNAME"  # Replace with your FactSet username
     factset_password = "YOUR_FACTSET_PASSWORD"  # Replace with your FactSet password
-    url = "https://api.factset.com/v1/pricing/fx/forwards"
+    url = "https://api.factset.com/content/fx/v1/forwards"
     
-    params = {
-        "ids": f"{currency}PLN",
-        "fields": "mid,1M,2M,3M,6M,12M"
+    payload = {
+        "ids": [f"{currency}PLN"],
+        "fields": ["mid", "1M", "2M", "3M", "6M", "12M"]
     }
     
     headers = {
-        "Accept": "application/json"
+        "Accept": "application/json",
+        "Content-Type": "application/json"
     }
     
     # Debugging: Print request details
-    st.write(f"Fetching forward rates from: {url}", params)
-    response = requests.get(url, headers=headers, params=params, auth=HTTPBasicAuth(factset_username, factset_password))
+    st.write("Requesting forward rates from FactSet API:", payload)
+    response = requests.post(url, headers=headers, json=payload, auth=HTTPBasicAuth(factset_username, factset_password))
     
     if response.status_code == 200:
         data = response.json()
