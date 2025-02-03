@@ -10,16 +10,14 @@ def initialize_session():
 
 def fetch_live_forward_rates(currency):
     """
-    Fetch live forward rates for EUR/PLN and USD/PLN from Alpha Vantage API.
+    Fetch live forward rates for EUR/PLN and USD/PLN from Twelve Data API.
     """
-    alpha_api_key = "YOUR_ALPHA_VANTAGE_API_KEY"  # Replace with your actual API key
-    url = f"https://www.alphavantage.co/query"
+    twelve_api_key = "25dd798d5907450bb70a17ed8c6c4f89"
+    url = f"https://api.twelvedata.com/forex_forwards"
     
     params = {
-        "function": "FX_DAILY",
-        "from_symbol": currency,
-        "to_symbol": "PLN",
-        "apikey": alpha_api_key
+        "symbol": f"{currency}/PLN",
+        "apikey": twelve_api_key
     }
     
     response = requests.get(url, params=params)
@@ -29,12 +27,7 @@ def fetch_live_forward_rates(currency):
         st.write("API Response:", data)  # Debugging output
         
         try:
-            time_series = data.get("Time Series FX (Daily)", {})
-            latest_date = max(time_series.keys())
-            spot_rate = float(time_series[latest_date]["4. close"])
-            
-            # Approximate forward rates using a simple adjustment (since Alpha Vantage doesn't provide direct forwards)
-            forward_rates = {str(i+1): round(spot_rate * (1 + 0.002 * (i+1)), 4) for i in range(12)}
+            forward_rates = {str(i+1): round(float(data["values"][i]["close"], 4)) for i in range(12)}
             return forward_rates
         except (KeyError, IndexError):
             st.error("Unexpected API response format. Check API documentation.")
@@ -83,7 +76,7 @@ def main():
         for i in range(12):
             st.session_state['data'].at[i, 'Forward Rate'] = forward_rates[str(i+1)]
         
-        st.subheader("Live Forward Rates from Alpha Vantage API")
+        st.subheader("Live Forward Rates from Twelve Data API")
         st.dataframe(st.session_state['data'][['Month', 'Forward Rate']])
     else:
         st.error("Failed to fetch live forward rates.")
