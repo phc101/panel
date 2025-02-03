@@ -10,10 +10,11 @@ def initialize_session():
 
 def fetch_live_forward_rates(currency):
     """
-    Fetch live forward rates for EUR/PLN and USD/PLN from Twelve Data API.
+    Fetch live spot FX rates for EUR/PLN and USD/PLN from Twelve Data API,
+    and estimate forward rates using an approximation model.
     """
     twelve_api_key = "25dd798d5907450bb70a17ed8c6c4f89"
-    url = f"https://api.twelvedata.com/forex_forwards"
+    url = "https://api.twelvedata.com/forex"
     
     params = {
         "symbol": f"{currency}/PLN",
@@ -27,9 +28,12 @@ def fetch_live_forward_rates(currency):
         st.write("API Response:", data)  # Debugging output
         
         try:
-            forward_rates = {str(i+1): round(float(data["values"][i]["close"], 4)) for i in range(12)}
+            spot_rate = float(data["price"])
+            
+            # Estimate forward rates using simple interest rate differentials
+            forward_rates = {str(i+1): round(spot_rate * (1 + 0.002 * (i+1)), 4) for i in range(12)}
             return forward_rates
-        except (KeyError, IndexError):
+        except (KeyError, IndexError, ValueError):
             st.error("Unexpected API response format. Check API documentation.")
             st.write("Response Data:", data)
             return {}
@@ -76,7 +80,7 @@ def main():
         for i in range(12):
             st.session_state['data'].at[i, 'Forward Rate'] = forward_rates[str(i+1)]
         
-        st.subheader("Live Forward Rates from Twelve Data API")
+        st.subheader("Estimated Forward Rates from Twelve Data API")
         st.dataframe(st.session_state['data'][['Month', 'Forward Rate']])
     else:
         st.error("Failed to fetch live forward rates.")
