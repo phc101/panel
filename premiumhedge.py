@@ -5,24 +5,29 @@ import numpy as np
 import requests
 
 # Function to fetch bond yields with timeout and fallback to manual input
-def fetch_bond_yield(url, default_value):
+def fetch_bond_yield(url):
     try:
         response = requests.get(url, timeout=5)  # Timeout after 5 seconds
         response.raise_for_status()
         return float(response.text.strip().replace(',', '.'))
     except requests.RequestException:
-        st.warning(f"Unable to fetch bond yield from {url}. Please enter manually.")
-        return default_value
+        return None
 
 # Streamlit UI
 st.title("EUR/PLN Forward Points Calculation")
 
 # Function to update bond yields
 if st.button("Update Live Rates"):
-    polish_bond = fetch_bond_yield("https://stooq.pl/q/?s=10yply.b", 5.82)
-    german_bond = fetch_bond_yield("https://stooq.pl/q/?s=10ydey.b", 2.37)
+    polish_bond = fetch_bond_yield("https://stooq.pl/q/?s=10yply.b")
+    german_bond = fetch_bond_yield("https://stooq.pl/q/?s=10ydey.b")
 else:
+    polish_bond = None
+    german_bond = None
+
+# Allow manual input if auto-fetching fails
+if polish_bond is None:
     polish_bond = st.number_input("Enter Polish 10Y Bond Yield (%)", value=5.82, step=0.01)
+if german_bond is None:
     german_bond = st.number_input("Enter German 10Y Bund Yield (%)", value=2.37, step=0.01)
 
 # Calculate forward points using continuous compounding
