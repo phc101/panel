@@ -1,93 +1,68 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import requests
-from datetime import datetime, timedelta
+import matplotlib.pyplot as plt
 
-def initialize_session():
-    if 'data' not in st.session_state:
-        st.session_state['data'] = pd.DataFrame(columns=['Month', 'Currency', 'Inflow', 'Outflow', 'Net Exposure', 'Budget Rate', 'VaR 95% (%)', 'VaR 95% Nominal', 'VaR 99% (%)', 'VaR 99% Nominal', 'Forward Rate'])
+# Load the Excel file
+def load_data():
+    file_path = "Dashboard.xlsx"  # Ensure correct file path
+    xls = pd.ExcelFile(file_path)
+    
+    # Load sheets
+    dane_df = pd.read_excel(xls, sheet_name="dane")
+    dashboard_df = pd.read_excel(xls, sheet_name="Dashboard")
+    return dane_df, dashboard_df
 
-def fetch_live_forward_rates(currency):
-    """
-    Fetch live spot FX rates for EUR/PLN and USD/PLN from Twelve Data API,
-    and estimate forward rates using an approximation model.
-    """
-    twelve_api_key = "25dd798d5907450bb70a17ed8c6c4f89"
-    url = "https://api.twelvedata.com/forex"
-    
-    params = {
-        "symbol": f"{currency}/PLN",
-        "apikey": twelve_api_key
-    }
-    
-    response = requests.get(url, params=params)
-    
-    if response.status_code == 200:
-        data = response.json()
-        st.write("API Response:", data)  # Debugging output
-        
-        try:
-            spot_rate = float(data["price"])
-            
-            # Estimate forward rates using simple interest rate differentials
-            forward_rates = {str(i+1): round(spot_rate * (1 + 0.002 * (i+1)), 4) for i in range(12)}
-            return forward_rates
-        except (KeyError, IndexError, ValueError):
-            st.error("Unexpected API response format. Check API documentation.")
-            st.write("Response Data:", data)
-            return {}
-    else:
-        st.error(f"Failed to fetch live forward rates. Status Code: {response.status_code}")
-        st.write("Response Text:", response.text)  # Debugging output
-        return {}
+dane_df, dashboard_df = load_data()
 
-def input_expected_flows():
-    st.sidebar.header("Expected Cash Flows")
-    currency = st.sidebar.selectbox("Select Currency", ["EUR", "USD"])
-    
-    num_months = 12
-    months = pd.date_range(start=pd.Timestamp.today(), periods=num_months, freq='M').strftime('%Y-%m')
-    if 'data' not in st.session_state or st.session_state['data'].empty:
-        st.session_state['data'] = pd.DataFrame({'Month': months, 'Currency': currency, 'Inflow': [0]*num_months, 'Outflow': [0]*num_months, 'Budget Rate': [0.00]*num_months})
-    
-    data = st.sidebar.data_editor(st.session_state['data'], use_container_width=True)
-    
-    # Auto-fill Budget Rate
-    if 'Budget Rate' in data.columns:
-        first_value = data.loc[0, 'Budget Rate']
-        if first_value != 0.00:
-            data['Budget Rate'] = first_value
-    
-    if st.sidebar.button("Save Data"):
-        st.session_state['data'] = data
-        st.success("Data saved successfully!")
+# Extract historical data for EUR/PLN and USD/PLN
+eurpln_data = dane_df.iloc[1:, [0, 1, 2]].copy()
+eurpln_data.columns = ["Date", "Close", "Z-score"]
+eurpln_data["Date"] = pd.to_datetime(eurpln_data["Date"])
+eurpln_data["Close"] = pd.to_numeric(eurpln_data["Close"], errors="coerce")
 
-def main():
-    st.title("FX Risk Management Tool")
-    initialize_session()
-    
-    input_expected_flows()
-    
-    if not st.session_state['data'].empty:
-        st.subheader("Saved Expected Flows")
-        st.dataframe(st.session_state['data'])
-    
-    currency = "EUR" if "EUR" in st.session_state['data']['Currency'].unique() else "USD"
-    forward_rates = fetch_live_forward_rates(currency)
-    
-    if forward_rates:
-        for i in range(12):
-            st.session_state['data'].at[i, 'Forward Rate'] = forward_rates[str(i+1)]
-        
-        st.subheader("Estimated Forward Rates from Twelve Data API")
-        st.dataframe(st.session_state['data'][['Month', 'Forward Rate']])
-    else:
-        st.error("Failed to fetch live forward rates.")
-    
-    if not st.session_state['data'].empty:
-        st.subheader("Updated Expected Flows with Forward Rates")
-        st.dataframe(st.session_state['data'])
+usdpln_data = dane_df.iloc[1:, [9, 10, 11]].copy()
+usdpln_data.columns = ["Date", "Close", "Z-score"]
+usdpln_data["Date"] = pd.to_datetime(usdpln_data["Date"])
+usdpln_data["Close"] = pd.to_numeric(usdpln_data["Close"], errors="coerce")
 
-if __name__ == "__main__":
-    main()
+# Extract forward rates
+eurpln_fwd_data = dane_df.iloc[1:, [22, 23, 24, 25]].dropna().copy()
+eurpln_fwd_data.columns = ["Tenor", "Spot", "Points", "Forward"]
+eurpln_fwd_data["Points"] = pd.to_numeric(eurpln_fwd_data["Points"], errors="coerce")
+eurpln_fwd_data["Forward"] = pd.to_numeric(eurpln_fwd_data["Forward"], errors="coerce")
+eurpln_fwd_data["Tenor"] = ["1M", "2M", "3M", "4M", "5M", "6M", "7M", "8M", "9M", "10M", "11M", "12M"]
+
+# Streamlit UI
+st.title("FX Dashboard - EUR/PLN & USD/PLN")
+
+# Volatility Charts
+st.subheader("Volatility Charts")
+fig, axes = plt.subplots(2, 1, figsize=(8, 6))
+axes[0].plot(eurpln_data["Date"], eurpln_data["Z-score"], label="EUR/PLN Z-score")
+axes[0].axhline(0, color='black', linestyle='--', linewidth=1)
+axes[0].set_title("Volatility EUR/PLN")
+axes[0].grid(True, linestyle="--", alpha=0.5)
+
+axes[1].plot(usdpln_data["Date"], usdpln_data["Z-score"], label="USD/PLN Z-score")
+axes[1].axhline(0, color='black', linestyle='--', linewidth=1)
+axes[1].set_title("Volatility USD/PLN")
+axes[1].grid(True, linestyle="--", alpha=0.5)
+
+st.pyplot(fig)
+
+# Forward Rates Charts
+st.subheader("Outright Forward Rates")
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.bar(eurpln_fwd_data["Tenor"], eurpln_fwd_data["Points"], color="lightblue")
+for i, val in enumerate(eurpln_fwd_data["Points"]):
+    ax.text(i, val + 0.002, f"{val:.4f}", ha="center", fontsize=10)
+ax.set_title("Outright EUR/PLN")
+ax.set_ylabel("Forward Points")
+ax.set_xticklabels(eurpln_fwd_data["Tenor"], rotation=45)
+ax.grid(axis="y", linestyle="--", alpha=0.5)
+
+st.pyplot(fig)
+
+# Forward Rate Table
+st.subheader("Forward Rate Table")
+st.dataframe(eurpln_fwd_data)
