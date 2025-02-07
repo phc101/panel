@@ -17,9 +17,13 @@ def fetch_bond_yield(url, default_value):
 # Streamlit UI
 st.title("EUR/PLN Forward Points Calculation")
 
-# User input for bond yields with defaults
-polish_bond = st.number_input("Enter Polish 10Y Bond Yield (%)", value=5.82, step=0.01)
-german_bond = st.number_input("Enter German 10Y Bund Yield (%)", value=2.37, step=0.01)
+# Function to update bond yields
+if st.button("Update Live Rates"):
+    polish_bond = fetch_bond_yield("https://stooq.pl/q/?s=10yply.b", 5.82)
+    german_bond = fetch_bond_yield("https://stooq.pl/q/?s=10ydey.b", 2.37)
+else:
+    polish_bond = st.number_input("Enter Polish 10Y Bond Yield (%)", value=5.82, step=0.01)
+    german_bond = st.number_input("Enter German 10Y Bund Yield (%)", value=2.37, step=0.01)
 
 # Calculate forward points using continuous compounding
 spot_rate = 4.2065  # Example spot rate, can be replaced with real-time data
