@@ -1,23 +1,34 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import os
+import requests
+from bs4 import BeautifulSoup
 
-# Load the Excel file
-def load_data():
-    file_path = "/mount/src/panel/Dashboard.xlsx"  # Ensure correct file path
-    if not os.path.exists(file_path):
-        st.error(f"File not found: {file_path}")
-        return None, None
-    
-    xls = pd.ExcelFile(file_path)
+# Function to fetch bond yields from Stooq
+def fetch_bond_yield(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    try:
+        yield_value = soup.find("span", class_="q_ch_act").text.strip()
+        return float(yield_value.replace(',', '.'))
+    except:
+        return None
+
+# Get bond yields
+domestic_yield = fetch_bond_yield("https://stooq.pl/q/?s=10yply.b")
+foreign_yield = fetch_bond_yield("https://stooq.pl/q/?s=10ydey.b")
+
+# Streamlit UI
+st.title("FX Dashboard - EUR/PLN & USD/PLN")
+
+# File uploader
+uploaded_file = st.file_uploader("Upload Excel file", type=["xlsx"])
+
+if uploaded_file is not None:
+    xls = pd.ExcelFile(uploaded_file)
     dane_df = pd.read_excel(xls, sheet_name="dane")
     dashboard_df = pd.read_excel(xls, sheet_name="Dashboard")
-    return dane_df, dashboard_df
 
-dane_df, dashboard_df = load_data()
-
-if dane_df is not None and dashboard_df is not None:
     # Extract historical data for EUR/PLN and USD/PLN
     eurpln_data = dane_df.iloc[1:, [0, 1, 2]].copy()
     eurpln_data.columns = ["Date", "Close", "Z-score"]
@@ -29,15 +40,18 @@ if dane_df is not None and dashboard_df is not None:
     usdpln_data["Date"] = pd.to_datetime(usdpln_data["Date"])
     usdpln_data["Close"] = pd.to_numeric(usdpln_data["Close"], errors="coerce")
 
-    # Extract forward rates
-    eurpln_fwd_data = dane_df.iloc[1:, [22, 23, 24, 25]].dropna().copy()
-    eurpln_fwd_data.columns = ["Tenor", "Spot", "Points", "Forward"]
-    eurpln_fwd_data["Points"] = pd.to_numeric(eurpln_fwd_data["Points"], errors="coerce")
-    eurpln_fwd_data["Forward"] = pd.to_numeric(eurpln_fwd_data["Forward"], errors="coerce")
-    eurpln_fwd_data["Tenor"] = ["1M", "2M", "3M", "4M", "5M", "6M", "7M", "8M", "9M", "10M", "11M", "12M"]
-
-    # Streamlit UI
-    st.title("FX Dashboard - EUR/PLN & USD/PLN")
+    # Calculate forward points from bond yields if available
+    if domestic_yield is not None and foreign_yield is not None:
+        spot_rate = eurpln_data["Close"].iloc[-1]  # Latest close as spot rate
+        tenor_months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        eurpln_fwd_data = pd.DataFrame({
+            "Tenor": [f"{m}M" for m in tenor_months],
+            "Spot": spot_rate,
+            "Points": [spot_rate * ((domestic_yield - foreign_yield) / 12) * m / 100 for m in tenor_months],
+        })
+        eurpln_fwd_data["Forward"] = eurpln_fwd_data["Spot"] + eurpln_fwd_data["Points"]
+    else:
+        eurpln_fwd_data = pd.DataFrame(columns=["Tenor", "Spot", "Points", "Forward"])
 
     # Volatility Charts
     st.subheader("Volatility Charts")
@@ -70,3 +84,5 @@ if dane_df is not None and dashboard_df is not None:
     # Forward Rate Table
     st.subheader("Forward Rate Table")
     st.dataframe(eurpln_fwd_data)
+else:
+    st.warning("Please upload an Excel file to proceed.")
