@@ -6,33 +6,37 @@ import matplotlib.pyplot as plt
 st.title("Forward Points File Uploader")
 
 # File uploader
-uploaded_file = st.file_uploader("Upload an Excel or CSV file", type=["xlsx", "csv"])
+uploaded_file = st.file_uploader("Upload an Excel file", type=["xlsx"])
 
 if uploaded_file is not None:
-    file_extension = uploaded_file.name.split(".")[-1]
-    
     try:
-        if file_extension == "csv":
-            df = pd.read_csv(uploaded_file)
-        else:
-            df = pd.read_excel(uploaded_file)
+        xls = pd.ExcelFile(uploaded_file)
+        sheet_names = xls.sheet_names
+        
+        # Allow user to select the sheet
+        sheet = st.selectbox("Select a currency pair:", sheet_names)
+        df = pd.read_excel(xls, sheet_name=sheet)
         
         st.success("File uploaded successfully!")
         st.write("Preview of the uploaded file:")
         st.dataframe(df)
         
-        # Assuming the file contains 'Tenor' and 'Forward Points' columns
-        if 'Tenor' in df.columns and 'Forward Points' in df.columns:
+        # Ensure required columns exist
+        required_columns = {'Tenor', 'BID forward', 'ASK forward'}
+        if required_columns.issubset(df.columns):
             st.write("### Forward Points vs Tenor")
             
             # Plotting
             fig, ax = plt.subplots()
-            ax.plot(df['Tenor'], df['Forward Points'], marker='o', linestyle='-')
+            ax.plot(df['Tenor'], df['BID forward'], marker='o', linestyle='-', label='BID forward')
+            ax.plot(df['Tenor'], df['ASK forward'], marker='s', linestyle='--', label='ASK forward')
             ax.set_xlabel("Tenor")
-            ax.set_ylabel("Forward Points")
-            ax.set_title("Forward Points Curve")
+            ax.set_ylabel("Forward Rate")
+            ax.set_title(f"Forward Points Curve - {sheet}")
+            ax.legend()
+            plt.xticks(rotation=45)
             st.pyplot(fig)
         else:
-            st.warning("The uploaded file must contain 'Tenor' and 'Forward Points' columns.")
+            st.warning("The uploaded file must contain 'Tenor', 'BID forward', and 'ASK forward' columns.")
     except Exception as e:
         st.error(f"Error processing file: {e}")
