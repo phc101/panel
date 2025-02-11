@@ -31,6 +31,13 @@ if uploaded_file is not None:
             df['Adjusted BID forward'] = custom_spot_rate + (df['BID forward'] - df['BID forward'][0])
             df['Adjusted ASK forward'] = custom_spot_rate + (df['ASK forward'] - df['ASK forward'][0])
             
+            # Adjust SP row separately
+            df.loc[df['Tenor'] == 'SP', 'Adjusted BID forward'] = custom_spot_rate
+            df.loc[df['Tenor'] == 'SP', 'Adjusted ASK forward'] = custom_spot_rate
+            
+            st.write("### Adjusted Forward Points Table")
+            st.dataframe(df)
+            
             st.write("### Forward Points vs Tenor")
             
             # Plotting
