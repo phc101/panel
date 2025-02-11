@@ -24,12 +24,19 @@ if uploaded_file is not None:
         # Ensure required columns exist
         required_columns = {'Tenor', 'BID forward', 'ASK forward'}
         if required_columns.issubset(df.columns):
+            # User input for custom spot rate
+            custom_spot_rate = st.number_input("Enter custom spot rate:", min_value=0.0, value=df['BID forward'][0])
+            
+            # Adjust forward rates based on custom spot rate
+            df['Adjusted BID forward'] = custom_spot_rate + (df['BID forward'] - df['BID forward'][0])
+            df['Adjusted ASK forward'] = custom_spot_rate + (df['ASK forward'] - df['ASK forward'][0])
+            
             st.write("### Forward Points vs Tenor")
             
             # Plotting
             fig, ax = plt.subplots()
-            ax.plot(df['Tenor'], df['BID forward'], marker='o', linestyle='-', label='BID forward')
-            ax.plot(df['Tenor'], df['ASK forward'], marker='s', linestyle='--', label='ASK forward')
+            ax.plot(df['Tenor'], df['Adjusted BID forward'], marker='o', linestyle='-', label='Adjusted BID forward')
+            ax.plot(df['Tenor'], df['Adjusted ASK forward'], marker='s', linestyle='--', label='Adjusted ASK forward')
             ax.set_xlabel("Tenor")
             ax.set_ylabel("Forward Rate")
             ax.set_title(f"Forward Points Curve - {sheet}")
