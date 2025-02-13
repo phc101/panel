@@ -1,35 +1,25 @@
 import requests
-from bs4 import BeautifulSoup
-from googlesearch import search
+import json
 
-def find_polish_exporters_to_uk():
-    query = "site:.pl export to UK OR exporting to UK OR eksport do UK OR eksport Wielka Brytania"
-    company_urls = []
+# Replace with your SerpAPI key
+SERPAPI_KEY = "your_serpapi_key"
 
-    print("Searching for Polish companies exporting to the UK...")
+# Google search query to find Polish exporters to the UK
+QUERY = "site:.pl export to UK OR exporting to UK OR eksport do UK OR eksport Wielka Brytania"
 
-    for url in search(query, num=20, stop=20, lang="pl"):
-        try:
-            response = requests.get(url, timeout=5)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, "html.parser")
-                text = soup.get_text().lower()
-                
-                # Look for keywords in the page text
-                keywords = ["export to uk", "exporting to uk", "eksport do uk", "eksport wielka brytania"]
-                if any(keyword in text for keyword in keywords):
-                    company_urls.append(url)
-                    print(f"Found: {url}")
+# SerpAPI endpoint
+API_URL = "https://serpapi.com/search.json"
 
-        except requests.RequestException:
-            print(f"Skipping {url} (error fetching page)")
+def get_polish_exporters_to_uk():
+    params = {
+        "q": QUERY,       # Search query
+        "engine": "google",  # Use Google search engine
+        "api_key": SERPAPI_KEY,  # Your API key
+        "num": 20,        # Number of results to fetch
+        "hl": "pl",       # Polish language results
+    }
 
-    if not company_urls:
-        print("No relevant company websites found.")
-    else:
-        print("\nList of Polish companies exporting to the UK:")
-        for url in company_urls:
-            print(url)
+    print("Fetching search results from SerpAPI...")
 
-if __name__ == "__main__":
-    find_polish_exporters_to_uk()
+    try:
+        response = requests.get(API_URL, params=params)
