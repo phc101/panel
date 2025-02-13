@@ -1,9 +1,3 @@
-# For virtualenv
-source venv/bin/activate  # (Mac/Linux)
-venv\Scripts\activate  # (Windows)
-
-# Then install
-pip install tldextract
 import streamlit as st
 import requests
 import time
