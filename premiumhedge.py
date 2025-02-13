@@ -74,11 +74,12 @@ if st.session_state.search_count < 10:
             data = response.json()
             all_results = {result["link"] for result in data.get("organic_results", [])}
 
-            # Remove government websites, news articles, and previously found results
-            non_gov_results = [
-                url for url in all_results if ".gov.pl" not in url and "news" not in url and "blog" not in url
+            # Remove unwanted sites (news, directories, government, blogs)
+            filtered_results = [
+                url for url in all_results if 
+                not any(bad in url for bad in ["news", "blog", "directory", "aleo.com", "panoramafirm.pl", ".gov.pl"])
             ]
-            new_results = list(set(non_gov_results) - st.session_state.previous_results)
+            new_results = list(set(filtered_results) - st.session_state.previous_results)
 
             valid_companies = []
             seen_domains = set()
