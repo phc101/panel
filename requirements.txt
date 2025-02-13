@@ -5,4 +5,5 @@ numpy
 matplotlib
 openpyxl
 scipy
-
+beautifulsoup4
+tldextract
