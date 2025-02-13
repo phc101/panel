@@ -1,11 +1,10 @@
 import streamlit as st
 import requests
-import random
 import time
 from bs4 import BeautifulSoup
 import tldextract
 
-# SerpAPI Key (replace with your key)
+# SerpAPI Key (Replace with your real API key)
 SERPAPI_KEY = "e9626f65ccba8349ed8f9a3b9fbb448092d151f7d8998df5a8bc4c354c85e31a"
 
 # Industry filter dictionary
