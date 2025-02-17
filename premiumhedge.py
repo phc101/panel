@@ -24,6 +24,8 @@ if "user" not in st.session_state:
     st.session_state.login_status = False
 if "hedge_ratios" not in st.session_state:
     st.session_state.hedge_ratios = [75] * 12  # Ensure state persistence
+if "fx_flows" not in st.session_state:
+    st.session_state.fx_flows = {i: [100000] for i in range(12)}  # Default flow per month
 
 # Streamlit Authentication
 st.set_page_config(layout="wide")
@@ -78,21 +80,6 @@ if st.session_state.login_status:
         user_doc_ref.set({"email": st.session_state.user.email, "role": "user"})
         st.warning("User data not found in Firestore. A new record has been created.")
 
-    # ---------------------- Load or Save Data from Firestore ---------------------- #
-    def load_data(user_id):
-        doc_ref = db.collection("hedging_data").document(user_id)
-        doc = doc_ref.get()
-        if doc.exists:
-            return pd.DataFrame(doc.to_dict()["data"])
-        else:
-            return None
-
-    def save_data(df, user_id):
-        doc_ref = db.collection("hedging_data").document(user_id)
-        doc_ref.set({"data": df.to_dict(orient="records")})
-
-    data_loaded = load_data(user_id)
-    
     # ---------------------- Kanban Style Layout ---------------------- #
     st.write("### Hedging Plan (Kanban Style)")
     
@@ -106,13 +93,18 @@ if st.session_state.login_status:
     # Expected FX Flow Row
     st.write("#### Expected FX Flow")
     cols = st.columns(num_months)
-    data = []
     for i in range(num_months):
         with cols[i]:
-            amount = st.number_input(f"Month {months[i]}", value=100000 if data_loaded is None or "Expected FX Flow" not in data_loaded.columns else int(data_loaded.iloc[i]["Expected FX Flow"]), step=10000, key=f"flow_{i+1}")
-            data.append(amount)
+            st.write(months[i])
+            flows = st.session_state.fx_flows[i]
+            for j in range(len(flows)):
+                flows[j] = st.number_input(f"Flow {j+1} ({months[i]})", value=flows[j], step=10000, key=f"flow_{i}_{j}")
+            
+            if len(flows) < 10:  # Allow up to 10 flows per month
+                if st.button("+", key=f"add_flow_{i}"):
+                    st.session_state.fx_flows[i].append(10000)  # Default additional flow
     
-    df = pd.DataFrame({"Month": months, "Expected FX Flow": data})
+    df = pd.DataFrame({"Month": months, "Expected FX Flow": [sum(st.session_state.fx_flows[i]) for i in range(num_months)]})
     
     # Hedge Ratio Row
     st.write("#### Hedge Ratio")
