@@ -99,10 +99,15 @@ if st.session_state.login_status:
             flows = st.session_state.fx_flows[i]
             updated_flows = []
             for j in range(len(flows)):
-                new_value = st.number_input(f"Flow {j+1} ({months[i]})", value=flows[j], step=10000, key=f"flow_{i}_{j}")
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    new_value = st.number_input(f"Flow {j+1} ({months[i]})", value=flows[j], step=10000, key=f"flow_{i}_{j}")
+                with col2:
+                    if st.button("❌", key=f"remove_flow_{i}_{j}"):
+                        continue  # Skip adding this flow to remove it
                 updated_flows.append(new_value)
             
-            if len(flows) < 10:  # Allow up to 10 flows per month
+            if len(updated_flows) < 10:  # Allow up to 10 flows per month
                 if st.button("+", key=f"add_flow_{i}"):
                     updated_flows.append(10000)  # Default additional flow
             
