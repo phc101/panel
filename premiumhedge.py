@@ -109,38 +109,25 @@ if st.session_state.login_status:
     spot_rate = st.session_state.budget_rate
     forward_rates = [spot_rate * (1 + (st.session_state.forward_points / 100) * (i / 12)) for i in range(1, num_months + 1)]
     
-    # Expected FX Flow
-    st.write("#### Expected FX Flow")
-    cols = st.columns(num_months)
-    for i in range(num_months):
-        with cols[i]:
-            st.session_state.fx_flows[i] = int(st.number_input(f"{months[i]}", value=int(st.session_state.fx_flows[i]), step=10000, key=f"flow_{i}"))
-    
-    df = pd.DataFrame({"Month": months, "Expected FX Flow": st.session_state.fx_flows, "Forward Rate": forward_rates})
-    
-    # Hedge Ratio
-    st.write("#### Hedge Ratio")
-    hedge_ratios = []
-    cols = st.columns(num_months)
-    for i in range(num_months):
-        with cols[i]:
-            default_value = int(st.session_state.hedge_ratios[i])
-            ratio = st.slider(f"{months[i]}", min_value=0, max_value=100, value=default_value, key=f"hedge_{i+1}")
-            hedge_ratios.append(ratio / 100)
-    
-    st.session_state.hedge_ratios = [int(r * 100) for r in hedge_ratios]
-    df["Hedge Ratio"] = hedge_ratios
-    df["Hedged Amount"] = df["Expected FX Flow"] * df["Hedge Ratio"]
+    df = pd.DataFrame({"Month": months, "Forward Rate": forward_rates, "Budget Rate": [st.session_state.budget_rate] * num_months})
     
     # ---------------------- Chart Visualization ---------------------- #
-    st.write("### Hedging vs Budget Rate vs Forward Rates")
+    st.write("### Forward Rates vs Budget Rate")
     fig, ax = plt.subplots()
-    ax.plot(months, df["Hedged Amount"], marker='o', label='Hedged Amount')
     ax.plot(months, df["Forward Rate"], marker='s', linestyle='dashed', label='Forward Rate')
-    ax.axhline(y=st.session_state.budget_rate, color='r', linestyle='--', label='Budget Rate')
+    ax.plot(months, df["Budget Rate"], marker='o', linestyle='solid', label='Budget Rate', color='r')
     ax.set_ylabel("Rate (EUR/PLN)")
     ax.set_xlabel("Months")
     ax.legend()
     st.pyplot(fig)
+    
+    # ---------------------- Save Updated Data ---------------------- #
+    def save_data(df, user_id):
+        try:
+            doc_ref = db.collection("hedging_data").document(user_id)
+            doc_ref.set({"data": df.to_dict(orient="records")})
+            st.success("Hedging data saved successfully!")
+        except Exception as e:
+            st.error(f"Error saving data: {e}")
     
     save_data(df, user_id)
