@@ -22,21 +22,25 @@ else:
 st.title("Automatic FX Hedging System")
 login_status = False
 
+option = st.radio("Select an option:", ["Login", "Create New Account"])
 user_email = st.text_input("Enter your Email:")
 password = st.text_input("Enter your Password:", type="password")
 
-if st.button("Login/Register"):
-    try:
-        user = auth.get_user_by_email(user_email)
-        st.success(f"Logged in as {user.email}")
-        login_status = True
-    except:
-        st.warning("User not found. Creating a new account...")
+if option == "Login":
+    if st.button("Login"):
+        try:
+            user = auth.get_user_by_email(user_email)
+            st.success(f"Logged in as {user.email}")
+            login_status = True
+        except:
+            st.error("User not found. Please check your credentials or create a new account.")
+
+elif option == "Create New Account":
+    if st.button("Register"):
         try:
             user = auth.create_user(email=user_email, password=password)
-            st.success(f"Account created successfully for {user.email}")
             db.collection("users").document(user.uid).set({"email": user_email, "role": "user"})
-            login_status = True
+            st.success(f"Account created successfully for {user.email}. Please log in.")
         except Exception as e:
             st.error(f"Error creating account: {e}")
 
