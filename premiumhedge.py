@@ -91,7 +91,7 @@ if st.session_state.login_status:
     
     # Budget Rate
     st.write("#### Budget Rate")
-    st.session_state.budget_rate = st.number_input("Enter Budget Rate (EUR/PLN):", value=float(st.session_state.budget_rate), step=0.01)
+    st.session_state.budget_rate = float(st.number_input("Enter Budget Rate (EUR/PLN):", value=float(st.session_state.budget_rate), step=0.01))
     
     # Expected FX Flow
     st.write("#### Expected FX Flow")
@@ -108,8 +108,8 @@ if st.session_state.login_status:
     cols = st.columns(num_months)
     for i in range(num_months):
         with cols[i]:
-            default_value = st.session_state.hedge_ratios[i]
-            ratio = st.slider(f"{months[i]}", min_value=0, max_value=100, value=int(default_value), key=f"hedge_{i+1}")
+            default_value = int(st.session_state.hedge_ratios[i])
+            ratio = st.slider(f"{months[i]}", min_value=0, max_value=100, value=default_value, key=f"hedge_{i+1}")
             hedge_ratios.append(ratio / 100)
     
     # Update session state for hedge ratios to persist changes
