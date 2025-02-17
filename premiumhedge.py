@@ -97,12 +97,16 @@ if st.session_state.login_status:
         with cols[i]:
             st.write(months[i])
             flows = st.session_state.fx_flows[i]
+            updated_flows = []
             for j in range(len(flows)):
-                flows[j] = st.number_input(f"Flow {j+1} ({months[i]})", value=flows[j], step=10000, key=f"flow_{i}_{j}")
+                new_value = st.number_input(f"Flow {j+1} ({months[i]})", value=flows[j], step=10000, key=f"flow_{i}_{j}")
+                updated_flows.append(new_value)
             
             if len(flows) < 10:  # Allow up to 10 flows per month
                 if st.button("+", key=f"add_flow_{i}"):
-                    st.session_state.fx_flows[i].append(10000)  # Default additional flow
+                    updated_flows.append(10000)  # Default additional flow
+            
+            st.session_state.fx_flows[i] = updated_flows
     
     df = pd.DataFrame({"Month": months, "Expected FX Flow": [sum(st.session_state.fx_flows[i]) for i in range(num_months)]})
     
