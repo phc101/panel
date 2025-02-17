@@ -22,6 +22,7 @@ if "user" not in st.session_state:
     st.session_state.user = None
     st.session_state.user_id = None
     st.session_state.login_status = False
+if "hedge_ratios" not in st.session_state:
     st.session_state.hedge_ratios = [75] * 12  # Ensure state persistence
 
 # Streamlit Authentication
@@ -100,7 +101,7 @@ if st.session_state.login_status:
     
     # Display Months
     st.write("#### Timeline")
-    st.write(" | ".join(months))
+    st.markdown("| " + " | ".join(months) + " |\n" + "|---" * num_months + "|")
     
     # Expected FX Flow Row
     st.write("#### Expected FX Flow")
@@ -108,7 +109,7 @@ if st.session_state.login_status:
     data = []
     for i in range(num_months):
         with cols[i]:
-            amount = st.number_input(f"Month {i+1}", value=100000 if data_loaded is None or "Expected FX Flow" not in data_loaded.columns else int(data_loaded.iloc[i]["Expected FX Flow"]), step=10000, key=f"flow_{i+1}")
+            amount = st.number_input(f"Month {months[i]}", value=100000 if data_loaded is None or "Expected FX Flow" not in data_loaded.columns else int(data_loaded.iloc[i]["Expected FX Flow"]), step=10000, key=f"flow_{i+1}")
             data.append(amount)
     
     df = pd.DataFrame({"Month": months, "Expected FX Flow": data})
@@ -119,8 +120,8 @@ if st.session_state.login_status:
     cols = st.columns(num_months)
     for i in range(num_months):
         with cols[i]:
-            default_value = st.session_state.hedge_ratios[i]
-            ratio = st.slider(f"Month {i+1}", min_value=0, max_value=100, value=default_value, key=f"hedge_{i+1}")
+            default_value = st.session_state.hedge_ratios[i] if i < len(st.session_state.hedge_ratios) else 75
+            ratio = st.slider(f"{months[i]}", min_value=0, max_value=100, value=default_value, key=f"hedge_{i+1}")
             hedge_ratios.append(ratio / 100)
     
     # Update session state for hedge ratios to persist changes
