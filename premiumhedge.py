@@ -25,13 +25,20 @@ login_status = False
 user_email = st.text_input("Enter your Email:")
 password = st.text_input("Enter your Password:", type="password")
 
-if st.button("Login"):
+if st.button("Login/Register"):
     try:
         user = auth.get_user_by_email(user_email)
         st.success(f"Logged in as {user.email}")
         login_status = True
     except:
-        st.error("Invalid credentials or user not found.")
+        st.warning("User not found. Creating a new account...")
+        try:
+            user = auth.create_user(email=user_email, password=password)
+            st.success(f"Account created successfully for {user.email}")
+            db.collection("users").document(user.uid).set({"email": user_email, "role": "user"})
+            login_status = True
+        except Exception as e:
+            st.error(f"Error creating account: {e}")
 
 if login_status:
     user_id = user.uid
@@ -40,8 +47,6 @@ if login_status:
     
     if user_doc.exists:
         user_role = user_doc.to_dict().get("role", "user")
-    else:
-        db.collection("users").document(user_id).set({"email": user_email, "role": "user"})
     
     # ---------------------- Admin Dashboard ---------------------- #
     if user_role == "admin":
@@ -113,7 +118,7 @@ if login_status:
             hedge_ratios.append(ratio / 100)
 
     df["Hedge Ratio"] = hedge_ratios
-
+    
     # ---------------------- Market Data & Forward Pricing ---------------------- #
     spot_rate = st.number_input("Current Spot Rate (EUR/PLN):", value=4.38, step=0.01)
     forward_points = st.number_input("Forward Points (Annualized %):", value=0.91, step=0.01) / 100
@@ -122,26 +127,5 @@ if login_status:
     df["Forward Rate"] = forward_rates
 
     # ---------------------- Hedge Execution Logic ---------------------- #
-    def calculate_hedge(df, user_type, max_hedge_price=None, min_hedge_price=None):
-        hedged_amounts = []
-        final_hedge_ratios = []
-        
-        for index, row in df.iterrows():
-            forward_rate = row["Forward Rate"]
-            hedge_ratio = row["Hedge Ratio"]
-            
-            if user_type == "Importer" and forward_rate > max_hedge_price:
-                hedge_ratio = 0
-            elif user_type == "Exporter" and forward_rate < min_hedge_price:
-                hedge_ratio = 0
-            
-            hedged_amount = row["Expected FX Flow"] * hedge_ratio
-            hedged_amounts.append(hedged_amount)
-            final_hedge_ratios.append(hedge_ratio)
-        
-        df["Final Hedge Ratio"] = final_hedge_ratios
-        df["Hedged Amount"] = hedged_amounts
-        return df
-
     df = calculate_hedge(df, user_type, max_hedge_price if user_type == "Importer" else None, min_hedge_price if user_type == "Exporter" else None)
     save_data(df, user_id)
