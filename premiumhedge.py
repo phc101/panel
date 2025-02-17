@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -6,10 +7,16 @@ import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
 # ---------------------- Firebase Authentication & Database ---------------------- #
-cred = credentials.Certificate("firebase_credentials.json")
-if not firebase_admin._apps:
-    firebase_admin.initialize_app(cred)
-db = firestore.client()
+FIREBASE_CREDENTIALS = "firebase_credentials.json"
+
+if os.path.exists(FIREBASE_CREDENTIALS):
+    cred = credentials.Certificate(FIREBASE_CREDENTIALS)
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
+    db = firestore.client()
+else:
+    st.error("Firebase credentials file not found. Please add 'firebase_credentials.json'.")
+    st.stop()
 
 # Streamlit Authentication
 st.title("Automatic FX Hedging System")
