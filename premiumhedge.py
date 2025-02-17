@@ -6,14 +6,18 @@ import streamlit as st
 st.title("Automatic FX Hedging System")
 
 # User selects if they are an Exporter or Importer
-user_type = st.radio("Select Business Type:", ["Exporter", "Importer"])
+user_type = st.radio("Select Business Type:", ["Exporter", "Importer"], horizontal=True)
 
-# Input expected FX flows
+# Input expected FX flows using a 4x3 grid layout
+st.write("### Expected FX Flows (12-Month View)")
+cols = st.columns(4)
 data = []
 num_months = 12  # Default to 12-month hedging horizon
-for i in range(1, num_months + 1):
-    amount = st.number_input(f"Expected FX Flow for Month {i}:", value=100000, step=10000)
-    data.append(amount)
+
+for i in range(num_months):
+    with cols[i % 4]:
+        amount = st.number_input(f"Month {i+1}", value=100000, step=10000, key=f"flow_{i+1}")
+        data.append(amount)
 
 df = pd.DataFrame({"Month": range(1, num_months + 1), "Expected FX Flow": data})
 
@@ -24,11 +28,15 @@ if user_type == "Importer":
 if user_type == "Exporter":
     min_hedge_price = st.number_input("Set Min Hedge Price (No Forward Hedge Below):", value=4.25, step=0.01)
 
-# Hedge ratio selection per month
+# Hedge ratio selection per month using a 4x3 grid layout
+st.write("### Hedge Ratios (12-Month View)")
+cols = st.columns(4)
 hedge_ratios = []
-for i in range(1, num_months + 1):
-    ratio = st.slider(f"Hedge Ratio for Month {i} (%):", min_value=0, max_value=100, value=75)
-    hedge_ratios.append(ratio / 100)
+
+for i in range(num_months):
+    with cols[i % 4]:
+        ratio = st.slider(f"Month {i+1}", min_value=0, max_value=100, value=75, key=f"hedge_{i+1}")
+        hedge_ratios.append(ratio / 100)
 
 df["Hedge Ratio"] = hedge_ratios
 
