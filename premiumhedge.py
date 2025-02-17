@@ -38,9 +38,19 @@ if option == "Login":
 elif option == "Create New Account":
     if st.button("Register"):
         try:
-            user = auth.create_user(email=user_email, password=password)
-            db.collection("users").document(user.uid).set({"email": user_email, "role": "user"})
-            st.success(f"Account created successfully for {user.email}. Please log in.")
+            # Check if user already exists
+            existing_user = None
+            try:
+                existing_user = auth.get_user_by_email(user_email)
+            except:
+                pass  # User does not exist
+            
+            if existing_user:
+                st.error("This email is already registered. Please log in instead.")
+            else:
+                user = auth.create_user(email=user_email, password=password)
+                db.collection("users").document(user.uid).set({"email": user_email, "role": "user"})
+                st.success(f"Account created successfully for {user.email}. Please log in.")
         except Exception as e:
             st.error(f"Error creating account: {e}")
 
