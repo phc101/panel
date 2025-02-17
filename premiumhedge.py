@@ -120,10 +120,15 @@ if st.session_state.login_status:
 
     for i in range(num_months):
         with cols[i % 4]:
-            ratio = st.slider(f"Month {i+1}", min_value=0, max_value=100, value=75 if data_loaded is None or "Hedge Ratio" not in data_loaded.columns else int(data_loaded.iloc[i]["Hedge Ratio"]), key=f"hedge_{i+1}")
+            default_value = 75 if data_loaded is None or "Hedge Ratio" not in data_loaded.columns else int(data_loaded.iloc[i].get("Hedge Ratio", 75))
+            ratio = st.slider(f"Month {i+1}", min_value=0, max_value=100, value=default_value, key=f"hedge_{i+1}")
             hedge_ratios.append(ratio / 100)
 
     df["Hedge Ratio"] = hedge_ratios
+
+    # ---------------------- Display Data ---------------------- #
+    st.write("### Hedging Data Table")
+    st.dataframe(df)
     
     # ---------------------- Save Updated Data ---------------------- #
     save_data(df, user_id)
