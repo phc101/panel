@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 import streamlit as st
+import matplotlib.pyplot as plt
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
@@ -25,7 +26,9 @@ if "user" not in st.session_state:
 if "hedge_ratios" not in st.session_state:
     st.session_state.hedge_ratios = [75] * 12  # Ensure state persistence
 if "fx_flows" not in st.session_state:
-    st.session_state.fx_flows = {i: [100000] for i in range(12)}  # Default flow per month
+    st.session_state.fx_flows = [100000] * 12  # Single default flow per month
+if "budget_rate" not in st.session_state:
+    st.session_state.budget_rate = 4.40  # Default budget rate
 
 # Streamlit Authentication
 st.set_page_config(layout="wide")
@@ -86,59 +89,44 @@ if st.session_state.login_status:
     months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     num_months = 12
     
-    # Display Months
-    st.write("#### Timeline")
-    st.markdown("| " + " | ".join(months) + " |\n" + "|---" * num_months + "|")
+    # Budget Rate
+    st.write("#### Budget Rate")
+    st.session_state.budget_rate = st.number_input("Enter Budget Rate (EUR/PLN):", value=st.session_state.budget_rate, step=0.01)
     
-    # Expected FX Flow Row
+    # Expected FX Flow
     st.write("#### Expected FX Flow")
     cols = st.columns(num_months)
     for i in range(num_months):
         with cols[i]:
-            st.write(months[i])
-            flows = st.session_state.fx_flows[i]
-            updated_flows = []
-            for j in range(len(flows)):
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    new_value = st.number_input(f"Flow {j+1} ({months[i]})", value=flows[j], step=10000, key=f"flow_{i}_{j}")
-                with col2:
-                    if st.button("❌", key=f"remove_flow_{i}_{j}"):
-                        continue  # Skip adding this flow to remove it
-                updated_flows.append(new_value)
-            
-            if len(updated_flows) < 10:  # Allow up to 10 flows per month
-                if st.button("+", key=f"add_flow_{i}"):
-                    updated_flows.append(10000)  # Default additional flow
-            
-            st.session_state.fx_flows[i] = updated_flows
+            st.session_state.fx_flows[i] = st.number_input(f"{months[i]}", value=st.session_state.fx_flows[i], step=10000, key=f"flow_{i}")
     
-    df = pd.DataFrame({"Month": months, "Expected FX Flow": [sum(st.session_state.fx_flows[i]) for i in range(num_months)]})
+    df = pd.DataFrame({"Month": months, "Expected FX Flow": st.session_state.fx_flows})
     
-    # Hedge Ratio Row
+    # Hedge Ratio
     st.write("#### Hedge Ratio")
     hedge_ratios = []
     cols = st.columns(num_months)
     for i in range(num_months):
         with cols[i]:
-            default_value = st.session_state.hedge_ratios[i] if i < len(st.session_state.hedge_ratios) else 75
+            default_value = st.session_state.hedge_ratios[i]
             ratio = st.slider(f"{months[i]}", min_value=0, max_value=100, value=default_value, key=f"hedge_{i+1}")
             hedge_ratios.append(ratio / 100)
     
     # Update session state for hedge ratios to persist changes
     st.session_state.hedge_ratios = [int(r * 100) for r in hedge_ratios]
-    
     df["Hedge Ratio"] = hedge_ratios
-    
-    # ---------------------- Forward Pricing Effects ---------------------- #
-    spot_rate = st.number_input("Current Spot Rate (EUR/PLN):", value=4.38, step=0.01)
-    forward_points = st.number_input("Forward Points (Annualized %):", value=0.91, step=0.01) / 100
-    forward_rates = [spot_rate * (1 + forward_points * (i / 12)) for i in range(1, num_months + 1)]
-    df["Forward Rate"] = forward_rates
+    df["Hedged Amount"] = df["Expected FX Flow"] * df["Hedge Ratio"]
+    df["Budget Rate"] = st.session_state.budget_rate
 
-    # ---------------------- Display Data ---------------------- #
-    st.write("### Hedging Data Table")
-    st.dataframe(df)
+    # ---------------------- Chart Visualization ---------------------- #
+    st.write("### Hedging vs Budget Rate")
+    fig, ax = plt.subplots()
+    ax.plot(months, df["Hedged Amount"], marker='o', label='Hedged Amount')
+    ax.axhline(y=st.session_state.budget_rate, color='r', linestyle='--', label='Budget Rate')
+    ax.set_ylabel("Hedged Amount (EUR)")
+    ax.set_xlabel("Months")
+    ax.legend()
+    st.pyplot(fig)
     
     # ---------------------- Save Updated Data ---------------------- #
     def save_data(df, user_id):
