@@ -76,28 +76,6 @@ if st.session_state.login_status:
         user_doc_ref.set({"email": st.session_state.user.email, "role": "user"})
         st.warning("User data not found in Firestore. A new record has been created.")
 
-    # ---------------------- Admin Dashboard ---------------------- #
-    if user_role == "admin":
-        st.write("### Admin Dashboard")
-        users_ref = db.collection("users").stream()
-        users_data = [user.to_dict() for user in users_ref]
-        users_df = pd.DataFrame(users_data)
-        st.dataframe(users_df)
-        
-        selected_user = st.selectbox("Select User to View Hedging Data:", users_df["email"] if not users_df.empty else [])
-        
-        if selected_user:
-            selected_user_id = next((user.id for user in db.collection("users").stream() if user.to_dict().get("email") == selected_user), None)
-            if selected_user_id:
-                user_data_ref = db.collection("hedging_data").document(selected_user_id)
-                user_data = user_data_ref.get()
-                if user_data.exists:
-                    user_df = pd.DataFrame(user_data.to_dict()["data"])
-                    st.write(f"### Hedging Data for {selected_user}")
-                    st.dataframe(user_df)
-                else:
-                    st.warning("No hedging data available for this user.")
-    
     # ---------------------- Load or Save Data from Firestore ---------------------- #
     def load_data(user_id):
         doc_ref = db.collection("hedging_data").document(user_id)
@@ -123,17 +101,17 @@ if st.session_state.login_status:
 
     for i in range(num_months):
         with cols[i % 4]:
-            amount = st.number_input(f"Month {i+1}", value=100000 if data_loaded is None else int(data_loaded.iloc[i]["Expected FX Flow"]), step=10000, key=f"flow_{i+1}")
+            amount = st.number_input(f"Month {i+1}", value=100000 if data_loaded is None or "Expected FX Flow" not in data_loaded.columns else int(data_loaded.iloc[i]["Expected FX Flow"]), step=10000, key=f"flow_{i+1}")
             data.append(amount)
 
     df = pd.DataFrame({"Month": range(1, num_months + 1), "Expected FX Flow": data})
 
     # User-defined budget rate and hedging limits
-    budget_rate = st.number_input("Enter Budget Rate (EUR/PLN):", value=4.40 if data_loaded is None else float(data_loaded.iloc[0]["Budget Rate"]), step=0.01)
+    budget_rate = st.number_input("Enter Budget Rate (EUR/PLN):", value=4.40 if data_loaded is None or "Budget Rate" not in data_loaded.columns else float(data_loaded.iloc[0]["Budget Rate"]), step=0.01)
     if user_type == "Importer":
-        max_hedge_price = st.number_input("Set Max Hedge Price (No Forward Hedge Above):", value=4.35 if data_loaded is None else float(data_loaded.iloc[0]["Max Hedge Price"]), step=0.01)
+        max_hedge_price = st.number_input("Set Max Hedge Price (No Forward Hedge Above):", value=4.35 if data_loaded is None or "Max Hedge Price" not in data_loaded.columns else float(data_loaded.iloc[0]["Max Hedge Price"]), step=0.01)
     if user_type == "Exporter":
-        min_hedge_price = st.number_input("Set Min Hedge Price (No Forward Hedge Below):", value=4.25 if data_loaded is None else float(data_loaded.iloc[0]["Min Hedge Price"]), step=0.01)
+        min_hedge_price = st.number_input("Set Min Hedge Price (No Forward Hedge Below):", value=4.25 if data_loaded is None or "Min Hedge Price" not in data_loaded.columns else float(data_loaded.iloc[0]["Min Hedge Price"]), step=0.01)
 
     # Hedge ratio selection per month
     st.write("### Hedge Ratios (12-Month View)")
@@ -142,7 +120,7 @@ if st.session_state.login_status:
 
     for i in range(num_months):
         with cols[i % 4]:
-            ratio = st.slider(f"Month {i+1}", min_value=0, max_value=100, value=75 if data_loaded is None else int(data_loaded.iloc[i]["Hedge Ratio"]), key=f"hedge_{i+1}")
+            ratio = st.slider(f"Month {i+1}", min_value=0, max_value=100, value=75 if data_loaded is None or "Hedge Ratio" not in data_loaded.columns else int(data_loaded.iloc[i]["Hedge Ratio"]), key=f"hedge_{i+1}")
             hedge_ratios.append(ratio / 100)
 
     df["Hedge Ratio"] = hedge_ratios
