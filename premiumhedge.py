@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
+import matplotlib.pyplot as plt
 
 # ---------------------- User Inputs ---------------------- #
 st.title("Automatic FX Hedging System")
@@ -102,3 +103,14 @@ df = suggest_alternative_hedge(df, user_type, max_hedge_price if user_type == "I
 
 st.write("### Adjusted Hedge Strategy with Alternative Recommendations")
 st.dataframe(df[["Month", "Expected FX Flow", "Forward Rate", "Final Hedge Ratio", "Hedged Amount", "Alternative Hedge Suggestion"]])
+
+# ---------------------- Hedging Structure Chart ---------------------- #
+st.write("### Hedging Structure Visualization")
+fig, ax = plt.subplots(figsize=(10, 5))
+ax.bar(df["Month"], df["Hedged Amount"], label="Hedged Amount", color="blue", alpha=0.6)
+ax.plot(df["Month"], df["Expected FX Flow"], marker="o", linestyle="--", color="red", label="Expected FX Flow")
+ax.set_xlabel("Month")
+ax.set_ylabel("Amount (EUR)")
+ax.set_title("Hedging Structure Over 12 Months")
+ax.legend()
+st.pyplot(fig)
