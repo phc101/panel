@@ -31,6 +31,8 @@ if "budget_rate" not in st.session_state:
     st.session_state.budget_rate = 4.40  # Default budget rate
 if "user_type" not in st.session_state:
     st.session_state.user_type = "Exporter"  # Default to exporter
+if "forward_points" not in st.session_state:
+    st.session_state.forward_points = 0.5  # Default annualized forward points percentage
 
 # Streamlit Authentication
 st.set_page_config(layout="wide")
@@ -99,6 +101,14 @@ if st.session_state.login_status:
     st.write("#### Budget Rate")
     st.session_state.budget_rate = float(st.number_input("Enter Budget Rate (EUR/PLN):", value=float(st.session_state.budget_rate), step=0.01))
     
+    # Forward Points Input
+    st.write("#### Forward Pricing")
+    st.session_state.forward_points = st.number_input("Enter Forward Points (Annualized %):", value=st.session_state.forward_points, step=0.1)
+    
+    # Compute Forward Prices
+    spot_rate = st.session_state.budget_rate
+    forward_rates = [spot_rate * (1 + (st.session_state.forward_points / 100) * (i / 12)) for i in range(1, num_months + 1)]
+    
     # Expected FX Flow
     st.write("#### Expected FX Flow")
     cols = st.columns(num_months)
@@ -106,7 +116,7 @@ if st.session_state.login_status:
         with cols[i]:
             st.session_state.fx_flows[i] = int(st.number_input(f"{months[i]}", value=int(st.session_state.fx_flows[i]), step=10000, key=f"flow_{i}"))
     
-    df = pd.DataFrame({"Month": months, "Expected FX Flow": st.session_state.fx_flows})
+    df = pd.DataFrame({"Month": months, "Expected FX Flow": st.session_state.fx_flows, "Forward Rate": forward_rates})
     
     # Hedge Ratio
     st.write("#### Hedge Ratio")
@@ -118,29 +128,19 @@ if st.session_state.login_status:
             ratio = st.slider(f"{months[i]}", min_value=0, max_value=100, value=default_value, key=f"hedge_{i+1}")
             hedge_ratios.append(ratio / 100)
     
-    # Update session state for hedge ratios to persist changes
     st.session_state.hedge_ratios = [int(r * 100) for r in hedge_ratios]
     df["Hedge Ratio"] = hedge_ratios
     df["Hedged Amount"] = df["Expected FX Flow"] * df["Hedge Ratio"]
-    df["Budget Rate"] = st.session_state.budget_rate
     
     # ---------------------- Chart Visualization ---------------------- #
-    st.write("### Hedging vs Budget Rate")
+    st.write("### Hedging vs Budget Rate vs Forward Rates")
     fig, ax = plt.subplots()
     ax.plot(months, df["Hedged Amount"], marker='o', label='Hedged Amount')
+    ax.plot(months, df["Forward Rate"], marker='s', linestyle='dashed', label='Forward Rate')
     ax.axhline(y=st.session_state.budget_rate, color='r', linestyle='--', label='Budget Rate')
-    ax.set_ylabel("Hedged Amount (EUR)")
+    ax.set_ylabel("Rate (EUR/PLN)")
     ax.set_xlabel("Months")
     ax.legend()
     st.pyplot(fig)
-    
-    # ---------------------- Save Updated Data ---------------------- #
-    def save_data(df, user_id):
-        try:
-            doc_ref = db.collection("hedging_data").document(user_id)
-            doc_ref.set({"data": df.to_dict(orient="records")})
-            st.success("Hedging data saved successfully!")
-        except Exception as e:
-            st.error(f"Error saving data: {e}")
     
     save_data(df, user_id)
