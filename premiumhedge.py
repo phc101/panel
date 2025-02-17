@@ -101,7 +101,8 @@ if st.session_state.login_status:
     
     # Display Months
     st.write("#### Timeline")
-    st.markdown("| " + " | ".join(months) + " |\n" + "|---" * num_months + "|")
+    st.markdown("| " + " | ".join(months) + " |
+" + "|---" * num_months + "|")
     
     # Expected FX Flow Row
     st.write("#### Expected FX Flow")
@@ -129,6 +130,12 @@ if st.session_state.login_status:
     
     df["Hedge Ratio"] = hedge_ratios
     
+    # ---------------------- Forward Pricing Effects ---------------------- #
+    spot_rate = st.number_input("Current Spot Rate (EUR/PLN):", value=4.38, step=0.01)
+    forward_points = st.number_input("Forward Points (Annualized %):", value=0.91, step=0.01) / 100
+    forward_rates = [spot_rate * (1 + forward_points * (i / 12)) for i in range(1, num_months + 1)]
+    df["Forward Rate"] = forward_rates
+
     # ---------------------- Display Data ---------------------- #
     st.write("### Hedging Data Table")
     st.dataframe(df)
