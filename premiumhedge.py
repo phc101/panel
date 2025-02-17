@@ -101,8 +101,7 @@ if st.session_state.login_status:
     
     # Display Months
     st.write("#### Timeline")
-    st.markdown("| " + " | ".join(months) + " |
-" + "|---" * num_months + "|")
+    st.markdown("| " + " | ".join(months) + " |\n" + "|---" * num_months + "|")
     
     # Expected FX Flow Row
     st.write("#### Expected FX Flow")
