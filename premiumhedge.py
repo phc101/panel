@@ -29,6 +29,8 @@ if "fx_flows" not in st.session_state:
     st.session_state.fx_flows = [100000] * 12  # Single default flow per month
 if "budget_rate" not in st.session_state:
     st.session_state.budget_rate = 4.40  # Default budget rate
+if "user_type" not in st.session_state:
+    st.session_state.user_type = "Exporter"  # Default to exporter
 
 # Streamlit Authentication
 st.set_page_config(layout="wide")
@@ -83,6 +85,10 @@ if st.session_state.login_status:
         user_doc_ref.set({"email": st.session_state.user.email, "role": "user"})
         st.warning("User data not found in Firestore. A new record has been created.")
 
+    # ---------------------- User Type Selection ---------------------- #
+    st.write("### User Type")
+    st.session_state.user_type = st.radio("Select your role:", ["Exporter", "Importer"], index=0 if st.session_state.user_type == "Exporter" else 1)
+    
     # ---------------------- Kanban Style Layout ---------------------- #
     st.write("### Hedging Plan (Kanban Style)")
     
@@ -117,7 +123,7 @@ if st.session_state.login_status:
     df["Hedge Ratio"] = hedge_ratios
     df["Hedged Amount"] = df["Expected FX Flow"] * df["Hedge Ratio"]
     df["Budget Rate"] = st.session_state.budget_rate
-
+    
     # ---------------------- Chart Visualization ---------------------- #
     st.write("### Hedging vs Budget Rate")
     fig, ax = plt.subplots()
