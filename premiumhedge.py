@@ -101,6 +101,15 @@ if st.session_state.login_status:
     st.write("#### Budget Rate")
     st.session_state.budget_rate = float(st.number_input("Enter Budget Rate (EUR/PLN):", value=float(st.session_state.budget_rate), step=0.01))
     
+    # Expected FX Flow Row
+    st.write("#### Expected FX Flow")
+    cols = st.columns(num_months)
+    for i in range(num_months):
+        with cols[i]:
+            st.session_state.fx_flows[i] = int(st.number_input(f"{months[i]}", value=int(st.session_state.fx_flows[i]), step=10000, key=f"flow_{i}"))
+    
+    df = pd.DataFrame({"Month": months, "Expected FX Flow": st.session_state.fx_flows})
+    
     # Forward Points Input
     st.write("#### Forward Pricing")
     st.session_state.forward_points = st.number_input("Enter Forward Points (Annualized %):", value=st.session_state.forward_points, step=0.1)
@@ -109,7 +118,8 @@ if st.session_state.login_status:
     spot_rate = st.session_state.budget_rate
     forward_rates = [spot_rate * (1 + (st.session_state.forward_points / 100) * (i / 12)) for i in range(1, num_months + 1)]
     
-    df = pd.DataFrame({"Month": months, "Forward Rate": forward_rates, "Budget Rate": [st.session_state.budget_rate] * num_months})
+    df["Forward Rate"] = forward_rates
+    df["Budget Rate"] = [st.session_state.budget_rate] * num_months
     
     # ---------------------- Chart Visualization ---------------------- #
     st.write("### Forward Rates vs Budget Rate")
