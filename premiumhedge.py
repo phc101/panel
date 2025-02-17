@@ -136,4 +136,12 @@ if st.session_state.login_status:
     st.dataframe(df)
     
     # ---------------------- Save Updated Data ---------------------- #
+    def save_data(df, user_id):
+        try:
+            doc_ref = db.collection("hedging_data").document(user_id)
+            doc_ref.set({"data": df.to_dict(orient="records")})
+            st.success("Hedging data saved successfully!")
+        except Exception as e:
+            st.error(f"Error saving data: {e}")
+    
     save_data(df, user_id)
