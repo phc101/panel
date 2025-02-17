@@ -2,7 +2,6 @@ import os
 import pandas as pd
 import numpy as np
 import streamlit as st
-import matplotlib.pyplot as plt
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
@@ -90,42 +89,39 @@ if st.session_state.login_status:
         doc_ref.set({"data": df.to_dict(orient="records")})
 
     data_loaded = load_data(user_id)
-
-    # ---------------------- User Inputs ---------------------- #
-    user_type = st.radio("Select Business Type:", ["Exporter", "Importer"], horizontal=True)
-
-    st.write("### Expected FX Flows (12-Month View)")
-    cols = st.columns(4)
-    data = []
+    
+    # ---------------------- Kanban Style Layout ---------------------- #
+    st.write("### Hedging Plan (Kanban Style)")
+    
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     num_months = 12
-
+    
+    # Display Months
+    st.write("#### Timeline")
+    st.write(" | ".join(months))
+    
+    # Expected FX Flow Row
+    st.write("#### Expected FX Flow")
+    cols = st.columns(num_months)
+    data = []
     for i in range(num_months):
-        with cols[i % 4]:
+        with cols[i]:
             amount = st.number_input(f"Month {i+1}", value=100000 if data_loaded is None or "Expected FX Flow" not in data_loaded.columns else int(data_loaded.iloc[i]["Expected FX Flow"]), step=10000, key=f"flow_{i+1}")
             data.append(amount)
-
-    df = pd.DataFrame({"Month": range(1, num_months + 1), "Expected FX Flow": data})
-
-    # User-defined budget rate and hedging limits
-    budget_rate = st.number_input("Enter Budget Rate (EUR/PLN):", value=4.40 if data_loaded is None or "Budget Rate" not in data_loaded.columns else float(data_loaded.iloc[0]["Budget Rate"]), step=0.01)
-    if user_type == "Importer":
-        max_hedge_price = st.number_input("Set Max Hedge Price (No Forward Hedge Above):", value=4.35 if data_loaded is None or "Max Hedge Price" not in data_loaded.columns else float(data_loaded.iloc[0]["Max Hedge Price"]), step=0.01)
-    if user_type == "Exporter":
-        min_hedge_price = st.number_input("Set Min Hedge Price (No Forward Hedge Below):", value=4.25 if data_loaded is None or "Min Hedge Price" not in data_loaded.columns else float(data_loaded.iloc[0]["Min Hedge Price"]), step=0.01)
-
-    # Hedge ratio selection per month
-    st.write("### Hedge Ratios (12-Month View)")
-    cols = st.columns(4)
+    
+    df = pd.DataFrame({"Month": months, "Expected FX Flow": data})
+    
+    # Hedge Ratio Row
+    st.write("#### Hedge Ratio")
     hedge_ratios = []
-
+    cols = st.columns(num_months)
     for i in range(num_months):
-        with cols[i % 4]:
+        with cols[i]:
             default_value = 75 if data_loaded is None or "Hedge Ratio" not in data_loaded.columns else int(data_loaded.iloc[i].get("Hedge Ratio", 75))
             ratio = st.slider(f"Month {i+1}", min_value=0, max_value=100, value=default_value, key=f"hedge_{i+1}")
             hedge_ratios.append(ratio / 100)
-
     df["Hedge Ratio"] = hedge_ratios
-
+    
     # ---------------------- Display Data ---------------------- #
     st.write("### Hedging Data Table")
     st.dataframe(df)
