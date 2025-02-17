@@ -91,14 +91,14 @@ if st.session_state.login_status:
     
     # Budget Rate
     st.write("#### Budget Rate")
-    st.session_state.budget_rate = st.number_input("Enter Budget Rate (EUR/PLN):", value=st.session_state.budget_rate, step=0.01)
+    st.session_state.budget_rate = st.number_input("Enter Budget Rate (EUR/PLN):", value=float(st.session_state.budget_rate), step=0.01)
     
     # Expected FX Flow
     st.write("#### Expected FX Flow")
     cols = st.columns(num_months)
     for i in range(num_months):
         with cols[i]:
-            st.session_state.fx_flows[i] = st.number_input(f"{months[i]}", value=st.session_state.fx_flows[i], step=10000, key=f"flow_{i}")
+            st.session_state.fx_flows[i] = int(st.number_input(f"{months[i]}", value=int(st.session_state.fx_flows[i]), step=10000, key=f"flow_{i}"))
     
     df = pd.DataFrame({"Month": months, "Expected FX Flow": st.session_state.fx_flows})
     
@@ -109,7 +109,7 @@ if st.session_state.login_status:
     for i in range(num_months):
         with cols[i]:
             default_value = st.session_state.hedge_ratios[i]
-            ratio = st.slider(f"{months[i]}", min_value=0, max_value=100, value=default_value, key=f"hedge_{i+1}")
+            ratio = st.slider(f"{months[i]}", min_value=0, max_value=100, value=int(default_value), key=f"hedge_{i+1}")
             hedge_ratios.append(ratio / 100)
     
     # Update session state for hedge ratios to persist changes
