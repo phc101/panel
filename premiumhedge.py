@@ -22,8 +22,10 @@ if "user" not in st.session_state:
     st.session_state.user = None
     st.session_state.user_id = None
     st.session_state.login_status = False
+    st.session_state.hedge_ratios = [75] * 12  # Ensure state persistence
 
 # Streamlit Authentication
+st.set_page_config(layout="wide")
 st.title("Automatic FX Hedging System")
 
 if st.session_state.login_status:
@@ -117,9 +119,13 @@ if st.session_state.login_status:
     cols = st.columns(num_months)
     for i in range(num_months):
         with cols[i]:
-            default_value = 75 if data_loaded is None or "Hedge Ratio" not in data_loaded.columns else int(data_loaded.iloc[i].get("Hedge Ratio", 75))
+            default_value = st.session_state.hedge_ratios[i]
             ratio = st.slider(f"Month {i+1}", min_value=0, max_value=100, value=default_value, key=f"hedge_{i+1}")
             hedge_ratios.append(ratio / 100)
+    
+    # Update session state for hedge ratios to persist changes
+    st.session_state.hedge_ratios = [int(r * 100) for r in hedge_ratios]
+    
     df["Hedge Ratio"] = hedge_ratios
     
     # ---------------------- Display Data ---------------------- #
