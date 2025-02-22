@@ -58,8 +58,7 @@ hedge_recommendations = []
 for rate in settlement_rates:
     exporter_loss = (rate - exporter_forward_rate) * exporter_exposure
     importer_gain = (rate - importer_forward_rate) * importer_exposure
-    net_impact = exporter_loss + importer_gain
-    final_impact = net_impact + usdc_yield_earned
+    net_profit = exporter_loss + importer_gain + usdc_yield_earned
 
     # Generate Hedge Recommendations
     if rate > exporter_forward_rate:
@@ -69,7 +68,7 @@ for rate in settlement_rates:
     else:
         recommendation = "📊 Maintain current hedge ratios"
 
-    stress_test_results.append([rate, exporter_loss, importer_gain, net_impact, final_impact, recommendation])
+    stress_test_results.append([rate, exporter_loss, importer_gain, net_profit, recommendation])
     hedge_recommendations.append(recommendation)
 
 # Convert to DataFrame
@@ -77,8 +76,7 @@ stress_test_df = pd.DataFrame(stress_test_results, columns=[
     "Settlement Rate (EUR/PLN)",
     "Exporter Loss (PLN)",
     "Importer Gain (PLN)",
-    "Net Impact Before USDC Yield (PLN)",
-    "Final Impact After USDC Yield (PLN)",
+    "Net Profit (PLN)",
     "Hedge Recommendation"
 ])
 
@@ -92,8 +90,7 @@ fig, ax = plt.subplots(figsize=(8, 5))
 
 ax.plot(stress_test_df["Settlement Rate (EUR/PLN)"], stress_test_df["Exporter Loss (PLN)"], marker='o', linestyle='-', label="Exporter Loss", color="red")
 ax.plot(stress_test_df["Settlement Rate (EUR/PLN)"], stress_test_df["Importer Gain (PLN)"], marker='s', linestyle='--', label="Importer Gain", color="green")
-ax.plot(stress_test_df["Settlement Rate (EUR/PLN)"], stress_test_df["Net Impact Before USDC Yield (PLN)"], marker='^', linestyle='-', label="Net Impact Before USDC Yield", color="blue")
-ax.plot(stress_test_df["Settlement Rate (EUR/PLN)"], stress_test_df["Final Impact After USDC Yield (PLN)"], marker='x', linestyle='-', label="Final Impact After USDC Yield", color="black")
+ax.plot(stress_test_df["Settlement Rate (EUR/PLN)"], stress_test_df["Net Profit (PLN)"], marker='^', linestyle='-', label="Net Profit (PLN)", color="blue")
 
 ax.axhline(0, color="black", linestyle="--")  # Reference line at 0
 ax.set_xlabel("Settlement Rate (EUR/PLN)")
