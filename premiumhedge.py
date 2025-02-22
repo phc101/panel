@@ -1,143 +1,110 @@
-import os
-import pandas as pd
-import numpy as np
 import streamlit as st
+import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-import firebase_admin
-from firebase_admin import credentials, auth, firestore
 
-# ---------------------- Firebase Authentication & Database ---------------------- #
-FIREBASE_CREDENTIALS = "firebase_credentials.json"
+# Set up Streamlit page configuration
+st.set_page_config(page_title="FX Portfolio Risk Manager", layout="wide")
 
-if os.path.exists(FIREBASE_CREDENTIALS):
-    if not firebase_admin._apps:
-        cred = credentials.Certificate(FIREBASE_CREDENTIALS)
-        firebase_admin.initialize_app(cred)
-    db = firestore.client()
-else:
-    st.error("Firebase credentials file not found. Please add 'firebase_credentials.json'.")
-    st.stop()
+# Title
+st.title("📊 FX Portfolio Risk Management & Stress Testing Tool")
 
-# ---------------------- Session Management ---------------------- #
-if "user" not in st.session_state:
-    st.session_state.user = None
-    st.session_state.user_id = None
-    st.session_state.login_status = False
-if "hedge_ratios" not in st.session_state:
-    st.session_state.hedge_ratios = [75] * 12  # Ensure state persistence
-if "fx_flows" not in st.session_state:
-    st.session_state.fx_flows = [100000] * 12  # Single default flow per month
-if "budget_rate" not in st.session_state:
-    st.session_state.budget_rate = 4.40  # Default budget rate
-if "user_type" not in st.session_state:
-    st.session_state.user_type = "Exporter"  # Default to exporter
-if "forward_points" not in st.session_state:
-    st.session_state.forward_points = 0.5  # Default annualized forward points percentage
+# User Inputs: Portfolio Setup
+st.sidebar.header("Portfolio Setup")
 
-# Streamlit Authentication
-st.set_page_config(layout="wide")
-st.title("Automatic FX Hedging System")
+total_exposure = st.sidebar.number_input("Total EUR/PLN Exposure (€)", value=100_000_000, step=1_000_000)
 
-if st.session_state.login_status:
-    st.success(f"Logged in as {st.session_state.user.email}")
-    user_id = st.session_state.user_id
-else:
-    option = st.radio("Select an option:", ["Login", "Create New Account"])
-    user_email = st.text_input("Enter your Email:")
-    password = st.text_input("Enter your Password:", type="password")
-    
-    if option == "Login":
-        if st.button("Login"):
-            try:
-                user = auth.get_user_by_email(user_email)
-                st.session_state.user = user
-                st.session_state.user_id = user.uid
-                st.session_state.login_status = True
-                st.success(f"Logged in as {user.email}")
-            except:
-                st.error("User not found. Please check your credentials or create a new account.")
-    
-    elif option == "Create New Account":
-        if st.button("Register"):
-            try:
-                existing_user = None
-                try:
-                    existing_user = auth.get_user_by_email(user_email)
-                except:
-                    pass  # User does not exist
-                
-                if existing_user:
-                    st.error("This email is already registered. Please log in instead.")
-                else:
-                    user = auth.create_user(email=user_email, password=password)
-                    db.collection("users").document(user.uid).set({"email": user_email, "role": "user"})
-                    st.success(f"Account created successfully for {user.email}. Please log in.")
-            except Exception as e:
-                st.error(f"Error creating account: {e}")
+exporter_share = st.sidebar.slider("Exporter Share (%)", min_value=0, max_value=100, value=70) / 100
+importer_share = 1 - exporter_share
 
-if st.session_state.login_status:
-    user_id = st.session_state.user_id
-    user_doc_ref = db.collection("users").document(user_id)
-    user_doc = user_doc_ref.get()
-    user_role = "user"
-    
-    if user_doc.exists:
-        user_role = user_doc.to_dict().get("role", "user")
+exporter_avg_sell_rate = st.sidebar.number_input("Exporter Forward Rate", value=4.30, step=0.01)
+importer_avg_buy_rate = st.sidebar.number_input("Importer Forward Rate", value=4.25, step=0.01)
+
+# Hedge Allocation & Yields
+st.sidebar.header("Hedging & Yield Setup")
+forward_yield = st.sidebar.slider("Forward Yield (%)", min_value=0.0, max_value=10.0, value=3.3) / 100
+stablecoin_yield = st.sidebar.slider("Stablecoin Yield (%)", min_value=0.0, max_value=15.0, value=8.0) / 100
+
+# Maturity Settings
+st.sidebar.header("Maturity Structure")
+exporter_maturity = st.sidebar.slider("Exporter Hedge Duration (Months)", min_value=1, max_value=12, value=6)
+importer_maturity = st.sidebar.slider("Importer Hedge Duration (Months)", min_value=1, max_value=12, value=2)
+
+# Stress Test: Future EUR/PLN Settlement Rates
+st.sidebar.header("Stress Test Scenario")
+min_settlement_rate = st.sidebar.number_input("Min EUR/PLN Rate", value=4.00, step=0.01)
+max_settlement_rate = st.sidebar.number_input("Max EUR/PLN Rate", value=4.50, step=0.01)
+num_scenarios = st.sidebar.slider("Number of Test Scenarios", min_value=3, max_value=10, value=5)
+
+# Generate stress test scenarios
+settlement_rates = np.linspace(min_settlement_rate, max_settlement_rate, num_scenarios)
+
+# Calculate hedging values
+exporter_exposure = total_exposure * exporter_share
+importer_exposure = total_exposure * importer_share
+
+exporter_forward_rate = exporter_avg_sell_rate * (1 + forward_yield * (exporter_maturity / 12))
+importer_forward_rate = importer_avg_buy_rate * (1 + forward_yield * (importer_maturity / 12))
+
+# Hedge amount in stablecoins
+usdc_hedge_pln = (exporter_exposure * exporter_forward_rate) - (importer_exposure * importer_forward_rate)
+
+# Stablecoin staking yield over 1 year
+usdc_yield_earned = usdc_hedge_pln * stablecoin_yield
+
+# Stress Test Calculations
+stress_test_results = []
+hedge_recommendations = []
+for rate in settlement_rates:
+    exporter_loss = (rate - exporter_forward_rate) * exporter_exposure
+    importer_gain = (rate - importer_forward_rate) * importer_exposure
+    net_impact = exporter_loss + importer_gain
+    final_impact = net_impact + usdc_yield_earned
+
+    # Generate Hedge Recommendations
+    if rate > exporter_forward_rate:
+        recommendation = "⚠ Increase importer hedges, reduce exporter exposure"
+    elif rate < importer_forward_rate:
+        recommendation = "✅ Increase exporter hedges, reduce importer exposure"
     else:
-        user_doc_ref.set({"email": st.session_state.user.email, "role": "user"})
-        st.warning("User data not found in Firestore. A new record has been created.")
+        recommendation = "📊 Maintain current hedge ratios"
 
-    # ---------------------- User Type Selection ---------------------- #
-    st.write("### User Type")
-    st.session_state.user_type = st.radio("Select your role:", ["Exporter", "Importer"], index=0 if st.session_state.user_type == "Exporter" else 1)
-    
-    # ---------------------- Kanban Style Layout ---------------------- #
-    st.write("### Hedging Plan (Kanban Style)")
-    
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    num_months = 12
-    
-    # Budget Rate
-    st.write("#### Budget Rate")
-    st.session_state.budget_rate = float(st.number_input("Enter Budget Rate (EUR/PLN):", value=float(st.session_state.budget_rate), step=0.01))
-    
-    # Expected FX Flow Row
-    st.write("#### Expected FX Flow")
-    cols = st.columns(num_months)
-    for i in range(num_months):
-        with cols[i]:
-            st.session_state.fx_flows[i] = int(st.number_input(f"{months[i]}", value=int(st.session_state.fx_flows[i]), step=10000, key=f"flow_{i}"))
-    
-    df = pd.DataFrame({"Month": months, "Expected FX Flow": st.session_state.fx_flows})
-    
-    # Forward Points Input
-    st.write("#### Forward Pricing")
-    st.session_state.forward_points = st.number_input("Enter Forward Points (Annualized %):", value=st.session_state.forward_points, step=0.1)
-    
-    # Compute Forward Prices
-    spot_rate = st.session_state.budget_rate
-    forward_rates = [spot_rate * (1 + (st.session_state.forward_points / 100) * (i / 12)) for i in range(1, num_months + 1)]
-    
-    df["Forward Rate"] = forward_rates
-    df["Budget Rate"] = [st.session_state.budget_rate] * num_months
-    
-    # ---------------------- Chart Visualization ---------------------- #
-    st.write("### Forward Rates vs Budget Rate")
-    fig, ax = plt.subplots()
-    ax.plot(months, df["Forward Rate"], marker='s', linestyle='dashed', label='Forward Rate')
-    ax.plot(months, df["Budget Rate"], marker='o', linestyle='solid', label='Budget Rate', color='r')
-    ax.set_ylabel("Rate (EUR/PLN)")
-    ax.set_xlabel("Months")
-    ax.legend()
-    st.pyplot(fig)
-    
-    # ---------------------- Save Updated Data ---------------------- #
-    def save_data(df, user_id):
-        try:
-            doc_ref = db.collection("hedging_data").document(user_id)
-            doc_ref.set({"data": df.to_dict(orient="records")})
-            st.success("Hedging data saved successfully!")
-        except Exception as e:
-            st.error(f"Error saving data: {e}")
-    
-    save_data(df, user_id)
+    stress_test_results.append([rate, exporter_loss, importer_gain, net_impact, final_impact, recommendation])
+    hedge_recommendations.append(recommendation)
+
+# Convert to DataFrame
+stress_test_df = pd.DataFrame(stress_test_results, columns=[
+    "Settlement Rate (EUR/PLN)",
+    "Exporter Loss (PLN)",
+    "Importer Gain (PLN)",
+    "Net Impact Before USDC Yield (PLN)",
+    "Final Impact After USDC Yield (PLN)",
+    "Hedge Recommendation"
+])
+
+# Display Stress Test Results
+st.header("📉 Portfolio Stress Test Results")
+st.dataframe(stress_test_df)
+
+# Visualization
+st.subheader("📊 Impact of EUR/PLN Movements on Portfolio")
+fig, ax = plt.subplots(figsize=(8, 5))
+
+ax.plot(stress_test_df["Settlement Rate (EUR/PLN)"], stress_test_df["Exporter Loss (PLN)"], marker='o', linestyle='-', label="Exporter Loss", color="red")
+ax.plot(stress_test_df["Settlement Rate (EUR/PLN)"], stress_test_df["Importer Gain (PLN)"], marker='s', linestyle='--', label="Importer Gain", color="green")
+ax.plot(stress_test_df["Settlement Rate (EUR/PLN)"], stress_test_df["Net Impact Before USDC Yield (PLN)"], marker='^', linestyle='-', label="Net Impact Before USDC Yield", color="blue")
+ax.plot(stress_test_df["Settlement Rate (EUR/PLN)"], stress_test_df["Final Impact After USDC Yield (PLN)"], marker='x', linestyle='-', label="Final Impact After USDC Yield", color="black")
+
+ax.axhline(0, color="black", linestyle="--")  # Reference line at 0
+ax.set_xlabel("Settlement Rate (EUR/PLN)")
+ax.set_ylabel("PLN Amount")
+ax.set_title("FX Portfolio Risk Impact: Exporters vs Importers & USDC Hedge")
+ax.legend()
+ax.grid(True)
+
+st.pyplot(fig)
+
+# Hedge Recommendation Section
+st.subheader("📢 Automated Hedge Recommendations")
+for rate, recommendation in zip(settlement_rates, hedge_recommendations):
+    st.write(f"- If EUR/PLN reaches **{rate:.2f}**, recommended action: **{recommendation}**")
