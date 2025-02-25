@@ -1,107 +1,157 @@
 import streamlit as st
-import numpy as np
+import requests
 import pandas as pd
-import matplotlib.pyplot as plt
+import hashlib
+import base64
+import uuid
+import datetime
+import time
+import threading
 
-# Set up Streamlit page configuration
-st.set_page_config(page_title="FX Portfolio Risk Manager", layout="wide")
+# iBanFirst API Configuration (Sandbox)
+API_BASE_URL = "https://sandbox.ibanfirst.com/api"
+API_USERNAME = "your_username"
+API_SECRET = "your_secret"
 
-# Title
-st.title("📊 FX Portfolio Risk Management & Stress Testing Tool")
+# Global variable to control monitoring
+monitoring_active = False
 
-# User Inputs: Portfolio Setup
-st.sidebar.header("Portfolio Setup")
+# Function to generate X-WSSE authentication header
+def generate_wsse_header(username, secret):
+    nonce = base64.b64encode(uuid.uuid4().bytes).decode("utf-8")
+    created = datetime.datetime.utcnow().isoformat() + "Z"
+    digest = base64.b64encode(
+        hashlib.sha256((nonce + created + secret).encode()).digest()
+    ).decode("utf-8")
+    
+    return f'UsernameToken Username="{username}", PasswordDigest="{digest}", Nonce="{nonce}", Created="{created}"'
 
-total_exposure = st.sidebar.number_input("Total EUR/PLN Exposure (€)", value=100_000_000, step=1_000_000)
+# Function to fetch forward FX rates
+def get_forward_rate(base_currency, quote_currency, tenor):
+    url = f"{API_BASE_URL}/rates/{base_currency}{quote_currency}"
+    headers = {"X-WSSE": generate_wsse_header(API_USERNAME, API_SECRET)}
 
-exporter_share = st.sidebar.slider("Exporter Share (%)", min_value=0, max_value=100, value=70) / 100
-importer_share = 1 - exporter_share
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("forward_rates", {}).get(tenor)
+    except Exception as e:
+        st.error(f"Error fetching forward rate: {e}")
+        return None
 
-exporter_avg_sell_rate = st.sidebar.number_input("Exporter Forward Rate", value=4.30, step=0.01)
-importer_avg_buy_rate = st.sidebar.number_input("Importer Forward Rate", value=4.25, step=0.01)
+# Function to book a forward contract
+def book_forward_contract(base_currency, quote_currency, amount, forward_rate, maturity_date):
+    url = f"{API_BASE_URL}/trades/"
+    headers = {"X-WSSE": generate_wsse_header(API_USERNAME, API_SECRET)}
 
-# Hedge Allocation & Yields
-st.sidebar.header("Hedging & Yield Setup")
-forward_yield = st.sidebar.slider("Forward Yield (%)", min_value=0.0, max_value=10.0, value=3.3) / 100
-stablecoin_yield = st.sidebar.slider("Stablecoin Yield (%)", min_value=0.0, max_value=15.0, value=8.0) / 100
+    payload = {
+        "currency_pair": f"{base_currency}{quote_currency}",
+        "amount": amount,
+        "rate": forward_rate,
+        "maturity_date": maturity_date,
+        "type": "FORWARD"
+    }
 
-# Maturity Settings
-st.sidebar.header("Maturity Structure")
-exporter_maturity = st.sidebar.slider("Exporter Hedge Duration (Months)", min_value=1, max_value=12, value=6)
-importer_maturity = st.sidebar.slider("Importer Hedge Duration (Months)", min_value=1, max_value=12, value=2)
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error booking forward contract: {e}")
+        return None
 
-# Stress Test: Future EUR/PLN Settlement Rates
-st.sidebar.header("Stress Test Scenario")
-min_settlement_rate = st.sidebar.number_input("Min EUR/PLN Rate", value=4.00, step=0.01)
-max_settlement_rate = st.sidebar.number_input("Max EUR/PLN Rate", value=4.50, step=0.01)
-num_scenarios = st.sidebar.slider("Number of Test Scenarios", min_value=3, max_value=10, value=5)
+# Function to send email notification (Optional)
+def send_email_alert(to_email, base_currency, quote_currency, forward_rate):
+    import smtplib
+    from email.message import EmailMessage
 
-# Generate stress test scenarios
-settlement_rates = np.linspace(min_settlement_rate, max_settlement_rate, num_scenarios)
+    sender_email = "your_email@example.com"
+    sender_password = "your_email_password"
 
-# Calculate hedging values
-exporter_exposure = total_exposure * exporter_share
-importer_exposure = total_exposure * importer_share
+    msg = EmailMessage()
+    msg.set_content(
+        f"🚀 Hedging Opportunity Alert!\n\n"
+        f"The forward rate for {base_currency}/{quote_currency} has dropped to {forward_rate}.\n"
+        f"Action Required: Consider booking a hedge now!"
+    )
+    msg["Subject"] = "FX Hedging Alert - iBanFirst"
+    msg["From"] = sender_email
+    msg["To"] = to_email
 
-exporter_forward_rate = exporter_avg_sell_rate * (1 + forward_yield * (exporter_maturity / 12))
-importer_forward_rate = importer_avg_buy_rate * (1 + forward_yield * (importer_maturity / 12))
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        st.success(f"📧 Email alert sent to {to_email}")
+    except Exception as e:
+        st.error(f"Failed to send email: {e}")
 
-# Hedge amount in stablecoins
-usdc_hedge_pln = (exporter_exposure * exporter_forward_rate) - (importer_exposure * importer_forward_rate)
+# Background function to monitor FX rates
+def monitor_fx_rates(base_currency, quote_currency, tenor, hedging_threshold, auto_execute, email_alert):
+    global monitoring_active
+    while monitoring_active:
+        forward_rate = get_forward_rate(base_currency, quote_currency, tenor)
+        if forward_rate:
+            st.sidebar.write(f"📈 **Live Forward Rate:** {forward_rate}")
 
-# Stablecoin staking yield over 1 year
-usdc_yield_earned = usdc_hedge_pln * stablecoin_yield
+            if forward_rate <= hedging_threshold:
+                st.sidebar.success("✅ Hedging opportunity detected!")
 
-# Stress Test Calculations
-stress_test_results = []
-hedge_recommendations = []
-for rate in settlement_rates:
-    exporter_loss = (rate - exporter_forward_rate) * exporter_exposure
-    importer_gain = (rate - importer_forward_rate) * importer_exposure
-    net_profit = exporter_loss + importer_gain + usdc_yield_earned
+                # Auto-execute forward contract if enabled
+                if auto_execute:
+                    st.sidebar.write("⚡ Booking forward contract automatically...")
+                    maturity_date = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+                    trade = book_forward_contract(base_currency, quote_currency, amount, forward_rate, maturity_date)
 
-    # Generate Hedge Recommendations
-    if rate > exporter_forward_rate:
-        recommendation = "⚠ Increase importer hedges, reduce exporter exposure"
-    elif rate < importer_forward_rate:
-        recommendation = "✅ Increase exporter hedges, reduce importer exposure"
+                    if trade:
+                        st.sidebar.success("🚀 Forward contract booked successfully!")
+                        if "trade_history" not in st.session_state:
+                            st.session_state.trade_history = []
+                        st.session_state.trade_history.append(trade)
+
+                # Send email alert if enabled
+                if email_alert:
+                    send_email_alert("your_email@example.com", base_currency, quote_currency, forward_rate)
+
+        time.sleep(30)  # Check rates every 30 seconds
+
+# Streamlit App
+st.title("🔄 FX Automatic Hedging Solution with Real-time Alerts & Start/Stop Monitoring")
+
+# User input section
+st.sidebar.header("Hedging Settings")
+base_currency = st.sidebar.selectbox("Base Currency", ["EUR"])
+quote_currency = st.sidebar.selectbox("Quote Currency", ["PLN"])
+amount = st.sidebar.number_input("Amount to Hedge", min_value=1000, value=100000, step=1000)
+tenor = st.sidebar.selectbox("Forward Tenor", ["1M", "3M", "6M", "12M"])
+hedging_threshold = st.sidebar.slider("Max Acceptable Forward Rate", 4.20, 4.50, 4.35, 0.01)
+
+# Alert settings
+auto_execute = st.sidebar.checkbox("Auto-Execute Hedge when Rate is Good")
+email_alert = st.sidebar.checkbox("Send Email Alert when Rate is Good")
+
+# Start/Stop monitoring controls
+if st.sidebar.button("Start Monitoring FX Rates"):
+    if not monitoring_active:
+        monitoring_active = True
+        st.sidebar.write("⏳ Monitoring FX rates...")
+
+        # Run monitoring function in a separate thread
+        threading.Thread(
+            target=monitor_fx_rates,
+            args=(base_currency, quote_currency, tenor, hedging_threshold, auto_execute, email_alert),
+            daemon=True
+        ).start()
     else:
-        recommendation = "📊 Maintain current hedge ratios"
+        st.sidebar.warning("Monitoring is already running!")
 
-    stress_test_results.append([rate, exporter_loss, importer_gain, net_profit, recommendation])
-    hedge_recommendations.append(recommendation)
+if st.sidebar.button("Stop Monitoring FX Rates"):
+    monitoring_active = False
+    st.sidebar.warning("⏹ Monitoring stopped.")
 
-# Convert to DataFrame
-stress_test_df = pd.DataFrame(stress_test_results, columns=[
-    "Settlement Rate (EUR/PLN)",
-    "Exporter Loss (PLN)",
-    "Importer Gain (PLN)",
-    "Net Profit (PLN)",
-    "Hedge Recommendation"
-])
-
-# Display Stress Test Results
-st.header("📉 Portfolio Stress Test Results")
-st.dataframe(stress_test_df)
-
-# Visualization
-st.subheader("📊 Impact of EUR/PLN Movements on Portfolio")
-fig, ax = plt.subplots(figsize=(8, 5))
-
-ax.plot(stress_test_df["Settlement Rate (EUR/PLN)"], stress_test_df["Exporter Loss (PLN)"], marker='o', linestyle='-', label="Exporter Loss", color="red")
-ax.plot(stress_test_df["Settlement Rate (EUR/PLN)"], stress_test_df["Importer Gain (PLN)"], marker='s', linestyle='--', label="Importer Gain", color="green")
-ax.plot(stress_test_df["Settlement Rate (EUR/PLN)"], stress_test_df["Net Profit (PLN)"], marker='^', linestyle='-', label="Net Profit (PLN)", color="blue")
-
-ax.axhline(0, color="black", linestyle="--")  # Reference line at 0
-ax.set_xlabel("Settlement Rate (EUR/PLN)")
-ax.set_ylabel("PLN Amount")
-ax.set_title("FX Portfolio Risk Impact: Exporters vs Importers & USDC Hedge")
-ax.legend()
-ax.grid(True)
-
-st.pyplot(fig)
-
-# Hedge Recommendation Section
-st.subheader("📢 Automated Hedge Recommendations")
-for rate, recommendation in zip(settlement_rates, hedge_recommendations):
-    st.write(f"- If EUR/PLN reaches **{rate:.2f}**, recommended action: **{recommendation}**")
+# Display trade history
+if "trade_history" in st.session_state and st.session_state.trade_history:
+    st.write("### 📊 Trade History")
+    trade_df = pd.DataFrame(st.session_state.trade_history)
+    st.dataframe(trade_df)
