@@ -18,7 +18,7 @@ if eurpln_file and germany_yield_file and poland_yield_file:
     polish_yield_data = pd.read_csv(poland_yield_file)
     
     # Standardize column names
-eur_pln_data.columns = ["Date", "Close", "Open", "High", "Low", "Volume", "Change"]
+    eur_pln_data.columns = ["Date", "Close", "Open", "High", "Low", "Volume", "Change"]
     german_yield_data.columns = ["Date", "Yield_Germany", "Open_Germany", "High_Germany", "Low_Germany", "Change_Germany"]
     polish_yield_data.columns = ["Date", "Yield_Poland", "Open_Poland", "High_Poland", "Low_Poland", "Change_Poland"]
 
