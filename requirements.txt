@@ -9,3 +9,4 @@ beautifulsoup4
 tldextract
 google-search-results
 firebase-admin
+statsmodels
