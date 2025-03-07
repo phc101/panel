@@ -48,7 +48,7 @@ def main():
         
         # Calculate Returns
         results = []
-        stop_loss_pct = 1.5  # Set stop loss at 2%
+        stop_loss_pct = 1.5  # Set stop loss at 1.5%
         
         for i, row in data.iterrows():
             exit_row = fx_data[fx_data["Date"] == row["Exit Date"]]
@@ -71,6 +71,10 @@ def main():
         result_df = pd.DataFrame(results, columns=["Entry Date", "Exit Date", "Signal", "Entry Price", "Exit Price", "Revenue %"])
         result_df["Cumulative Revenue %"] = result_df["Revenue %"].cumsum()
         
+        # Separate Buy and Sell Trades
+        buy_trades = result_df[result_df["Signal"] == "BUY"]
+        sell_trades = result_df[result_df["Signal"] == "SELL"]
+        
         # Display Results
         st.subheader("Backtest Results")
         st.dataframe(result_df)
@@ -81,6 +85,16 @@ def main():
         ax.set_title("Cumulative Revenue Over Time")
         ax.set_xlabel("Date")
         ax.set_ylabel("Cumulative Revenue %")
+        st.pyplot(fig)
+        
+        # Plot Buy and Sell Trade Performance
+        fig, ax = plt.subplots()
+        ax.plot(buy_trades["Entry Date"], buy_trades["Cumulative Revenue %"], marker='o', linestyle='-', label="BUY Trades")
+        ax.plot(sell_trades["Entry Date"], sell_trades["Cumulative Revenue %"], marker='o', linestyle='-', label="SELL Trades", color='red')
+        ax.set_title("Cumulative Revenue: Buy vs Sell Trades")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Cumulative Revenue %")
+        ax.legend()
         st.pyplot(fig)
         
         # Calculate Yearly Returns
