@@ -15,7 +15,7 @@ def main():
     for_yield_file = st.sidebar.file_uploader("Upload Foreign Bond Yields (CSV)", type=["csv"])
     
     # Strategy Selection
-    strategy = st.sidebar.radio("Select Strategy", ["Exporter (SELL Only)", "Importer (BUY Only)"])
+    strategy = st.sidebar.radio("Select Strategy", ["Exporter (SELL Only)", "Importer (BUY Only)", "Both (BUY & SELL)"])
     
     if fx_file and dom_yield_file and for_yield_file:
         # Ensure Date column is correctly parsed as datetime
@@ -47,9 +47,11 @@ def main():
         if strategy == "Importer (BUY Only)":
             data = data[data.iloc[:, 3] < data["Predictive Price"]]
             data["Signal"] = "BUY"
-        else:
+        elif strategy == "Exporter (SELL Only)":
             data = data[data.iloc[:, 3] > data["Predictive Price"]]
             data["Signal"] = "SELL"
+        else:
+            data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", "SELL")
         
         data["Weekday"] = data["Date"].dt.weekday
         data = data[data["Weekday"] == 0]  # Filter only Mondays
@@ -79,6 +81,18 @@ def main():
         
         result_df = pd.DataFrame(results, columns=["Entry Date", "Exit Date", "Signal", "Entry Price", "Exit Price", "Revenue %"])
         result_df["Cumulative Revenue %"] = result_df["Revenue %"].cumsum()
+        
+        # Risk Metrics
+        win_trades = result_df[result_df["Revenue %"] > 0]
+        loss_trades = result_df[result_df["Revenue %"] <= 0]
+        win_loss_ratio = len(win_trades) / len(loss_trades) if len(loss_trades) > 0 else np.nan
+        sharpe_ratio = result_df["Revenue %"].mean() / result_df["Revenue %"].std() if result_df["Revenue %"].std() > 0 else np.nan
+        sortino_ratio = result_df["Revenue %"].mean() / loss_trades["Revenue %"].std() if len(loss_trades) > 0 and loss_trades["Revenue %"].std() > 0 else np.nan
+        
+        st.sidebar.subheader("Risk Metrics")
+        st.sidebar.write(f"Win/Loss Ratio: {win_loss_ratio:.2f}")
+        st.sidebar.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
+        st.sidebar.write(f"Sortino Ratio: {sortino_ratio:.2f}")
         
         # Display Results
         st.subheader("Backtest Results")
