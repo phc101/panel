@@ -26,24 +26,24 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         st.write("Domestic Bond Yield Data:", domestic_yield.head())
         st.write("Foreign Bond Yield Data:", foreign_yield.head())
         
-        # Ensure proper column names exist
-        if len(currency_data.columns) < 2:
-            st.error("Error: Currency data must have at least two columns: Date and FX Rate.")
-        else:
-            currency_data.columns = ["Date", "FX Rate"]
-            currency_data["Date"] = pd.to_datetime(currency_data["Date"], errors='coerce')
+        # Detect column names and select relevant ones
+        if "Date" not in currency_data.columns:
+            currency_data.rename(columns={currency_data.columns[0]: "Date"}, inplace=True)
+        currency_data["Date"] = pd.to_datetime(currency_data["Date"], errors='coerce')
+        currency_data = currency_data[["Date", currency_data.columns[1]]]
+        currency_data.columns = ["Date", "FX Rate"]
         
-        if len(domestic_yield.columns) < 2:
-            st.error("Error: Domestic bond yield data must have at least two columns: Date and Domestic Yield.")
-        else:
-            domestic_yield.columns = ["Date", "Domestic Yield"]
-            domestic_yield["Date"] = pd.to_datetime(domestic_yield["Date"], errors='coerce')
+        if "Date" not in domestic_yield.columns:
+            domestic_yield.rename(columns={domestic_yield.columns[0]: "Date"}, inplace=True)
+        domestic_yield["Date"] = pd.to_datetime(domestic_yield["Date"], errors='coerce')
+        domestic_yield = domestic_yield[["Date", domestic_yield.columns[1]]]
+        domestic_yield.columns = ["Date", "Domestic Yield"]
         
-        if len(foreign_yield.columns) < 2:
-            st.error("Error: Foreign bond yield data must have at least two columns: Date and Foreign Yield.")
-        else:
-            foreign_yield.columns = ["Date", "Foreign Yield"]
-            foreign_yield["Date"] = pd.to_datetime(foreign_yield["Date"], errors='coerce')
+        if "Date" not in foreign_yield.columns:
+            foreign_yield.rename(columns={foreign_yield.columns[0]: "Date"}, inplace=True)
+        foreign_yield["Date"] = pd.to_datetime(foreign_yield["Date"], errors='coerce')
+        foreign_yield = foreign_yield[["Date", foreign_yield.columns[1]]]
+        foreign_yield.columns = ["Date", "Foreign Yield"]
         
         # Merge data on Date
         data = currency_data.merge(domestic_yield, on="Date").merge(foreign_yield, on="Date")
