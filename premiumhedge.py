@@ -39,10 +39,18 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         # Calculate bond yield spread
         data["Yield Spread"] = data["Domestic Yield"] - data["Foreign Yield"]
         
-        # Predictive Price (simple mean reversion model)
-        data["Predictive Price"] = data["FX Rate"].rolling(window=30, min_periods=1).mean()
+        # Predictive Price using Linear Regression
+        from sklearn.linear_model import LinearRegression
+        model = LinearRegression()
+        valid_data = data.dropna()
+        if not valid_data.empty:
+            model.fit(valid_data[["Yield Spread"]], valid_data["FX Rate"])
+            data["Predictive Price"] = model.predict(data[["Yield Spread"]])
+        else:
+            data["Predictive Price"] = np.nan
         
         # Generate trading signals
+        data.dropna(inplace=True)  # Ensure no NaNs remain
         data["Weekday"] = data["Date"].dt.weekday
         data["Signal"] = np.where(data["FX Rate"] < data["Predictive Price"], "Buy", 
                                    np.where(data["FX Rate"] > data["Predictive Price"], "Sell", "Hold"))
@@ -65,7 +73,7 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         st.subheader("Market Price vs. Predictive Price")
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(data["Date"], data["FX Rate"], label="Market Price", color="blue")
-        ax.plot(data["Date"], data["Predictive Price"], label="Predictive Price (Rolling Mean)", linestyle="dashed", color="red")
+        ax.plot(data["Date"], data["Predictive Price"], label="Predictive Price (Regression Model)", linestyle="dashed", color="red")
         ax.legend()
         st.pyplot(fig)
         
