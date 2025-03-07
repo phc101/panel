@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
+from datetime import timedelta
 
 # Streamlit UI setup
 st.title("FX Valuation & Backtesting Tool")
@@ -60,6 +61,20 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         
         # Predictive price using regression model
         data["Predictive Price"] = model.predict(data[["Yield Spread"]])
+        
+        # Trading strategy: Buy/Sell every Monday, exit after 30 days
+        data["Weekday"] = data["Date"].dt.weekday
+        data["Signal"] = np.where(data["FX Rate"] < data["Predictive Price"], "Buy", 
+                                   np.where(data["FX Rate"] > data["Predictive Price"], "Sell", "Hold"))
+        
+        trades = data[(data["Weekday"] == 0) & (data["Signal"] != "Hold")].copy()
+        trades["Exit Date"] = trades["Date"] + timedelta(days=30)
+        trades = trades.merge(data[["Date", "FX Rate"]], left_on="Exit Date", right_on="Date", suffixes=("", "_Exit"))
+        
+        # Calculate P&L
+        trades["PnL"] = np.where(trades["Signal"] == "Buy", 
+                                  trades["FX Rate_Exit"] - trades["FX Rate"], 
+                                  trades["FX Rate"] - trades["FX Rate_Exit"])
         
         # Save extracted data to CSV
         output_csv = data[["Date", "FX Rate", "Yield Spread", "Predictive Price"]]
