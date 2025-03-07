@@ -83,6 +83,17 @@ def main():
         result_df["Cumulative Revenue %"] = result_df["Revenue %"].cumsum()
         result_df["Drawdown %"] = result_df["Cumulative Revenue %"].cummax() - result_df["Cumulative Revenue %"]
         
+        # Calculate Kelly Criterion
+        win_rate = (result_df["Revenue %"] > 0).mean()
+        loss_rate = 1 - win_rate
+        avg_win = result_df[result_df["Revenue %"] > 0]["Revenue %"].mean()
+        avg_loss = abs(result_df[result_df["Revenue %"] <= 0]["Revenue %"].mean())
+        kelly_fraction = win_rate - (loss_rate / (avg_win / avg_loss)) if avg_loss > 0 else np.nan
+        
+        # Display Kelly Criterion
+        st.sidebar.subheader("Kelly Criterion")
+        st.sidebar.write(f"Optimal Bet Size: {kelly_fraction:.2f} (as a fraction of capital)")
+        
         # Display Results
         st.subheader("Backtest Results")
         st.dataframe(result_df)
