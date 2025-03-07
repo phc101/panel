@@ -21,48 +21,27 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         domestic_yield = pd.read_csv(domestic_yield_file)
         foreign_yield = pd.read_csv(foreign_yield_file)
         
-        # Display first rows for debugging
-        st.subheader("Sample Data Preview")
-        st.write("Currency Data:", currency_data.head())
-        st.write("Domestic Bond Yield Data:", domestic_yield.head())
-        st.write("Foreign Bond Yield Data:", foreign_yield.head())
-        
         # Detect column names and select relevant ones
-        if "Date" not in currency_data.columns:
-            currency_data.rename(columns={currency_data.columns[0]: "Date"}, inplace=True)
+        currency_data.rename(columns={currency_data.columns[0]: "Date", currency_data.columns[1]: "FX Rate"}, inplace=True)
+        domestic_yield.rename(columns={domestic_yield.columns[0]: "Date", domestic_yield.columns[1]: "Domestic Yield"}, inplace=True)
+        foreign_yield.rename(columns={foreign_yield.columns[0]: "Date", foreign_yield.columns[1]: "Foreign Yield"}, inplace=True)
+        
+        # Convert Date columns
         currency_data["Date"] = pd.to_datetime(currency_data["Date"], errors='coerce')
-        currency_data = currency_data[["Date", currency_data.columns[1]]]
-        currency_data.columns = ["Date", "FX Rate"]
-        
-        if "Date" not in domestic_yield.columns:
-            domestic_yield.rename(columns={domestic_yield.columns[0]: "Date"}, inplace=True)
         domestic_yield["Date"] = pd.to_datetime(domestic_yield["Date"], errors='coerce')
-        domestic_yield = domestic_yield[["Date", domestic_yield.columns[1]]]
-        domestic_yield.columns = ["Date", "Domestic Yield"]
-        
-        if "Date" not in foreign_yield.columns:
-            foreign_yield.rename(columns={foreign_yield.columns[0]: "Date"}, inplace=True)
         foreign_yield["Date"] = pd.to_datetime(foreign_yield["Date"], errors='coerce')
-        foreign_yield = foreign_yield[["Date", foreign_yield.columns[1]]]
-        foreign_yield.columns = ["Date", "Foreign Yield"]
         
-        # Merge data on Date
+        # Merge data
         data = currency_data.merge(domestic_yield, on="Date").merge(foreign_yield, on="Date")
-        
-        # Calculate bond yield spread
         data["Yield Spread"] = data["Domestic Yield"] - data["Foreign Yield"]
         
-        # Linear Regression Model for Predictive Price
+        # Predictive Price using Regression
         model = LinearRegression()
         valid_data = data.dropna()
-        X = valid_data[["Yield Spread"]]
-        y = valid_data["FX Rate"]
-        model.fit(X, y)
-        
-        # Predictive price using regression model
+        model.fit(valid_data[["Yield Spread"]], valid_data["FX Rate"])
         data["Predictive Price"] = model.predict(data[["Yield Spread"]])
         
-        # Trading strategy: Buy/Sell every Monday, exit after 30 days
+        # Trading Strategy
         data["Weekday"] = data["Date"].dt.weekday
         data["Signal"] = np.where(data["FX Rate"] < data["Predictive Price"], "Buy", 
                                    np.where(data["FX Rate"] > data["Predictive Price"], "Sell", "Hold"))
@@ -71,27 +50,45 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         trades["Exit Date"] = trades["Date"] + timedelta(days=30)
         trades = trades.merge(data[["Date", "FX Rate"]], left_on="Exit Date", right_on="Date", suffixes=("", "_Exit"))
         
-        # Calculate P&L
         trades["PnL"] = np.where(trades["Signal"] == "Buy", 
                                   trades["FX Rate_Exit"] - trades["FX Rate"], 
                                   trades["FX Rate"] - trades["FX Rate_Exit"])
+        trades["Cumulative PnL"] = trades["PnL"].cumsum()
         
-        # Save extracted data to CSV
-        output_csv = data[["Date", "FX Rate", "Yield Spread", "Predictive Price"]]
-        csv_filename = "fx_spread_analysis.csv"
-        output_csv.to_csv(csv_filename, index=False)
+        # Performance Metrics
+        sharpe_ratio = trades["PnL"].mean() / trades["PnL"].std()
+        sortino_ratio = trades["PnL"].mean() / trades["PnL"][trades["PnL"] < 0].std()
+        win_rate = len(trades[trades["PnL"] > 0]) / len(trades)
+        risk_of_ruin = len(trades[trades["PnL"].cumsum() < -0.5 * trades["PnL"].sum()]) / len(trades)
         
-        # Provide download link
-        st.subheader("Download Processed Data")
-        st.download_button(label="Download CSV", data=output_csv.to_csv(index=False), file_name=csv_filename, mime="text/csv")
+        st.subheader("Performance Metrics")
+        st.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
+        st.write(f"Sortino Ratio: {sortino_ratio:.2f}")
+        st.write(f"Win Rate: {win_rate:.2%}")
+        st.write(f"Risk of Ruin: {risk_of_ruin:.2%}")
         
-        # Visualization
-        st.subheader("Market Price vs. Predictive Price")
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(data["Date"], data["FX Rate"], label="Market Price", color="blue")
-        ax.plot(data["Date"], data["Predictive Price"], label="Predictive Price (Regression)", linestyle="dashed", color="red")
+        # Cumulative P&L Chart
+        st.subheader("Cumulative P&L")
+        fig, ax = plt.subplots()
+        ax.plot(trades["Date"], trades["Cumulative PnL"], label="Cumulative P&L", color="green")
+        ax.axhline(y=0, color="black", linestyle="dotted")
         ax.legend()
         st.pyplot(fig)
-    
+        
+        # Separate Charts for Buy and Sell Strategies
+        st.subheader("Buy-Only Strategy P&L")
+        buy_trades = trades[trades["Signal"] == "Buy"]
+        fig, ax = plt.subplots()
+        ax.plot(buy_trades["Date"], buy_trades["Cumulative PnL"], label="Buy-Only Cumulative P&L", color="blue")
+        ax.legend()
+        st.pyplot(fig)
+        
+        st.subheader("Sell-Only Strategy P&L")
+        sell_trades = trades[trades["Signal"] == "Sell"]
+        fig, ax = plt.subplots()
+        ax.plot(sell_trades["Date"], sell_trades["Cumulative PnL"], label="Sell-Only Cumulative P&L", color="red")
+        ax.legend()
+        st.pyplot(fig)
+        
     except Exception as e:
         st.error(f"An error occurred: {e}")
