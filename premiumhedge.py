@@ -48,7 +48,7 @@ def main():
         
         # Calculate Returns
         results = []
-        stop_loss_pct = 2.0  # Set stop loss at 2%
+        stop_loss_pct = 1.5  # Set stop loss at 2%
         
         for i, row in data.iterrows():
             exit_row = fx_data[fx_data["Date"] == row["Exit Date"]]
