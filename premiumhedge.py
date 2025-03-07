@@ -88,7 +88,9 @@ def main():
         win_ratio = (len(win_trades) / len(result_df)) * 100 if len(result_df) > 0 else np.nan
         sharpe_ratio = result_df["Revenue %"].mean() / result_df["Revenue %"].std() if result_df["Revenue %"].std() > 0 else np.nan
         sortino_ratio = result_df["Revenue %"].mean() / loss_trades["Revenue %"].std() if len(loss_trades) > 0 and loss_trades["Revenue %"].std() > 0 else np.nan
-        avg_yearly_return = result_df.groupby(result_df["Entry Date"].dt.year)["Revenue %"].mean().mean()
+        total_return = result_df["Cumulative Revenue %"].iloc[-1] if not result_df.empty else np.nan
+        num_years = (result_df["Entry Date"].dt.year.max() - result_df["Entry Date"].dt.year.min() + 1) if len(result_df) > 1 else 1
+        avg_yearly_return = ((1 + total_return / 100) ** (1 / num_years) - 1) * 100 if num_years > 0 else np.nan
         
         st.sidebar.subheader("Risk Metrics")
         st.sidebar.write(f"Win Ratio: {win_ratio:.2f}% - Higher is better (above 50% is good)")
