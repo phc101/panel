@@ -14,6 +14,9 @@ def main():
     dom_yield_file = st.sidebar.file_uploader("Upload Domestic Bond Yields (CSV)", type=["csv"])
     for_yield_file = st.sidebar.file_uploader("Upload Foreign Bond Yields (CSV)", type=["csv"])
     
+    # Strategy Selection
+    strategy = st.sidebar.radio("Select Strategy", ["Exporter (SELL Only)", "Importer (BUY Only)"])
+    
     if fx_file and dom_yield_file and for_yield_file:
         # Ensure Date column is correctly parsed as datetime
         fx_data = pd.read_csv(fx_file, parse_dates=["Date"], dayfirst=True)
@@ -41,7 +44,13 @@ def main():
         data["Predictive Price"] = model.predict(data[["Yield Spread"]])
         
         # Establish Trading Strategy
-        data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", "SELL")
+        if strategy == "Importer (BUY Only)":
+            data = data[data.iloc[:, 3] < data["Predictive Price"]]
+            data["Signal"] = "BUY"
+        else:
+            data = data[data.iloc[:, 3] > data["Predictive Price"]]
+            data["Signal"] = "SELL"
+        
         data["Weekday"] = data["Date"].dt.weekday
         data = data[data["Weekday"] == 0]  # Filter only Mondays
         data["Exit Date"] = data["Date"] + pd.DateOffset(days=30)
@@ -71,10 +80,6 @@ def main():
         result_df = pd.DataFrame(results, columns=["Entry Date", "Exit Date", "Signal", "Entry Price", "Exit Price", "Revenue %"])
         result_df["Cumulative Revenue %"] = result_df["Revenue %"].cumsum()
         
-        # Separate Buy and Sell Trades
-        buy_trades = result_df[result_df["Signal"] == "BUY"]
-        sell_trades = result_df[result_df["Signal"] == "SELL"]
-        
         # Display Results
         st.subheader("Backtest Results")
         st.dataframe(result_df)
@@ -82,19 +87,9 @@ def main():
         # Plot Cumulative Revenue
         fig, ax = plt.subplots()
         ax.plot(result_df["Entry Date"], result_df["Cumulative Revenue %"], marker='o', linestyle='-')
-        ax.set_title("Cumulative Revenue Over Time")
+        ax.set_title(f"Cumulative Revenue Over Time ({strategy})")
         ax.set_xlabel("Date")
         ax.set_ylabel("Cumulative Revenue %")
-        st.pyplot(fig)
-        
-        # Plot Buy and Sell Trade Performance
-        fig, ax = plt.subplots()
-        ax.plot(buy_trades["Entry Date"], buy_trades["Cumulative Revenue %"], marker='o', linestyle='-', label="BUY Trades")
-        ax.plot(sell_trades["Entry Date"], sell_trades["Cumulative Revenue %"], marker='o', linestyle='-', label="SELL Trades", color='red')
-        ax.set_title("Cumulative Revenue: Buy vs Sell Trades")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Cumulative Revenue %")
-        ax.legend()
         st.pyplot(fig)
         
         # Calculate Yearly Returns
@@ -104,7 +99,7 @@ def main():
         # Plot Yearly Returns Bar Chart
         fig, ax = plt.subplots()
         yearly_returns.plot(kind='bar', ax=ax)
-        ax.set_title("Yearly Returns")
+        ax.set_title(f"Yearly Returns ({strategy})")
         ax.set_xlabel("Year")
         ax.set_ylabel("Total Revenue %")
         st.pyplot(fig)
