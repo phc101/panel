@@ -26,7 +26,7 @@ def main():
         for_yield_data["Date"] = pd.to_datetime(for_yield_data["Date"], errors="coerce")
 
         # Merge Data
-        data = fx_data.merge(dom_yield_data, on="Date").merge(for_yield_data, on="Date")
+        data = fx_data.merge(dom_yield_data, on="Date").merge(for_yield_data, on="Date").sort_values(by="Date")
 
         # Check if Date is still not recognized as datetime
         if not np.issubdtype(data["Date"].dtype, np.datetime64):
