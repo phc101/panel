@@ -1,76 +1,70 @@
 import streamlit as st
 import pandas as pd
-import statsmodels.api as sm
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+from datetime import timedelta
 
-st.title("EUR/PLN Real Value Analysis Based on Yield Spread")
+# Streamlit UI setup
+st.title("FX Valuation & Backtesting Tool")
 
-# File uploaders
-eurpln_file = st.file_uploader("Upload EUR/PLN Historical Data CSV", type=["csv"])
-germany_yield_file = st.file_uploader("Upload Germany 2Y Yield CSV", type=["csv"])
-poland_yield_file = st.file_uploader("Upload Poland 2Y Yield CSV", type=["csv"])
+# Upload CSV files
+st.sidebar.header("Upload Data")
+currency_file = st.sidebar.file_uploader("Upload Currency Pair Data (CSV)", type=["csv"])
+domestic_yield_file = st.sidebar.file_uploader("Upload Domestic Bond Yield Data (CSV)", type=["csv"])
+foreign_yield_file = st.sidebar.file_uploader("Upload Foreign Bond Yield Data (CSV)", type=["csv"])
 
-if eurpln_file and germany_yield_file and poland_yield_file:
-    # Load the data
-    eur_pln_data = pd.read_csv(eurpln_file)
-    german_yield_data = pd.read_csv(germany_yield_file)
-    polish_yield_data = pd.read_csv(poland_yield_file)
+if currency_file and domestic_yield_file and foreign_yield_file:
+    # Load Data
+    currency_data = pd.read_csv(currency_file, parse_dates=["Date"])
+    domestic_yield = pd.read_csv(domestic_yield_file, parse_dates=["Date"])
+    foreign_yield = pd.read_csv(foreign_yield_file, parse_dates=["Date"])
     
-    # Standardize column names
-    eur_pln_data.columns = ["Date", "Close", "Open", "High", "Low", "Volume", "Change"]
-    german_yield_data.columns = ["Date", "Yield_Germany", "Open_Germany", "High_Germany", "Low_Germany", "Change_Germany"]
-    polish_yield_data.columns = ["Date", "Yield_Poland", "Open_Poland", "High_Poland", "Low_Poland", "Change_Poland"]
-
-    # Convert Date to datetime format
-    eur_pln_data["Date"] = pd.to_datetime(eur_pln_data["Date"], format="%d.%m.%Y")
-    german_yield_data["Date"] = pd.to_datetime(german_yield_data["Date"], format="%d.%m.%Y")
-    polish_yield_data["Date"] = pd.to_datetime(polish_yield_data["Date"], format="%d.%m.%Y")
-
-    # Convert numerical values
-    eur_pln_data["Close"] = eur_pln_data["Close"].str.replace(",", ".").astype(float)
-    german_yield_data["Yield_Germany"] = german_yield_data["Yield_Germany"].str.replace(",", ".").astype(float)
-    polish_yield_data["Yield_Poland"] = polish_yield_data["Yield_Poland"].str.replace(",", ".").astype(float)
+    # Ensure proper column names
+    currency_data.columns = ["Date", "FX Rate"]
+    domestic_yield.columns = ["Date", "Domestic Yield"]
+    foreign_yield.columns = ["Date", "Foreign Yield"]
     
-    # Merge datasets
-    merged_data = eur_pln_data.merge(german_yield_data, on="Date", how="inner").merge(polish_yield_data, on="Date", how="inner")
+    # Merge data on Date
+    data = currency_data.merge(domestic_yield, on="Date").merge(foreign_yield, on="Date")
     
-    # Calculate yield spread
-    merged_data["Yield_Spread"] = merged_data["Yield_Poland"] - merged_data["Yield_Germany"]
+    # Calculate bond yield spread
+    data["Yield Spread"] = data["Domestic Yield"] - data["Foreign Yield"]
     
-    # Regression model to estimate real EUR/PLN
-    X = sm.add_constant(merged_data["Yield_Spread"])
-    y = merged_data["Close"]
-    model = sm.OLS(y, X).fit()
+    # Estimate predictive price using a simple linear relationship
+    beta = 0.1  # Arbitrary coefficient, can be optimized further
+    data["Predictive Price"] = data["FX Rate"].shift(1) + beta * (data["Yield Spread"] - data["Yield Spread"].shift(1))
     
-    # Predict real EUR/PLN
-    merged_data["Real_EURPLN"] = model.predict(X)
+    # Generate trading signals
+    data["Signal"] = np.where(data["FX Rate"] < data["Predictive Price"], "Buy", "Sell")
+    data["Weekday"] = data["Date"].dt.weekday
     
-    # Plot actual vs real EUR/PLN
+    # Filter only Monday trades and set exit 30 days later
+    trades = data[data["Weekday"] == 0].copy()
+    trades["Exit Date"] = trades["Date"] + timedelta(days=30)
+    trades = trades.merge(data[["Date", "FX Rate"]], left_on="Exit Date", right_on="Date", suffixes=("", "_Exit"))
+    
+    # Calculate P&L
+    trades["PnL"] = np.where(trades["Signal"] == "Buy", 
+                              trades["FX Rate_Exit"] - trades["FX Rate"], 
+                              trades["FX Rate"] - trades["FX Rate_Exit"])
+    
+    # Display results
+    st.subheader("Backtest Results")
+    st.write(trades[["Date", "Signal", "FX Rate", "Predictive Price", "Exit Date", "FX Rate_Exit", "PnL"]])
+    
+    # Visualization
+    st.subheader("Market Price vs. Predictive Price")
     fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(merged_data["Date"], merged_data["Close"], label="Actual EUR/PLN", color="blue")
-    ax.plot(merged_data["Date"], merged_data["Real_EURPLN"], label="Real EUR/PLN (Based on Spread)", color="red", linestyle="dashed")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Exchange Rate")
-    ax.set_title("Actual vs. Real EUR/PLN Based on Yield Spread")
+    ax.plot(data["Date"], data["FX Rate"], label="Market Price", color="blue")
+    ax.plot(data["Date"], data["Predictive Price"], label="Predictive Price", linestyle="dashed", color="red")
     ax.legend()
-    ax.grid()
     st.pyplot(fig)
     
-    # Interpretation of the current state
-    current_eurpln = merged_data.iloc[-1]["Close"]
-    current_real_eurpln = merged_data.iloc[-1]["Real_EURPLN"]
-    difference = current_eurpln - current_real_eurpln
-    
-    if difference > 0:
-        direction = "above"
-    else:
-        direction = "below"
-    
-    # Estimating the time to reach the real value
-    recent_differences = abs(merged_data["Close"] - merged_data["Real_EURPLN"]).rolling(window=5).mean()
-    avg_adjustment_speed = recent_differences.mean()
-    estimated_days = abs(difference) / avg_adjustment_speed if avg_adjustment_speed > 0 else "unknown"
-    
-    st.write(f"EUR/PLN is currently at {current_eurpln:.4f}, which is {direction} its real value at {current_real_eurpln:.4f}.")
-    st.write(f"It will probably take approximately {estimated_days:.0f} days to reach its real value.")
+    # Equity curve
+    trades["Cumulative PnL"] = trades["PnL"].cumsum()
+    st.subheader("Equity Curve")
+    fig2, ax2 = plt.subplots(figsize=(10, 5))
+    ax2.plot(trades["Date"], trades["Cumulative PnL"], label="Cumulative P&L", color="green")
+    ax2.axhline(y=0, color="black", linestyle="dotted")
+    ax2.legend()
+    st.pyplot(fig2)
