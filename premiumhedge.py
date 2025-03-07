@@ -48,15 +48,22 @@ def main():
         
         # Calculate Returns
         results = []
+        stop_loss_pct = 2.0  # Set stop loss at 2%
+        
         for i, row in data.iterrows():
             exit_row = fx_data[fx_data["Date"] == row["Exit Date"]]
             if not exit_row.empty:
                 exit_price = exit_row.iloc[0, 1]
                 entry_price = row.iloc[3]
+                stop_loss_price = entry_price * (1 - stop_loss_pct / 100) if row["Signal"] == "BUY" else entry_price * (1 + stop_loss_pct / 100)
                 
                 if row["Signal"] == "BUY":
+                    if exit_price < stop_loss_price:
+                        exit_price = stop_loss_price  # Enforce stop loss
                     revenue = (exit_price - entry_price) / entry_price * 100
                 else:
+                    if exit_price > stop_loss_price:
+                        exit_price = stop_loss_price  # Enforce stop loss
                     revenue = (entry_price - exit_price) / entry_price * 100
                 
                 results.append([row["Date"], row["Exit Date"], row["Signal"], entry_price, exit_price, revenue])
