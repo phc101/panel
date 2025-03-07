@@ -35,60 +35,64 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         data = currency_data.merge(domestic_yield, on="Date").merge(foreign_yield, on="Date")
         data["Yield Spread"] = data["Domestic Yield"] - data["Foreign Yield"]
         
-        # Predictive Price using Regression
-        model = LinearRegression()
+        # Drop NaN values before regression
         valid_data = data.dropna()
-        model.fit(valid_data[["Yield Spread"]], valid_data["FX Rate"])
-        data["Predictive Price"] = model.predict(data[["Yield Spread"]])
-        
-        # Trading Strategy
-        data["Weekday"] = data["Date"].dt.weekday
-        data["Signal"] = np.where(data["FX Rate"] < data["Predictive Price"], "Buy", 
-                                   np.where(data["FX Rate"] > data["Predictive Price"], "Sell", "Hold"))
-        
-        trades = data[(data["Weekday"] == 0) & (data["Signal"] != "Hold")].copy()
-        trades["Exit Date"] = trades["Date"] + timedelta(days=30)
-        trades = trades.merge(data[["Date", "FX Rate"]], left_on="Exit Date", right_on="Date", suffixes=("", "_Exit"))
-        
-        trades["PnL"] = np.where(trades["Signal"] == "Buy", 
-                                  trades["FX Rate_Exit"] - trades["FX Rate"], 
-                                  trades["FX Rate"] - trades["FX Rate_Exit"])
-        trades["Cumulative PnL"] = trades["PnL"].cumsum()
-        
-        # Performance Metrics
-        sharpe_ratio = trades["PnL"].mean() / trades["PnL"].std()
-        sortino_ratio = trades["PnL"].mean() / trades["PnL"][trades["PnL"] < 0].std()
-        win_rate = len(trades[trades["PnL"] > 0]) / len(trades)
-        risk_of_ruin = len(trades[trades["PnL"].cumsum() < -0.5 * trades["PnL"].sum()]) / len(trades)
-        
-        st.subheader("Performance Metrics")
-        st.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
-        st.write(f"Sortino Ratio: {sortino_ratio:.2f}")
-        st.write(f"Win Rate: {win_rate:.2%}")
-        st.write(f"Risk of Ruin: {risk_of_ruin:.2%}")
-        
-        # Cumulative P&L Chart
-        st.subheader("Cumulative P&L")
-        fig, ax = plt.subplots()
-        ax.plot(trades["Date"], trades["Cumulative PnL"], label="Cumulative P&L", color="green")
-        ax.axhline(y=0, color="black", linestyle="dotted")
-        ax.legend()
-        st.pyplot(fig)
-        
-        # Separate Charts for Buy and Sell Strategies
-        st.subheader("Buy-Only Strategy P&L")
-        buy_trades = trades[trades["Signal"] == "Buy"]
-        fig, ax = plt.subplots()
-        ax.plot(buy_trades["Date"], buy_trades["Cumulative PnL"], label="Buy-Only Cumulative P&L", color="blue")
-        ax.legend()
-        st.pyplot(fig)
-        
-        st.subheader("Sell-Only Strategy P&L")
-        sell_trades = trades[trades["Signal"] == "Sell"]
-        fig, ax = plt.subplots()
-        ax.plot(sell_trades["Date"], sell_trades["Cumulative PnL"], label="Sell-Only Cumulative P&L", color="red")
-        ax.legend()
-        st.pyplot(fig)
-        
+        if valid_data.empty:
+            st.error("Error: Not enough valid data available to train the regression model.")
+        else:
+            # Predictive Price using Regression
+            model = LinearRegression()
+            model.fit(valid_data[["Yield Spread"]], valid_data["FX Rate"])
+            data["Predictive Price"] = model.predict(data[["Yield Spread"]])
+            
+            # Trading Strategy
+            data["Weekday"] = data["Date"].dt.weekday
+            data["Signal"] = np.where(data["FX Rate"] < data["Predictive Price"], "Buy", 
+                                       np.where(data["FX Rate"] > data["Predictive Price"], "Sell", "Hold"))
+            
+            trades = data[(data["Weekday"] == 0) & (data["Signal"] != "Hold")].copy()
+            trades["Exit Date"] = trades["Date"] + timedelta(days=30)
+            trades = trades.merge(data[["Date", "FX Rate"]], left_on="Exit Date", right_on="Date", suffixes=("", "_Exit"))
+            
+            trades["PnL"] = np.where(trades["Signal"] == "Buy", 
+                                      trades["FX Rate_Exit"] - trades["FX Rate"], 
+                                      trades["FX Rate"] - trades["FX Rate_Exit"])
+            trades["Cumulative PnL"] = trades["PnL"].cumsum()
+            
+            # Performance Metrics
+            sharpe_ratio = trades["PnL"].mean() / trades["PnL"].std()
+            sortino_ratio = trades["PnL"].mean() / trades["PnL"][trades["PnL"] < 0].std()
+            win_rate = len(trades[trades["PnL"] > 0]) / len(trades)
+            risk_of_ruin = len(trades[trades["PnL"].cumsum() < -0.5 * trades["PnL"].sum()]) / len(trades)
+            
+            st.subheader("Performance Metrics")
+            st.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
+            st.write(f"Sortino Ratio: {sortino_ratio:.2f}")
+            st.write(f"Win Rate: {win_rate:.2%}")
+            st.write(f"Risk of Ruin: {risk_of_ruin:.2%}")
+            
+            # Cumulative P&L Chart
+            st.subheader("Cumulative P&L")
+            fig, ax = plt.subplots()
+            ax.plot(trades["Date"], trades["Cumulative PnL"], label="Cumulative P&L", color="green")
+            ax.axhline(y=0, color="black", linestyle="dotted")
+            ax.legend()
+            st.pyplot(fig)
+            
+            # Separate Charts for Buy and Sell Strategies
+            st.subheader("Buy-Only Strategy P&L")
+            buy_trades = trades[trades["Signal"] == "Buy"]
+            fig, ax = plt.subplots()
+            ax.plot(buy_trades["Date"], buy_trades["Cumulative PnL"], label="Buy-Only Cumulative P&L", color="blue")
+            ax.legend()
+            st.pyplot(fig)
+            
+            st.subheader("Sell-Only Strategy P&L")
+            sell_trades = trades[trades["Signal"] == "Sell"]
+            fig, ax = plt.subplots()
+            ax.plot(sell_trades["Date"], sell_trades["Cumulative PnL"], label="Sell-Only Cumulative P&L", color="red")
+            ax.legend()
+            st.pyplot(fig)
+    
     except Exception as e:
         st.error(f"An error occurred: {e}")
