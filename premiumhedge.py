@@ -21,6 +21,12 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         domestic_yield = pd.read_csv(domestic_yield_file)
         foreign_yield = pd.read_csv(foreign_yield_file)
         
+        # Show detected column names for debugging
+        st.subheader("Column Names in Uploaded Files")
+        st.write("Currency Data Columns:", currency_data.columns.tolist())
+        st.write("Domestic Yield Data Columns:", domestic_yield.columns.tolist())
+        st.write("Foreign Yield Data Columns:", foreign_yield.columns.tolist())
+        
         # Detect column names and select relevant ones
         currency_data.rename(columns={currency_data.columns[0]: "Date", currency_data.columns[1]: "FX Rate"}, inplace=True)
         domestic_yield.rename(columns={domestic_yield.columns[0]: "Date", domestic_yield.columns[1]: "Domestic Yield"}, inplace=True)
@@ -34,8 +40,13 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         # Merge data
         data = currency_data.merge(domestic_yield, on="Date", how="outer").merge(foreign_yield, on="Date", how="outer")
         data.sort_values(by="Date", inplace=True)
-        data.fillna(method="ffill", inplace=True)  # Forward fill missing values
-        data.dropna(inplace=True)  # Ensure no NaN remains after filling
+        
+        # Display first few rows for debugging
+        st.subheader("Merged Data Preview Before Processing")
+        st.write(data.head())
+        
+        # Forward fill missing values
+        data.fillna(method="ffill", inplace=True)
         
         # Ensure dataset is not empty after preprocessing
         if data.empty:
