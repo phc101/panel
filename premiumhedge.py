@@ -17,6 +17,9 @@ def main():
     # Strategy Selection
     strategy = st.sidebar.radio("Select Strategy", ["Exporter (SELL Only)", "Importer (BUY Only)", "Both (BUY & SELL)"])
     
+    # Stop Loss Input
+    stop_loss_pct = st.sidebar.slider("Stop Loss (%)", min_value=0.0, max_value=10.0, value=1.5, step=0.1)
+    
     if fx_file and dom_yield_file and for_yield_file:
         # Ensure Date column is correctly parsed as datetime
         fx_data = pd.read_csv(fx_file, parse_dates=["Date"], dayfirst=True)
@@ -59,7 +62,6 @@ def main():
         
         # Calculate Returns
         results = []
-        stop_loss_pct = 1.5  # Set stop loss at 1.5%
         
         for i, row in data.iterrows():
             exit_row = fx_data[fx_data["Date"] == row["Exit Date"]]
@@ -83,17 +85,6 @@ def main():
         result_df["Cumulative Revenue %"] = result_df["Revenue %"].cumsum()
         result_df["Drawdown %"] = result_df["Cumulative Revenue %"].cummax() - result_df["Cumulative Revenue %"]
         
-        # Calculate Kelly Criterion
-        win_rate = (result_df["Revenue %"] > 0).mean()
-        loss_rate = 1 - win_rate
-        avg_win = result_df[result_df["Revenue %"] > 0]["Revenue %"].mean()
-        avg_loss = abs(result_df[result_df["Revenue %"] <= 0]["Revenue %"].mean())
-        kelly_fraction = win_rate - (loss_rate / (avg_win / avg_loss)) if avg_loss > 0 else np.nan
-        
-        # Display Kelly Criterion
-        st.sidebar.subheader("Kelly Criterion")
-        st.sidebar.write(f"Optimal Bet Size: {kelly_fraction:.2f} (as a fraction of capital)")
-        
         # Display Results
         st.subheader("Backtest Results")
         st.dataframe(result_df)
@@ -104,15 +95,6 @@ def main():
         ax.set_title(f"Cumulative Revenue Over Time ({strategy})")
         ax.set_xlabel("Date")
         ax.set_ylabel("Cumulative Revenue %")
-        ax.legend()
-        st.pyplot(fig)
-        
-        # Plot Drawdown
-        fig, ax = plt.subplots()
-        ax.plot(result_df["Entry Date"], result_df["Drawdown %"], color='red', linestyle='-', label="Drawdown")
-        ax.set_title(f"Drawdown Over Time ({strategy})")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Drawdown %")
         ax.legend()
         st.pyplot(fig)
 
