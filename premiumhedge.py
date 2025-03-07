@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from datetime import timedelta
+from sklearn.linear_model import LinearRegression
 
 # Streamlit UI setup
 st.title("FX Valuation & Backtesting Tool")
@@ -51,9 +51,15 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         # Calculate bond yield spread
         data["Yield Spread"] = data["Domestic Yield"] - data["Foreign Yield"]
         
-        # Estimate predictive price using a simple linear relationship
-        beta = 0.1  # Arbitrary coefficient, can be optimized further
-        data["Predictive Price"] = data["FX Rate"].shift(1) + beta * (data["Yield Spread"] - data["Yield Spread"].shift(1))
+        # Linear Regression Model for Predictive Price
+        model = LinearRegression()
+        valid_data = data.dropna()
+        X = valid_data[["Yield Spread"]]
+        y = valid_data["FX Rate"]
+        model.fit(X, y)
+        
+        # Predictive price using regression model
+        data["Predictive Price"] = model.predict(data[["Yield Spread"]])
         
         # Save extracted data to CSV
         output_csv = data[["Date", "FX Rate", "Yield Spread", "Predictive Price"]]
@@ -68,7 +74,7 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         st.subheader("Market Price vs. Predictive Price")
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(data["Date"], data["FX Rate"], label="Market Price", color="blue")
-        ax.plot(data["Date"], data["Predictive Price"], label="Predictive Price", linestyle="dashed", color="red")
+        ax.plot(data["Date"], data["Predictive Price"], label="Predictive Price (Regression)", linestyle="dashed", color="red")
         ax.legend()
         st.pyplot(fig)
     
