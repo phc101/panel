@@ -61,11 +61,11 @@ def main():
                 if row["Signal"] == "BUY":
                     revenue = (exit_price - entry_price) / entry_price * 100
                     if stop_loss and exit_price < stop_loss_price:
-                        revenue = (stop_loss_price - entry_price) / entry_price * 100
+                        revenue = -stop_loss  # Ensure stop-loss is a negative result
                 else:
                     revenue = (entry_price - exit_price) / entry_price * 100
                     if stop_loss and exit_price > stop_loss_price:
-                        revenue = (entry_price - stop_loss_price) / entry_price * 100
+                        revenue = -stop_loss  # Ensure stop-loss is a negative result
                 
                 results.append([row["Date"], row["Exit Date"], row["Signal"], entry_price, exit_price, revenue])
         
