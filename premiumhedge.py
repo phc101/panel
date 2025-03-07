@@ -57,9 +57,9 @@ def main():
                     revenue = (exit_price - entry_price) / entry_price * 100
                 else:
                     revenue = (entry_price - exit_price) / entry_price * 100
-                results.append([row["Date"], row["Signal"], entry_price, exit_price, revenue])
+                results.append([row["Date"], row["Exit Date"], row["Signal"], entry_price, exit_price, revenue])
         
-        result_df = pd.DataFrame(results, columns=["Entry Date", "Signal", "Entry Price", "Exit Price", "Revenue %"])
+        result_df = pd.DataFrame(results, columns=["Entry Date", "Exit Date", "Signal", "Entry Price", "Exit Price", "Revenue %"])
         result_df["Cumulative Revenue %"] = result_df["Revenue %"].cumsum()
         
         # Display Results
