@@ -14,6 +14,9 @@ def main():
     dom_yield_file = st.sidebar.file_uploader("Upload Domestic Bond Yields (CSV)", type=["csv"])
     for_yield_file = st.sidebar.file_uploader("Upload Foreign Bond Yields (CSV)", type=["csv"])
     
+    # Stop Loss Selection
+    stop_loss = st.sidebar.selectbox("Select Stop Loss (%)", [None, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0])
+    
     if fx_file and dom_yield_file and for_yield_file:
         # Ensure Date column is correctly parsed as datetime
         fx_data = pd.read_csv(fx_file, parse_dates=["Date"], dayfirst=True)
@@ -53,10 +56,17 @@ def main():
             if not exit_row.empty:
                 exit_price = exit_row.iloc[0, 1]
                 entry_price = row.iloc[3]
+                stop_loss_price = entry_price * (1 - stop_loss / 100) if stop_loss else None
+                
                 if row["Signal"] == "BUY":
                     revenue = (exit_price - entry_price) / entry_price * 100
+                    if stop_loss and exit_price < stop_loss_price:
+                        revenue = (stop_loss_price - entry_price) / entry_price * 100
                 else:
                     revenue = (entry_price - exit_price) / entry_price * 100
+                    if stop_loss and exit_price > stop_loss_price:
+                        revenue = (entry_price - stop_loss_price) / entry_price * 100
+                
                 results.append([row["Date"], row["Exit Date"], row["Signal"], entry_price, exit_price, revenue])
         
         result_df = pd.DataFrame(results, columns=["Entry Date", "Exit Date", "Signal", "Entry Price", "Exit Price", "Revenue %"])
@@ -72,6 +82,18 @@ def main():
         ax.set_title("Cumulative Revenue Over Time")
         ax.set_xlabel("Date")
         ax.set_ylabel("Cumulative Revenue %")
+        st.pyplot(fig)
+        
+        # Calculate Yearly Returns
+        result_df["Year"] = pd.to_datetime(result_df["Entry Date"]).dt.year
+        yearly_returns = result_df.groupby("Year")["Revenue %"].sum()
+        
+        # Plot Yearly Returns Bar Chart
+        fig, ax = plt.subplots()
+        yearly_returns.plot(kind='bar', ax=ax)
+        ax.set_title("Yearly Returns")
+        ax.set_xlabel("Year")
+        ax.set_ylabel("Total Revenue %")
         st.pyplot(fig)
 
 if __name__ == "__main__":
