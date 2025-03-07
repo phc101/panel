@@ -85,14 +85,16 @@ def main():
         # Risk Metrics
         win_trades = result_df[result_df["Revenue %"] > 0]
         loss_trades = result_df[result_df["Revenue %"] <= 0]
-        win_loss_ratio = len(win_trades) / len(loss_trades) if len(loss_trades) > 0 else np.nan
+        win_ratio = (len(win_trades) / len(result_df)) * 100 if len(result_df) > 0 else np.nan
         sharpe_ratio = result_df["Revenue %"].mean() / result_df["Revenue %"].std() if result_df["Revenue %"].std() > 0 else np.nan
         sortino_ratio = result_df["Revenue %"].mean() / loss_trades["Revenue %"].std() if len(loss_trades) > 0 and loss_trades["Revenue %"].std() > 0 else np.nan
+        avg_yearly_return = result_df.groupby(result_df["Entry Date"].dt.year)["Revenue %"].mean().mean()
         
         st.sidebar.subheader("Risk Metrics")
-        st.sidebar.write(f"Win/Loss Ratio: {win_loss_ratio:.2f} - Higher is better (above 1.0 is good)")
+        st.sidebar.write(f"Win Ratio: {win_ratio:.2f}% - Higher is better (above 50% is good)")
         st.sidebar.write(f"Sharpe Ratio: {sharpe_ratio:.2f} - Above 1.0 is considered good, above 2.0 is excellent")
         st.sidebar.write(f"Sortino Ratio: {sortino_ratio:.2f} - Above 1.0 is preferred for risk-adjusted returns")
+        st.sidebar.write(f"Average Yearly Return: {avg_yearly_return:.2f}% - Higher indicates better performance")
         
         # Display Results
         st.subheader("Backtest Results")
