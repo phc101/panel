@@ -15,12 +15,24 @@ def main():
     for_yield_file = st.sidebar.file_uploader("Upload Foreign Bond Yields (CSV)", type=["csv"])
     
     if fx_file and dom_yield_file and for_yield_file:
+        # Ensure Date column is correctly parsed as datetime
         fx_data = pd.read_csv(fx_file, parse_dates=["Date"], dayfirst=True)
         dom_yield_data = pd.read_csv(dom_yield_file, parse_dates=["Date"], dayfirst=True)
         for_yield_data = pd.read_csv(for_yield_file, parse_dates=["Date"], dayfirst=True)
-        
+
+        # Convert Date column to datetime (if it isn't already)
+        fx_data["Date"] = pd.to_datetime(fx_data["Date"], errors="coerce")
+        dom_yield_data["Date"] = pd.to_datetime(dom_yield_data["Date"], errors="coerce")
+        for_yield_data["Date"] = pd.to_datetime(for_yield_data["Date"], errors="coerce")
+
         # Merge Data
         data = fx_data.merge(dom_yield_data, on="Date").merge(for_yield_data, on="Date")
+
+        # Check if Date is still not recognized as datetime
+        if not np.issubdtype(data["Date"].dtype, np.datetime64):
+            st.error("Error: Date column is not in datetime format. Please check your input files.")
+            return
+
         data["Yield Spread"] = data.iloc[:, 1] - data.iloc[:, 2]
         
         # Train Linear Regression Model
