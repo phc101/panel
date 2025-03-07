@@ -14,9 +14,6 @@ def main():
     dom_yield_file = st.sidebar.file_uploader("Upload Domestic Bond Yields (CSV)", type=["csv"])
     for_yield_file = st.sidebar.file_uploader("Upload Foreign Bond Yields (CSV)", type=["csv"])
     
-    # Stop Loss Selection
-    stop_loss = st.sidebar.selectbox("Select Stop Loss (%)", [None, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0])
-    
     if fx_file and dom_yield_file and for_yield_file:
         # Ensure Date column is correctly parsed as datetime
         fx_data = pd.read_csv(fx_file, parse_dates=["Date"], dayfirst=True)
@@ -56,16 +53,11 @@ def main():
             if not exit_row.empty:
                 exit_price = exit_row.iloc[0, 1]
                 entry_price = row.iloc[3]
-                stop_loss_price = entry_price * (1 - stop_loss / 100) if stop_loss else None
                 
                 if row["Signal"] == "BUY":
                     revenue = (exit_price - entry_price) / entry_price * 100
-                    if stop_loss and exit_price < stop_loss_price:
-                        revenue = -stop_loss  # Ensure stop-loss is a negative result
                 else:
                     revenue = (entry_price - exit_price) / entry_price * 100
-                    if stop_loss and exit_price > stop_loss_price:
-                        revenue = -stop_loss  # Ensure stop-loss is a negative result
                 
                 results.append([row["Date"], row["Exit Date"], row["Signal"], entry_price, exit_price, revenue])
         
