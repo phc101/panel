@@ -55,24 +55,14 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         beta = 0.1  # Arbitrary coefficient, can be optimized further
         data["Predictive Price"] = data["FX Rate"].shift(1) + beta * (data["Yield Spread"] - data["Yield Spread"].shift(1))
         
-        # Generate trading signals based on valuation
-        data["Signal"] = np.where(data["FX Rate"] < data["Predictive Price"], "Buy", 
-                                   np.where(data["FX Rate"] > data["Predictive Price"], "Sell", "Hold"))
-        data["Weekday"] = data["Date"].dt.weekday
+        # Save extracted data to CSV
+        output_csv = data[["Date", "FX Rate", "Yield Spread", "Predictive Price"]]
+        csv_filename = "fx_spread_analysis.csv"
+        output_csv.to_csv(csv_filename, index=False)
         
-        # Filter only Monday trades and set exit 30 days later
-        trades = data[(data["Weekday"] == 0) & (data["Signal"] != "Hold")].copy()
-        trades["Exit Date"] = trades["Date"] + timedelta(days=30)
-        trades = trades.merge(data[["Date", "FX Rate"]], left_on="Exit Date", right_on="Date", suffixes=("", "_Exit"))
-        
-        # Calculate P&L
-        trades["PnL"] = np.where(trades["Signal"] == "Buy", 
-                                  trades["FX Rate_Exit"] - trades["FX Rate"], 
-                                  trades["FX Rate"] - trades["FX Rate_Exit"])
-        
-        # Display results
-        st.subheader("Backtest Results")
-        st.write(trades[["Date", "Signal", "FX Rate", "Predictive Price", "Exit Date", "FX Rate_Exit", "PnL"]])
+        # Provide download link
+        st.subheader("Download Processed Data")
+        st.download_button(label="Download CSV", data=output_csv.to_csv(index=False), file_name=csv_filename, mime="text/csv")
         
         # Visualization
         st.subheader("Market Price vs. Predictive Price")
@@ -81,15 +71,6 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         ax.plot(data["Date"], data["Predictive Price"], label="Predictive Price", linestyle="dashed", color="red")
         ax.legend()
         st.pyplot(fig)
-        
-        # Equity curve
-        trades["Cumulative PnL"] = trades["PnL"].cumsum()
-        st.subheader("Equity Curve")
-        fig2, ax2 = plt.subplots(figsize=(10, 5))
-        ax2.plot(trades["Date"], trades["Cumulative PnL"], label="Cumulative P&L", color="green")
-        ax2.axhline(y=0, color="black", linestyle="dotted")
-        ax2.legend()
-        st.pyplot(fig2)
     
     except Exception as e:
         st.error(f"An error occurred: {e}")
