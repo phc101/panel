@@ -90,9 +90,9 @@ def main():
         sortino_ratio = result_df["Revenue %"].mean() / loss_trades["Revenue %"].std() if len(loss_trades) > 0 and loss_trades["Revenue %"].std() > 0 else np.nan
         
         st.sidebar.subheader("Risk Metrics")
-        st.sidebar.write(f"Win/Loss Ratio: {win_loss_ratio:.2f}")
-        st.sidebar.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
-        st.sidebar.write(f"Sortino Ratio: {sortino_ratio:.2f}")
+        st.sidebar.write(f"Win/Loss Ratio: {win_loss_ratio:.2f} - Higher is better (above 1.0 is good)")
+        st.sidebar.write(f"Sharpe Ratio: {sharpe_ratio:.2f} - Above 1.0 is considered good, above 2.0 is excellent")
+        st.sidebar.write(f"Sortino Ratio: {sortino_ratio:.2f} - Above 1.0 is preferred for risk-adjusted returns")
         
         # Display Results
         st.subheader("Backtest Results")
