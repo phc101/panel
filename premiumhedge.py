@@ -32,17 +32,20 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         foreign_yield["Date"] = pd.to_datetime(foreign_yield["Date"], errors='coerce')
         
         # Merge data
-        data = currency_data.merge(domestic_yield, on="Date").merge(foreign_yield, on="Date")
-        data["Yield Spread"] = data["Domestic Yield"] - data["Foreign Yield"]
+        data = currency_data.merge(domestic_yield, on="Date", how="outer").merge(foreign_yield, on="Date", how="outer")
+        data.sort_values(by="Date", inplace=True)
+        data.fillna(method="ffill", inplace=True)  # Forward fill missing values
+        data.dropna(inplace=True)  # Ensure no NaN remains after filling
         
-        # Drop NaN values before regression
-        valid_data = data.dropna()
-        if valid_data.empty:
-            st.error("Error: Not enough valid data available to train the regression model.")
+        # Ensure dataset is not empty after preprocessing
+        if data.empty:
+            st.error("Error: No valid data available after preprocessing. Check uploaded files.")
         else:
+            data["Yield Spread"] = data["Domestic Yield"] - data["Foreign Yield"]
+            
             # Predictive Price using Regression
             model = LinearRegression()
-            model.fit(valid_data[["Yield Spread"]], valid_data["FX Rate"])
+            model.fit(data[["Yield Spread"]], data["FX Rate"])
             data["Predictive Price"] = model.predict(data[["Yield Spread"]])
             
             # Trading Strategy
