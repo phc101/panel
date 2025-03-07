@@ -97,6 +97,15 @@ def main():
         ax.set_ylabel("Cumulative Revenue %")
         ax.legend()
         st.pyplot(fig)
+        
+        # Plot Drawdown
+        fig, ax = plt.subplots()
+        ax.plot(result_df["Entry Date"], -result_df["Drawdown %"], color='red', linestyle='-', label="Drawdown")
+        ax.set_title(f"Negative Drawdown Over Time ({strategy})")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Drawdown %")
+        ax.legend()
+        st.pyplot(fig)
 
 if __name__ == "__main__":
     main()
