@@ -55,12 +55,13 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         beta = 0.1  # Arbitrary coefficient, can be optimized further
         data["Predictive Price"] = data["FX Rate"].shift(1) + beta * (data["Yield Spread"] - data["Yield Spread"].shift(1))
         
-        # Generate trading signals
-        data["Signal"] = np.where(data["FX Rate"] < data["Predictive Price"], "Buy", "Sell")
+        # Generate trading signals based on valuation
+        data["Signal"] = np.where(data["FX Rate"] < data["Predictive Price"], "Buy", 
+                                   np.where(data["FX Rate"] > data["Predictive Price"], "Sell", "Hold"))
         data["Weekday"] = data["Date"].dt.weekday
         
         # Filter only Monday trades and set exit 30 days later
-        trades = data[data["Weekday"] == 0].copy()
+        trades = data[(data["Weekday"] == 0) & (data["Signal"] != "Hold")].copy()
         trades["Exit Date"] = trades["Date"] + timedelta(days=30)
         trades = trades.merge(data[["Date", "FX Rate"]], left_on="Exit Date", right_on="Date", suffixes=("", "_Exit"))
         
