@@ -45,9 +45,9 @@ def main():
         
         # Establish Trading Strategy
         if strategy == "BUY Only":
-            data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", np.nan)
+            data["Signal"] = np.where(data.iloc[:, -2] < data["Predictive Price"], "BUY", np.nan)
         elif strategy == "SELL Only":
-            data["Signal"] = np.where(data.iloc[:, 3] > data["Predictive Price"], "SELL", np.nan)
+            data["Signal"] = np.where(data.iloc[:, -2] > data["Predictive Price"], "SELL", np.nan)
         else:
             data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", "SELL")
         
