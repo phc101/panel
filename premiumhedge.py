@@ -33,9 +33,9 @@ def main():
             st.error("Error: Date column is not in datetime format. Please check your input files.")
             return
 
-        data.iloc[:, 1] = pd.to_numeric(data.iloc[:, 1], errors='coerce')
-data.iloc[:, 2] = pd.to_numeric(data.iloc[:, 2], errors='coerce')
-data["Yield Spread"] = data.iloc[:, 1] - data.iloc[:, 2]
+                data.iloc[:, 1] = pd.to_numeric(data.iloc[:, 1], errors='coerce')
+        data.iloc[:, 2] = pd.to_numeric(data.iloc[:, 2], errors='coerce')
+        data["Yield Spread"] = data.iloc[:, 1] - data.iloc[:, 2]
         
         # Train Linear Regression Model
         model = LinearRegression()
