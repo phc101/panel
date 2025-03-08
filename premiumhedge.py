@@ -38,7 +38,11 @@ def main():
         
         # Train Linear Regression Model
         model = LinearRegression()
-        model.fit(data[["Yield Spread"]], data.iloc[:, 3])
+        valid_data = data[["Yield Spread", data.columns[3]]].dropna()
+        if valid_data.empty:
+            st.error("Error: No valid data available for training. Check your input files.")
+            return
+        model.fit(valid_data[["Yield Spread"]], valid_data.iloc[:, 1])
         data["Predictive Price"] = model.predict(data[["Yield Spread"]])
         
         # Establish Trading Strategy
