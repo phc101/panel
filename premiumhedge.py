@@ -28,18 +28,20 @@ def main():
         
         # Load Domestic Bond Yields
         dom_yield_data = None
-        for file in dom_yield_files:
+        for i, file in enumerate(dom_yield_files, start=1):
             temp_df = pd.read_csv(file, parse_dates=["Date"], dayfirst=True)
             temp_df["Date"] = pd.to_datetime(temp_df["Date"], errors="coerce")
             temp_df = temp_df.dropna(subset=["Date"])  # Ensure no missing dates
+            temp_df = temp_df.rename(columns={temp_df.columns[1]: f"Domestic Yield {i}"})  # Rename column
             dom_yield_data = temp_df if dom_yield_data is None else dom_yield_data.merge(temp_df, on="Date", how="outer")
         
         # Load FX Data
         fx_data = None
-        for file in fx_files:
+        for i, file in enumerate(fx_files, start=1):
             temp_df = pd.read_csv(file, parse_dates=["Date"], dayfirst=True)
             temp_df["Date"] = pd.to_datetime(temp_df["Date"], errors="coerce")
             temp_df = temp_df.dropna(subset=["Date"])  # Ensure no missing dates
+            temp_df = temp_df.rename(columns={temp_df.columns[1]: f"FX Pair {i}"})  # Rename column
             fx_data = temp_df if fx_data is None else fx_data.merge(temp_df, on="Date", how="outer")
         
         # Merge Data
@@ -55,76 +57,29 @@ def main():
         
         # Calculate Yield Spreads (Each Domestic Yield - Foreign Yield)
         for i in range(1, 6):  # Assuming 5 domestic yields
-            data[f"Yield Spread {i}"] = data.iloc[:, i] - data.iloc[:, -1]
+            data[f"Yield Spread {i}"] = data[f"Domestic Yield {i}"] - data.iloc[:, -1]
         
         # Train Linear Regression Models for Each Currency Pair
         for i in range(1, 6):  # Assuming 5 currency pairs
             model = LinearRegression()
-            model.fit(data[[f"Yield Spread {i}"]], data.iloc[:, i + 5])
+            model.fit(data[[f"Yield Spread {i}"]], data[f"FX Pair {i}"])
             data[f"Predictive Price {i}"] = model.predict(data[[f"Yield Spread {i}"]])
             
             # Establish Trading Strategy
             if strategy == "Importer (BUY Only)":
-                data[f"Signal {i}"] = np.where(data.iloc[:, i + 5] < data[f"Predictive Price {i}"], "BUY", np.nan)
+                data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] < data[f"Predictive Price {i}"], "BUY", np.nan)
             elif strategy == "Exporter (SELL Only)":
-                data[f"Signal {i}"] = np.where(data.iloc[:, i + 5] > data[f"Predictive Price {i}"], "SELL", np.nan)
+                data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] > data[f"Predictive Price {i}"], "SELL", np.nan)
             else:
-                data[f"Signal {i}"] = np.where(data.iloc[:, i + 5] < data[f"Predictive Price {i}"], "BUY", "SELL")
+                data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] < data[f"Predictive Price {i}"], "BUY", "SELL")
             
         data["Weekday"] = data["Date"].dt.weekday
         data = data[data["Weekday"] == 0]  # Filter only Mondays
         data["Exit Date"] = data["Date"] + pd.DateOffset(days=30)
         
-        # Calculate Returns for Portfolio
-        portfolio_results = []
-        for i in range(1, 6):  # Each Currency Pair
-            pair_results = []
-            for j, row in data.iterrows():
-                exit_row = fx_data[fx_data["Date"] == row["Exit Date"]]
-                if not exit_row.empty:
-                    exit_price = exit_row.iloc[0, i + 1]
-                    entry_price = row.iloc[i + 5]
-                    stop_loss_price = entry_price * (1 - stop_loss_pct / 100) if row[f"Signal {i}"] == "BUY" else entry_price * (1 + stop_loss_pct / 100)
-                    
-                    if row[f"Signal {i}"] == "BUY":
-                        if exit_price < stop_loss_price:
-                            exit_price = stop_loss_price  # Enforce stop loss
-                        revenue = (exit_price - entry_price) / entry_price * 100
-                    else:
-                        if exit_price > stop_loss_price:
-                            exit_price = stop_loss_price  # Enforce stop loss
-                        revenue = (entry_price - exit_price) / entry_price * 100
-                    
-                    pair_results.append(revenue)
-            portfolio_results.append(pair_results)
-        
-        # Aggregate Portfolio Performance
-        portfolio_returns = np.nanmean(portfolio_results, axis=0)
-        portfolio_cumulative_returns = np.nancumsum(portfolio_returns)
-        drawdown = np.maximum.accumulate(portfolio_cumulative_returns) - portfolio_cumulative_returns
-        
         # Display Results
         st.subheader("Portfolio Backtest Results")
-        portfolio_df = pd.DataFrame({"Date": data["Date"], "Portfolio Return %": portfolio_returns, "Cumulative Return %": portfolio_cumulative_returns, "Drawdown %": drawdown})
-        st.dataframe(portfolio_df)
-        
-        # Plot Cumulative Portfolio Revenue
-        fig, ax = plt.subplots()
-        ax.plot(portfolio_df["Date"], portfolio_df["Cumulative Return %"], marker='o', linestyle='-', label="Cumulative Portfolio Return")
-        ax.set_title("Cumulative Portfolio Return Over Time")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Cumulative Return %")
-        ax.legend()
-        st.pyplot(fig)
-        
-        # Plot Negative Drawdown
-        fig, ax = plt.subplots()
-        ax.plot(portfolio_df["Date"], -portfolio_df["Drawdown %"], color='red', linestyle='-', label="Negative Drawdown")
-        ax.set_title("Negative Drawdown Over Time")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Drawdown %")
-        ax.legend()
-        st.pyplot(fig)
+        st.dataframe(data.head())
 
 if __name__ == "__main__":
     main()
