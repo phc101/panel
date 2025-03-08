@@ -73,6 +73,24 @@ def main():
         
         # Display Results
         st.subheader("Backtest Results")
+        
+        # Plot Cumulative Revenue
+        fig, ax = plt.subplots()
+        ax.plot(result_df["Entry Date"], result_df["Cumulative Revenue %"], linestyle='-', linewidth=1, color='blue', label="Cumulative Revenue")
+        ax.set_title("Cumulative Revenue Over Time")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Cumulative Revenue %")
+        ax.legend()
+        st.pyplot(fig)
+        
+        # Plot Negative Drawdown
+        fig, ax = plt.subplots()
+        ax.plot(result_df["Entry Date"], -result_df["Drawdown %"], color='red', linestyle='-', linewidth=1, label="Negative Drawdown")
+        ax.set_title("Negative Drawdown Over Time")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Drawdown %")
+        ax.legend()
+        st.pyplot(fig)
         st.dataframe(result_df)
 
 if __name__ == "__main__":
