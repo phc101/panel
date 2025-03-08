@@ -38,6 +38,11 @@ def main():
         
         # Train Linear Regression Model
         model = LinearRegression()
+        if "Yield Spread" not in data.columns or data.columns[3] not in data.columns:
+            st.error("Error: Missing required columns for model training. Check your input files.")
+            return
+        data["Yield Spread"].fillna(0, inplace=True)
+        data.iloc[:, 3] = pd.to_numeric(data.iloc[:, 3], errors='coerce')
         valid_data = data[["Yield Spread", data.columns[3]]].dropna()
         if valid_data.empty:
             st.error("Error: No valid data available for training. Check your input files.")
