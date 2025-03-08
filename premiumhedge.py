@@ -24,28 +24,34 @@ def main():
         # Load Foreign Bond Yield
         for_yield_data = pd.read_csv(for_yield_file, parse_dates=["Date"], dayfirst=True)
         for_yield_data["Date"] = pd.to_datetime(for_yield_data["Date"], errors="coerce")
+        for_yield_data = for_yield_data.dropna(subset=["Date"])  # Ensure no missing dates
         
         # Load Domestic Bond Yields
         dom_yield_data = None
         for file in dom_yield_files:
             temp_df = pd.read_csv(file, parse_dates=["Date"], dayfirst=True)
             temp_df["Date"] = pd.to_datetime(temp_df["Date"], errors="coerce")
-            dom_yield_data = temp_df if dom_yield_data is None else dom_yield_data.merge(temp_df, on="Date")
+            temp_df = temp_df.dropna(subset=["Date"])  # Ensure no missing dates
+            dom_yield_data = temp_df if dom_yield_data is None else dom_yield_data.merge(temp_df, on="Date", how="outer")
         
         # Load FX Data
         fx_data = None
         for file in fx_files:
             temp_df = pd.read_csv(file, parse_dates=["Date"], dayfirst=True)
             temp_df["Date"] = pd.to_datetime(temp_df["Date"], errors="coerce")
-            fx_data = temp_df if fx_data is None else fx_data.merge(temp_df, on="Date")
+            temp_df = temp_df.dropna(subset=["Date"])  # Ensure no missing dates
+            fx_data = temp_df if fx_data is None else fx_data.merge(temp_df, on="Date", how="outer")
         
         # Merge Data
-        data = fx_data.merge(dom_yield_data, on="Date").merge(for_yield_data, on="Date").sort_values(by="Date")
+        data = fx_data.merge(dom_yield_data, on="Date", how="outer").merge(for_yield_data, on="Date", how="outer").sort_values(by="Date")
         
         # Check if Date is still not recognized as datetime
         if not np.issubdtype(data["Date"].dtype, np.datetime64):
             st.error("Error: Date column is not in datetime format. Please check your input files.")
             return
+        
+        # Forward fill missing data to align time series
+        data = data.ffill()
         
         # Calculate Yield Spreads (Each Domestic Yield - Foreign Yield)
         for i in range(1, 6):  # Assuming 5 domestic yields
@@ -93,8 +99,8 @@ def main():
             portfolio_results.append(pair_results)
         
         # Aggregate Portfolio Performance
-        portfolio_returns = np.mean(portfolio_results, axis=0)
-        portfolio_cumulative_returns = np.cumsum(portfolio_returns)
+        portfolio_returns = np.nanmean(portfolio_results, axis=0)
+        portfolio_cumulative_returns = np.nancumsum(portfolio_returns)
         drawdown = np.maximum.accumulate(portfolio_cumulative_returns) - portfolio_cumulative_returns
         
         # Display Results
