@@ -57,9 +57,15 @@ def main():
         results = []
         stop_loss_pct = st.sidebar.slider("Stop Loss (%)", min_value=0.0, max_value=10.0, value=1.5, step=0.5)
         
+        if data["Signal"].isna().all():
+            st.warning("No valid trade signals were generated. Adjust data or strategy.")
+            return
+        
         for i, row in data.iterrows():
             revenue = np.nan  # Initialize revenue to avoid UnboundLocalError
-            exit_row = fx_data[fx_data["Date"] == row["Exit Date"]]
+            exit_row = fx_data.loc[fx_data["Date"] == row["Exit Date"]]
+            if exit_row.empty:
+                continue  # Skip if no exit row found
             if not exit_row.empty:
                 exit_price = pd.to_numeric(exit_row.iloc[0, 1], errors='coerce')
                 entry_price = row[numeric_cols[2]]
@@ -83,7 +89,10 @@ def main():
         
         # Display Results
         st.subheader("Backtest Results")
-        st.dataframe(result_df)
+        if result_df.empty:
+            st.warning("No trades were executed. Check the strategy logic and data.")
+        else:
+            st.dataframe(result_df)
 
 if __name__ == "__main__":
     main()
