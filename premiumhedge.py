@@ -26,6 +26,7 @@ def main():
         for_yield_data["Date"] = pd.to_datetime(for_yield_data["Date"], errors="coerce")
         for_yield_data = for_yield_data.dropna(subset=["Date"])  # Ensure no missing dates
         for_yield_data = for_yield_data.rename(columns={for_yield_data.columns[-1]: "Foreign Bond Yield"})  # Explicit naming
+        for_yield_data["Foreign Bond Yield"] = pd.to_numeric(for_yield_data["Foreign Bond Yield"], errors="coerce")
         
         # Load Domestic Bond Yields
         dom_yield_data = None
@@ -34,6 +35,7 @@ def main():
             temp_df["Date"] = pd.to_datetime(temp_df["Date"], errors="coerce")
             temp_df = temp_df.dropna(subset=["Date"])  # Ensure no missing dates
             temp_df = temp_df.rename(columns={temp_df.columns[-1]: f"Domestic Yield {i}"})  # Rename column
+            temp_df[f"Domestic Yield {i}"] = pd.to_numeric(temp_df[f"Domestic Yield {i}"], errors="coerce")
             dom_yield_data = temp_df if dom_yield_data is None else dom_yield_data.merge(temp_df, on="Date", how="outer", suffixes=(None, f"_{i}"))
         
         # Load FX Data
@@ -64,14 +66,14 @@ def main():
         # Calculate Yield Spreads (Each Domestic Yield - Foreign Yield)
         for i in range(1, 6):  # Assuming 5 domestic yields
             if f"Domestic Yield {i}" in data.columns:
-                data[f"Yield Spread {i}"] = data[f"Domestic Yield {i}"] - data["Foreign Bond Yield"]
+                data[f"Yield Spread {i}"] = data[f"Domestic Yield {i}"].astype(float) - data["Foreign Bond Yield"].astype(float)
         
         # Train Linear Regression Models for Each Currency Pair
         for i in range(1, 6):  # Assuming 5 currency pairs
             if f"FX Pair {i}" in data.columns:
                 model = LinearRegression()
-                model.fit(data[[f"Yield Spread {i}"]], data[f"FX Pair {i}"])
-                data[f"Predictive Price {i}"] = model.predict(data[[f"Yield Spread {i}"]])
+                model.fit(data[[f"Yield Spread {i}"]].dropna(), data[f"FX Pair {i}"].dropna())
+                data[f"Predictive Price {i}"] = model.predict(data[[f"Yield Spread {i}"]].fillna(method='ffill'))
                 
                 # Establish Trading Strategy
                 if strategy == "Importer (BUY Only)":
