@@ -46,6 +46,24 @@ def main():
         data = data[data["Weekday"] == 0]  # Filter only Mondays
         data["Exit Date"] = data["Date"] + pd.DateOffset(days=30)
         
+        # Display Current Price vs Predictive Price
+        st.subheader("Current Price vs Predictive Price")
+        fig, ax = plt.subplots()
+        ax.plot(data["Date"], data.iloc[:, 3], label="Current Price", linestyle='-', linewidth=1, color='blue')
+        ax.plot(data["Date"], data["Predictive Price"], label="Predictive Price", linestyle='--', linewidth=1, color='orange')
+        
+        # Highlight BUY/SELL Signals
+        buy_signals = data[data["Signal"] == "BUY"]
+        sell_signals = data[data["Signal"] == "SELL"]
+        ax.scatter(buy_signals["Date"], buy_signals.iloc[:, 3], color='green', marker='^', label='BUY Signal')
+        ax.scatter(sell_signals["Date"], sell_signals.iloc[:, 3], color='red', marker='v', label='SELL Signal')
+        
+        ax.set_title("Current Price vs Predictive Price")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Price")
+        ax.legend()
+        st.pyplot(fig)
+        
         # Calculate Returns
         results = []
         stop_loss_pct = st.sidebar.slider("Stop Loss (%)", min_value=0.0, max_value=10.0, value=1.5, step=0.5)
@@ -75,25 +93,6 @@ def main():
         # Display Results
         st.subheader("Backtest Results")
         st.dataframe(result_df)
-        
-        # Plot Cumulative Revenue
-        fig, ax = plt.subplots()
-        colors = ['green' if x > 0 else 'red' for x in result_df["Revenue %"]]
-        ax.scatter(result_df["Entry Date"], result_df["Cumulative Revenue %"], c=colors, marker='o')
-        ax.plot(result_df["Entry Date"], result_df["Cumulative Revenue %"], linestyle='-', linewidth=1)
-        ax.set_title("Cumulative Revenue Over Time")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Cumulative Revenue %")
-        st.pyplot(fig)
-        
-        # Plot Negative Drawdown
-        fig, ax = plt.subplots()
-        ax.plot(result_df["Entry Date"], -result_df["Drawdown %"], color='red', linestyle='-', linewidth=1, label="Negative Drawdown")
-        ax.set_title("Negative Drawdown Over Time")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Drawdown %")
-        ax.legend()
-        st.pyplot(fig)
 
 if __name__ == "__main__":
     main()
