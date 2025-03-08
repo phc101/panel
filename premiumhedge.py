@@ -85,18 +85,24 @@ def main():
         result_df["Cumulative Revenue %"] = result_df["Revenue %"].cumsum()
         result_df["Drawdown %"] = result_df["Cumulative Revenue %"].cummax() - result_df["Cumulative Revenue %"]
         
-        # Display Results
-        st.subheader("Backtest Results")
-        st.dataframe(result_df)
+        # Calculate Performance Metrics
+        best_trade = result_df["Revenue %"].max()
+        worst_trade = result_df["Revenue %"].min()
+        avg_drawdown = result_df["Drawdown %"].mean()
+        avg_win = result_df[result_df["Revenue %"] > 0]["Revenue %"].mean()
+        avg_loss = result_df[result_df["Revenue %"] <= 0]["Revenue %"].mean()
+        win_rate = (result_df["Revenue %"] > 0).mean() * 100
+        sharpe_ratio = result_df["Revenue %"].mean() / result_df["Revenue %"].std()
+        sortino_ratio = result_df["Revenue %"].mean() / result_df[result_df["Revenue %"] < 0]["Revenue %"].std()
         
-        # Plot Cumulative Revenue
-        fig, ax = plt.subplots()
-        ax.plot(result_df["Entry Date"], result_df["Cumulative Revenue %"], marker='o', linestyle='-', label="Cumulative Return")
-        ax.set_title(f"Cumulative Revenue Over Time ({strategy})")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Cumulative Revenue %")
-        ax.legend()
-        st.pyplot(fig)
+        performance_table = pd.DataFrame({
+            "Metric": ["Best Trade %", "Worst Trade %", "Average Drawdown %", "Average Win %", "Average Loss %", "Win Rate %", "Sharpe Ratio", "Sortino Ratio"],
+            "Value": [f"{best_trade:.2f}%", f"{worst_trade:.2f}%", f"{avg_drawdown:.2f}%", f"{avg_win:.2f}%", f"{avg_loss:.2f}%", f"{win_rate:.2f}%", f"{sharpe_ratio:.2f}", f"{sortino_ratio:.2f}"]
+        })
+        
+        # Display Performance Table
+        st.subheader("Performance Metrics")
+        st.dataframe(performance_table)
 
 if __name__ == "__main__":
     main()
