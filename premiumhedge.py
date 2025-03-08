@@ -25,6 +25,7 @@ def main():
         for_yield_data = pd.read_csv(for_yield_file, parse_dates=["Date"], dayfirst=True)
         for_yield_data["Date"] = pd.to_datetime(for_yield_data["Date"], errors="coerce")
         for_yield_data = for_yield_data.dropna(subset=["Date"])  # Ensure no missing dates
+        for_yield_data = for_yield_data.rename(columns={for_yield_data.columns[-1]: "Foreign Bond Yield"})  # Explicit naming
         
         # Load Domestic Bond Yields
         dom_yield_data = None
@@ -55,23 +56,30 @@ def main():
         # Forward fill missing data to align time series
         data = data.ffill()
         
+        # Ensure Foreign Bond Yield exists before computing spreads
+        if "Foreign Bond Yield" not in data.columns:
+            st.error("Error: Foreign Bond Yield column is missing. Ensure correct file upload.")
+            return
+        
         # Calculate Yield Spreads (Each Domestic Yield - Foreign Yield)
         for i in range(1, 6):  # Assuming 5 domestic yields
-            data[f"Yield Spread {i}"] = data[f"Domestic Yield {i}"] - data.iloc[:, -1]
+            if f"Domestic Yield {i}" in data.columns:
+                data[f"Yield Spread {i}"] = data[f"Domestic Yield {i}"] - data["Foreign Bond Yield"]
         
         # Train Linear Regression Models for Each Currency Pair
         for i in range(1, 6):  # Assuming 5 currency pairs
-            model = LinearRegression()
-            model.fit(data[[f"Yield Spread {i}"]], data[f"FX Pair {i}"])
-            data[f"Predictive Price {i}"] = model.predict(data[[f"Yield Spread {i}"]])
-            
-            # Establish Trading Strategy
-            if strategy == "Importer (BUY Only)":
-                data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] < data[f"Predictive Price {i}"], "BUY", np.nan)
-            elif strategy == "Exporter (SELL Only)":
-                data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] > data[f"Predictive Price {i}"], "SELL", np.nan)
-            else:
-                data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] < data[f"Predictive Price {i}"], "BUY", "SELL")
+            if f"FX Pair {i}" in data.columns:
+                model = LinearRegression()
+                model.fit(data[[f"Yield Spread {i}"]], data[f"FX Pair {i}"])
+                data[f"Predictive Price {i}"] = model.predict(data[[f"Yield Spread {i}"]])
+                
+                # Establish Trading Strategy
+                if strategy == "Importer (BUY Only)":
+                    data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] < data[f"Predictive Price {i}"], "BUY", np.nan)
+                elif strategy == "Exporter (SELL Only)":
+                    data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] > data[f"Predictive Price {i}"], "SELL", np.nan)
+                else:
+                    data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] < data[f"Predictive Price {i}"], "BUY", "SELL")
             
         data["Weekday"] = data["Date"].dt.weekday
         data = data[data["Weekday"] == 0]  # Filter only Mondays
