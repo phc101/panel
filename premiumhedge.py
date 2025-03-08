@@ -71,9 +71,11 @@ def main():
         # Train Linear Regression Models for Each Currency Pair
         for i in range(1, 6):  # Assuming 5 currency pairs
             if f"FX Pair {i}" in data.columns:
-                model = LinearRegression()
-                model.fit(data[[f"Yield Spread {i}"]].dropna(), data[f"FX Pair {i}"].dropna())
-                data[f"Predictive Price {i}"] = model.predict(data[[f"Yield Spread {i}"]].fillna(method='ffill'))
+                valid_data = data[[f"Yield Spread {i}", f"FX Pair {i}"]].dropna()
+                if not valid_data.empty:
+                    model = LinearRegression()
+                    model.fit(valid_data[[f"Yield Spread {i}"]], valid_data[f"FX Pair {i}"])
+                    data[f"Predictive Price {i}"] = model.predict(data[[f"Yield Spread {i}"]].fillna(method='ffill'))
                 
                 # Establish Trading Strategy
                 if strategy == "Importer (BUY Only)":
