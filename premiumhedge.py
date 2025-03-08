@@ -48,7 +48,7 @@ def main():
         
         # Calculate Returns
         results = []
-        stop_loss_pct = 1.5  # Set stop loss at 1.5%
+        stop_loss_pct = st.sidebar.slider("Stop Loss (%)", min_value=0.0, max_value=10.0, value=1.5, step=0.5)  # Set stop loss at 1.5%
         
         for i, row in data.iterrows():
             exit_row = fx_data[fx_data["Date"] == row["Exit Date"]]
