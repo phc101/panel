@@ -85,26 +85,24 @@ def main():
         result_df["Cumulative Revenue %"] = result_df["Revenue %"].cumsum()
         result_df["Drawdown %"] = result_df["Cumulative Revenue %"].cummax() - result_df["Cumulative Revenue %"]
         
-        # Display Results
-        st.subheader("Backtest Results")
-        st.dataframe(result_df)
+        # Calculate Yearly Performance Metrics
+        result_df["Year"] = pd.to_datetime(result_df["Entry Date"]).dt.year
+        yearly_performance = result_df.groupby("Year").agg({
+            "Revenue %": ["sum", "count", "max", "min", "mean"],
+            "Drawdown %": "mean"
+        })
+        yearly_performance.columns = ["Total Return %", "Number of Trades", "Best Trade %", "Worst Trade %", "Average Return %", "Average Drawdown %"]
         
-        # Plot Cumulative Revenue
-        fig, ax = plt.subplots()
-        ax.plot(result_df["Entry Date"], result_df["Cumulative Revenue %"], marker='o', linestyle='-', label="Cumulative Return")
-        ax.set_title(f"Cumulative Revenue Over Time ({strategy})")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Cumulative Revenue %")
-        ax.legend()
-        st.pyplot(fig)
+        # Display Yearly Performance Table
+        st.subheader("Yearly Performance Table")
+        st.dataframe(yearly_performance)
         
-        # Plot Drawdown
+        # Plot Yearly Performance Bar Chart
         fig, ax = plt.subplots()
-        ax.plot(result_df["Entry Date"], -result_df["Drawdown %"], color='red', linestyle='-', label="Drawdown")
-        ax.set_title(f"Negative Drawdown Over Time ({strategy})")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Drawdown %")
-        ax.legend()
+        yearly_performance["Total Return %"].plot(kind='bar', ax=ax, color='blue')
+        ax.set_title("Yearly Total Return")
+        ax.set_xlabel("Year")
+        ax.set_ylabel("Total Return %")
         st.pyplot(fig)
 
 if __name__ == "__main__":
