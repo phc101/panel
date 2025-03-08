@@ -32,8 +32,8 @@ def main():
             temp_df = pd.read_csv(file, parse_dates=["Date"], dayfirst=True)
             temp_df["Date"] = pd.to_datetime(temp_df["Date"], errors="coerce")
             temp_df = temp_df.dropna(subset=["Date"])  # Ensure no missing dates
-            temp_df = temp_df.rename(columns={temp_df.columns[1]: f"Domestic Yield {i}"})  # Rename column
-            dom_yield_data = temp_df if dom_yield_data is None else dom_yield_data.merge(temp_df, on="Date", how="outer")
+            temp_df = temp_df.rename(columns={temp_df.columns[-1]: f"Domestic Yield {i}"})  # Rename column
+            dom_yield_data = temp_df if dom_yield_data is None else dom_yield_data.merge(temp_df, on="Date", how="outer", suffixes=(None, f"_{i}"))
         
         # Load FX Data
         fx_data = None
@@ -41,8 +41,8 @@ def main():
             temp_df = pd.read_csv(file, parse_dates=["Date"], dayfirst=True)
             temp_df["Date"] = pd.to_datetime(temp_df["Date"], errors="coerce")
             temp_df = temp_df.dropna(subset=["Date"])  # Ensure no missing dates
-            temp_df = temp_df.rename(columns={temp_df.columns[1]: f"FX Pair {i}"})  # Rename column
-            fx_data = temp_df if fx_data is None else fx_data.merge(temp_df, on="Date", how="outer")
+            temp_df = temp_df.rename(columns={temp_df.columns[-1]: f"FX Pair {i}"})  # Rename column
+            fx_data = temp_df if fx_data is None else fx_data.merge(temp_df, on="Date", how="outer", suffixes=(None, f"_{i}"))
         
         # Merge Data
         data = fx_data.merge(dom_yield_data, on="Date", how="outer").merge(for_yield_data, on="Date", how="outer").sort_values(by="Date")
