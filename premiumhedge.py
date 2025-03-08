@@ -46,10 +46,10 @@ def main():
         # Establish Trading Strategy
         if strategy == "BUY Only":
             data["FX Price"] = pd.to_numeric(data.iloc[:, -2], errors='coerce')
-data["Signal"] = np.where(data["FX Price"] < data["Predictive Price"], "BUY", np.nan)
+    data["Signal"] = np.where(data["FX Price"] < data["Predictive Price"], "BUY", np.nan)
         elif strategy == "SELL Only":
             data["FX Price"] = pd.to_numeric(data.iloc[:, -2], errors='coerce')
-data["Signal"] = np.where(data["FX Price"] > data["Predictive Price"], "SELL", np.nan)
+    data["Signal"] = np.where(data["FX Price"] > data["Predictive Price"], "SELL", np.nan)
         else:
             data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", "SELL")
         
