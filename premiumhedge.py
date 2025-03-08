@@ -72,7 +72,7 @@ def main():
         for i in range(1, 6):  # Assuming 5 currency pairs
             if f"FX Pair {i}" in data.columns:
                 valid_data = data[[f"Yield Spread {i}", f"FX Pair {i}"]].dropna()
-                if not valid_data.empty:
+                if valid_data.shape[0] > 1:  # Ensure at least 2 rows for training
                     model = LinearRegression()
                     model.fit(valid_data[[f"Yield Spread {i}"]], valid_data[f"FX Pair {i}"])
                     data[f"Predictive Price {i}"] = model.predict(data[[f"Yield Spread {i}"]].fillna(method='ffill'))
