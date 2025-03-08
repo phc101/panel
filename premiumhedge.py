@@ -58,6 +58,7 @@ def main():
         stop_loss_pct = st.sidebar.slider("Stop Loss (%)", min_value=0.0, max_value=10.0, value=1.5, step=0.5)
         
         for i, row in data.iterrows():
+            revenue = np.nan  # Initialize revenue to avoid UnboundLocalError
             exit_row = fx_data[fx_data["Date"] == row["Exit Date"]]
             if not exit_row.empty:
                 exit_price = pd.to_numeric(exit_row.iloc[0, 1], errors='coerce')
@@ -73,7 +74,8 @@ def main():
                         exit_price = stop_loss_price  # Enforce stop loss
                     revenue = (entry_price - exit_price) / entry_price * 100
                 
-                results.append([row["Date"], row["Exit Date"], row["Signal"], entry_price, exit_price, revenue])
+                if not np.isnan(revenue):
+                    results.append([row["Date"], row["Exit Date"], row["Signal"], entry_price, exit_price, revenue])
         
         result_df = pd.DataFrame(results, columns=["Entry Date", "Exit Date", "Signal", "Entry Price", "Exit Price", "Revenue %"])
         result_df["Cumulative Revenue %"] = result_df["Revenue %"].cumsum()
