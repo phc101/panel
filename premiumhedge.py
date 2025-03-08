@@ -14,6 +14,9 @@ def main():
     dom_yield_file = st.sidebar.file_uploader("Upload Domestic Bond Yields (CSV)", type=["csv"])
     for_yield_file = st.sidebar.file_uploader("Upload Foreign Bond Yields (CSV)", type=["csv"])
     
+    # Strategy Selection
+    strategy = st.sidebar.radio("Select Strategy", ["BUY Only", "SELL Only", "Both"])
+    
     if fx_file and dom_yield_file and for_yield_file:
         # Ensure Date column is correctly parsed as datetime
         fx_data = pd.read_csv(fx_file, parse_dates=["Date"], dayfirst=True)
@@ -41,14 +44,20 @@ def main():
         data["Predictive Price"] = model.predict(data[["Yield Spread"]])
         
         # Establish Trading Strategy
-        data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", "SELL")
+        if strategy == "BUY Only":
+            data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", np.nan)
+        elif strategy == "SELL Only":
+            data["Signal"] = np.where(data.iloc[:, 3] > data["Predictive Price"], "SELL", np.nan)
+        else:
+            data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", "SELL")
+        
         data["Weekday"] = data["Date"].dt.weekday
         data = data[data["Weekday"] == 0]  # Filter only Mondays
         data["Exit Date"] = data["Date"] + pd.DateOffset(days=30)
         
         # Calculate Returns
         results = []
-        stop_loss_pct = st.sidebar.slider("Stop Loss (%)", min_value=0.0, max_value=10.0, value=1.5, step=0.5)  # Set stop loss at 1.5%
+        stop_loss_pct = st.sidebar.slider("Stop Loss (%)", min_value=0.0, max_value=10.0, value=1.5, step=0.5)
         
         for i, row in data.iterrows():
             exit_row = fx_data[fx_data["Date"] == row["Exit Date"]]
