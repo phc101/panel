@@ -14,9 +14,6 @@ def main():
     dom_yield_file = st.sidebar.file_uploader("Upload Domestic Bond Yields (CSV)", type=["csv"])
     for_yield_file = st.sidebar.file_uploader("Upload Foreign Bond Yields (CSV)", type=["csv"])
     
-    # Strategy Selection
-    strategy = st.sidebar.radio("Select Strategy", ["BUY Only", "SELL Only", "Both"])
-    
     if fx_file and dom_yield_file and for_yield_file:
         # Ensure Date column is correctly parsed as datetime
         fx_data = pd.read_csv(fx_file, parse_dates=["Date"], dayfirst=True)
@@ -44,15 +41,7 @@ def main():
         data["Predictive Price"] = model.predict(data[["Yield Spread"]])
         
         # Establish Trading Strategy
-        if strategy == "BUY Only":
-            data["FX Price"] = pd.to_numeric(data.iloc[:, -2], errors='coerce')
-    data["Signal"] = np.where(data["FX Price"] < data["Predictive Price"], "BUY", np.nan)
-        elif strategy == "SELL Only":
-            data["FX Price"] = pd.to_numeric(data.iloc[:, -2], errors='coerce')
-    data["Signal"] = np.where(data["FX Price"] > data["Predictive Price"], "SELL", np.nan)
-        else:
-            data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", "SELL")
-        
+        data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", "SELL")
         data["Weekday"] = data["Date"].dt.weekday
         data = data[data["Weekday"] == 0]  # Filter only Mondays
         data["Exit Date"] = data["Date"] + pd.DateOffset(days=30)
