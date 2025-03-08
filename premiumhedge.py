@@ -77,13 +77,14 @@ def main():
                     model.fit(valid_data[[f"Yield Spread {i}"]], valid_data[f"FX Pair {i}"])
                     data[f"Predictive Price {i}"] = model.predict(data[[f"Yield Spread {i}"]].fillna(method='ffill'))
                 
-                # Establish Trading Strategy
-                if strategy == "Importer (BUY Only)":
-                    data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] < data[f"Predictive Price {i}"], "BUY", np.nan)
-                elif strategy == "Exporter (SELL Only)":
-                    data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] > data[f"Predictive Price {i}"], "SELL", np.nan)
-                else:
-                    data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] < data[f"Predictive Price {i}"], "BUY", "SELL")
+                # Ensure Predictive Price exists before using in strategy
+                if f"Predictive Price {i}" in data.columns:
+                    if strategy == "Importer (BUY Only)":
+                        data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] < data[f"Predictive Price {i}"], "BUY", np.nan)
+                    elif strategy == "Exporter (SELL Only)":
+                        data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] > data[f"Predictive Price {i}"], "SELL", np.nan)
+                    else:
+                        data[f"Signal {i}"] = np.where(data[f"FX Pair {i}"] < data[f"Predictive Price {i}"], "BUY", "SELL")
             
         data["Weekday"] = data["Date"].dt.weekday
         data = data[data["Weekday"] == 0]  # Filter only Mondays
