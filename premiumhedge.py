@@ -60,15 +60,15 @@ def main():
         for i, row in data.iterrows():
             exit_row = fx_data[fx_data["Date"] == row["Exit Date"]]
             if not exit_row.empty:
-                exit_price = exit_row.iloc[0, 1]
+                exit_price = pd.to_numeric(exit_row.iloc[0, 1], errors='coerce')
                 entry_price = row[numeric_cols[2]]
-                stop_loss_price = entry_price * (1 - stop_loss_pct / 100) if row["Signal"] == "BUY" else entry_price * (1 + stop_loss_pct / 100)
+                stop_loss_price = pd.to_numeric(entry_price * (1 - stop_loss_pct / 100) if row["Signal"] == "BUY" else entry_price * (1 + stop_loss_pct / 100), errors='coerce')
                 
-                if row["Signal"] == "BUY":
+                if row["Signal"] == "BUY" and not np.isnan(exit_price) and not np.isnan(stop_loss_price):
                     if exit_price < stop_loss_price:
                         exit_price = stop_loss_price  # Enforce stop loss
                     revenue = (exit_price - entry_price) / entry_price * 100
-                else:
+                elif not np.isnan(exit_price) and not np.isnan(stop_loss_price):
                     if exit_price > stop_loss_price:
                         exit_price = stop_loss_price  # Enforce stop loss
                     revenue = (entry_price - exit_price) / entry_price * 100
