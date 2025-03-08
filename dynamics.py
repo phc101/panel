@@ -1,123 +1,72 @@
 import streamlit as st
+import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
 
-# Function to calculate forward rate based on interest rate parity
-def calculate_forward_rate(spot, domestic_rate, foreign_rate, time_to_maturity_years):
-    return spot * (1 + domestic_rate * time_to_maturity_years) / (1 + foreign_rate * time_to_maturity_years)
+# Title
+st.title("EUR/PLN Risk Management Model")
 
-# Function to determine the rate based on barrier conditions
-def calculate_rate(spot, upper_barrier, lower_barrier, guaranteed_rate, breached_rate):
-    if spot >= upper_barrier or spot <= lower_barrier:
-        return breached_rate  # Barrier breached
-    return guaranteed_rate  # No barrier breach
+# Sidebar Inputs
+st.sidebar.header("Market Inputs")
+spot_rate = st.sidebar.number_input("Current Spot Rate (EUR/PLN)", value=4.30, format="%.4f")
+predicted_move_pct = st.sidebar.number_input("Expected % Move in 30 Days", value=1.35, format="%.2f")
+predicted_spot = spot_rate * (1 + predicted_move_pct / 100)
 
-# Explanation of the trade
-st.title("Barrier Option Pricing with Dynamic Parameters")
-st.write("""
-### Trade Explanation:
-1. **Guaranteed Rate:** The client can sell EUR/PLN at a rate of 4.30 as long as no barriers are breached at expiry.
-2. **Barriers:**
-   - **Upper Barrier:** 4.50
-   - **Lower Barrier:** 3.95
-3. **Breached Rate:** If any barrier is breached, the selling rate is reduced to 4.15.
-4. **Spot Rate at Expiry:** Determines whether the barriers are breached.
-5. **Black-Scholes Parameters:** Adjust volatility, domestic rates, and foreign rates dynamically.
-6. **Net Premium:** Shows the overall outcome of the trade, dynamically adjusting with the parameters.
-""")
+# Option Parameters
+st.sidebar.header("Option Chain")
+strike = st.sidebar.number_input("Option Strike Price", value=4.35, format="%.4f")
+put_premium = st.sidebar.number_input("Put Option Premium", value=0.02, format="%.4f")
+call_premium = st.sidebar.number_input("Call Option Premium", value=0.02, format="%.4f")
 
-# Sidebar for Black-Scholes parameters
-st.sidebar.header("Black-Scholes Parameters")
-volatility = st.sidebar.number_input("Enter Volatility (annualized, %)", value=10.0, step=0.1) / 100
-domestic_rate = st.sidebar.number_input("Enter Domestic Rate (10-Year Polish Bond, %)", value=5.5, step=0.1) / 100
-foreign_rate = st.sidebar.number_input("Enter Foreign Rate (10-Year German Bond, %)", value=2.5, step=0.1) / 100
+# Forward Rate Adjustment
+st.sidebar.header("Forward Hedging")
+forward_adjustment = st.sidebar.slider("Discount to Client (PLN)", min_value=0.0000, max_value=0.0100, value=0.0020, step=0.0001)
+effective_forward_rate = strike - forward_adjustment
 
-# Streamlit Inputs
-spot_rate = st.number_input("Enter Spot Rate at Expiry (EUR/PLN)", value=4.2100, step=0.0001, format="%.4f")
-upper_barrier = st.number_input("Enter Upper Barrier", value=4.5000, step=0.0001, format="%.4f")
-lower_barrier = st.number_input("Enter Lower Barrier", value=3.9500, step=0.0001, format="%.4f")
-guaranteed_rate = st.number_input("Enter Guaranteed Rate", value=4.3000, step=0.0001, format="%.4f")
-breached_rate = st.number_input("Enter Breached Rate", value=4.1500, step=0.0001, format="%.4f")
-base_yearly_notional = st.number_input("Enter Base Yearly Notional Amount (EUR for 12 months)", value=2000000.0, step=1000.0)
-maturity_choice = st.radio("Choose Maturity Duration:", ["6 Months", "12 Months"])
+# Position Size
+st.sidebar.header("Leverage & Margin")
+notional_amount = st.sidebar.number_input("Notional Hedge Size (EUR)", value=100000)
+margin_ratio = st.sidebar.slider("Margin Required (%)", min_value=1.0, max_value=10.0, value=1.0, step=0.1)
+margin_required = (notional_amount * spot_rate * margin_ratio) / 100
 
-# Adjust notional based on maturity choice
-if maturity_choice == "6 Months":
-    yearly_notional = base_yearly_notional / 2  # Adjust yearly volume for 6 months
-    num_maturities = 6
-else:
-    yearly_notional = base_yearly_notional  # Use full yearly volume for 12 months
-    num_maturities = 12
+# Risk Management
+st.sidebar.header("Risk Controls")
+stop_loss_level = st.sidebar.number_input("Stop Loss Level (EUR/PLN)", value=4.20, format="%.4f")
+take_profit_level = st.sidebar.number_input("Take Profit Level (EUR/PLN)", value=4.45, format="%.4f")
 
-# Calculate monthly notional
-monthly_notional = yearly_notional / num_maturities
+# P&L Simulation
+def calculate_pnl(spot_prices, strike, put_premium, call_premium, effective_forward_rate):
+    pnl = []
+    for spot in spot_prices:
+        put_value = max(strike - spot, 0) - put_premium
+        call_value = max(spot - strike, 0) - call_premium
+        pnl.append((put_value + call_value) * notional_amount)
+    return pnl
 
-# Generate dates for the contractual period
-start_date = datetime(2025, 2, 1)  # Contractual start date
-dates = [start_date + timedelta(days=30 * i) for i in range(num_maturities)]
+spot_prices = np.linspace(spot_rate * 0.95, spot_rate * 1.05, 100)
+pnl = calculate_pnl(spot_prices, strike, put_premium, call_premium, effective_forward_rate)
 
-# Use adjusted forward rate based on interest rate parity
-time_to_maturity_years = num_maturities / 12
-adjusted_forward_rate = calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, time_to_maturity_years)
-
-# Calculate the rate based on barriers
-final_rate = calculate_rate(adjusted_forward_rate, upper_barrier, lower_barrier, guaranteed_rate, breached_rate)
-
-# Calculate proceeds from the trade
-proceeds = final_rate * yearly_notional
-
-# Calculate market value at spot
-market_value = spot_rate * yearly_notional
-
-# Calculate net premium (difference between proceeds and market value)
-net_premium = proceeds - market_value
-
-# Chart Data
-rate_values = [guaranteed_rate if spot_rate < upper_barrier and spot_rate > lower_barrier else breached_rate] * len(dates)
-upper_barrier_values = [upper_barrier] * len(dates)
-lower_barrier_values = [lower_barrier] * len(dates)
-breached_rate_values = [breached_rate] * len(dates)
-
-# Plot the chart
-fig, ax = plt.subplots(figsize=(12, 6))
-
-# Plot the guaranteed rate or breached rate
-if spot_rate >= upper_barrier or spot_rate <= lower_barrier:
-    ax.step(dates, breached_rate_values, linestyle="--", color="purple", label=f"Breached Rate: {breached_rate:.4f}")
-else:
-    ax.step(dates, [guaranteed_rate] * len(dates), linestyle="--", color="blue", label=f"Guaranteed Rate: {guaranteed_rate:.4f}")
-
-# Plot the barriers
-ax.plot(dates, upper_barrier_values, linestyle="-", color="red", label=f"Upper Barrier: {upper_barrier:.4f}")
-ax.plot(dates, lower_barrier_values, linestyle="-", color="green", label=f"Lower Barrier: {lower_barrier:.4f}")
-
-# Annotate the breached rate on the chart
-if spot_rate >= upper_barrier or spot_rate <= lower_barrier:
-    ax.annotate(f"Breached Rate: {breached_rate:.4f}", xy=(len(dates) - 1, breached_rate), xytext=(len(dates), breached_rate),
-                color="purple", fontsize=10, ha="left", va="center", arrowprops=dict(facecolor="purple", arrowstyle="->"))
-
-# Add labels and title
-ax.set_title("Barrier Option Pricing with Dynamic Parameters", fontsize=14)
-ax.set_xlabel("Date", fontsize=12)
-ax.set_ylabel("Exchange Rate (EUR/PLN)", fontsize=12)
-ax.grid(alpha=0.3)
-
-# Format x-axis for dates
-plt.xticks(dates, [date.strftime("%b %Y") for date in dates], rotation=45)
-
-# Add legend
+# Plot P&L
+fig, ax = plt.subplots()
+ax.plot(spot_prices, pnl, label="P&L vs. Spot Price", color='blue')
+ax.axhline(0, color='black', linestyle='dashed')
+ax.axvline(spot_rate, color='gray', linestyle='dotted', label="Current Spot")
+ax.axvline(effective_forward_rate, color='green', linestyle='dotted', label="Offered Forward Rate")
+ax.axvline(stop_loss_level, color='red', linestyle='dashed', label="Stop Loss")
+ax.axvline(take_profit_level, color='green', linestyle='dashed', label="Take Profit")
 ax.legend()
-
-# Display the chart in Streamlit
+ax.set_xlabel("EUR/PLN Spot Price")
+ax.set_ylabel("Profit/Loss (PLN)")
 st.pyplot(fig)
 
-# Display the final rate, proceeds, market value, and net premium
-st.write("### Results")
-st.write(f"**Adjusted Forward Rate:** {adjusted_forward_rate:.4f} EUR/PLN")
-st.write(f"**Final Selling Rate:** {final_rate:.4f} EUR/PLN")
-st.write(f"**Proceeds from Trade:** {proceeds:,.2f} PLN")
-st.write(f"**Market Value at Spot:** {market_value:,.2f} PLN")
-if net_premium > 0:
-    st.write(f"**Net Premium (Profit):** {net_premium:,.2f} PLN")
-else:
-    st.write(f"**Net Premium (Loss):** {abs(net_premium):,.2f} PLN")
+# Display Key Metrics
+st.write("### Summary")
+st.write(f"- **Predicted Spot in 30 Days:** {predicted_spot:.4f}")
+st.write(f"- **Effective Forward Rate to Client:** {effective_forward_rate:.4f}")
+st.write(f"- **Initial Premium Collected (PLN):** {(put_premium + call_premium) * notional_amount:.2f}")
+st.write(f"- **Margin Required:** {margin_required:.2f} PLN")
+
+st.write("### Risk Notes:")
+st.write("- If EUR/PLN falls below the stop loss, risk increases significantly.")
+st.write("- The margin requirement ensures you have capital buffer against market moves.")
+st.write("- Offering a discount to clients impacts profitability but increases competitiveness.")
