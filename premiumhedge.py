@@ -80,7 +80,7 @@ def main():
         fig, ax = plt.subplots()
         colors = ['green' if x > 0 else 'red' for x in result_df["Revenue %"]]
         ax.scatter(result_df["Entry Date"], result_df["Cumulative Revenue %"], c=colors, marker='o')
-        ax.plot(result_df["Entry Date"], result_df["Cumulative Revenue %"], linestyle='-', linewidth=1), linewidth=1)
+        ax.plot(result_df["Entry Date"], result_df["Cumulative Revenue %"], linestyle='-', linewidth=1)
         ax.set_title("Cumulative Revenue Over Time")
         ax.set_xlabel("Date")
         ax.set_ylabel("Cumulative Revenue %")
