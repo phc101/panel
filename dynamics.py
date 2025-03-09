@@ -5,9 +5,6 @@ import matplotlib.pyplot as plt
 import os
 import streamlit as st
 
-import os
-import streamlit as st
-
 # Check if running inside Docker
 if os.path.exists("/.dockerenv"):
     st.write("🐳 Running inside Docker!")
