@@ -5,22 +5,23 @@ import matplotlib.pyplot as plt
 import os
 import streamlit as st
 
-# Run pip uninstall from inside Streamlit
-st.write("Checking for OpenAI installation...")
+import os
+import streamlit as st
 
-try:
-    import subprocess
-    result = subprocess.run(["pip", "uninstall", "openai", "-y"], capture_output=True, text=True)
-    st.write("🔍 OpenAI Uninstall Output:", result.stdout)
-except Exception as e:
-    st.write("⚠️ Error Running Uninstall:", e)
+# Check if running inside Docker
+if os.path.exists("/.dockerenv"):
+    st.write("🐳 Running inside Docker!")
+else:
+    st.write("✅ Not running inside Docker.")
 
-# Check if OpenAI is still installed
+# Check installed packages
+st.write("🔍 Checking installed packages...")
 try:
     import openai
-    st.write("⚠️ OpenAI is still installed!")
+    st.write("⚠️ OpenAI is installed!")
 except ImportError:
-    st.write("✅ OpenAI has been removed successfully!")
+    st.write("✅ OpenAI is NOT installed.")
+
 
 
 # Title
