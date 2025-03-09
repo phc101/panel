@@ -28,12 +28,16 @@ extreme_spot = spot_rate * (1 + extreme_move / 100)
 # Calculating Capital Needs
 client_deposit = (exposure_eur * spot_rate * client_deposit_pct) / 100
 broker_margin = (exposure_eur * spot_rate * broker_margin_pct) / 100
-tail_risk_loss = exposure_eur * (extreme_spot - spot_rate)
+tail_risk_loss = max(exposure_eur * (extreme_spot - spot_rate), 0)
 additional_capital_needed = max(tail_risk_loss - client_deposit, 0)
+
+# Ensure no negative values
+if additional_capital_needed < 0:
+    additional_capital_needed = 0
 
 # Simulation Plot
 spot_prices = np.linspace(spot_rate, extreme_spot, 100)
-losses = [exposure_eur * (s - spot_rate) for s in spot_prices]
+losses = [max(exposure_eur * (s - spot_rate), 0) for s in spot_prices]
 fig, ax = plt.subplots()
 ax.plot(spot_prices, losses, label="Tail Risk Loss", color='red')
 ax.axhline(client_deposit, color='blue', linestyle='dashed', label="Client Deposit")
