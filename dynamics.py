@@ -3,16 +3,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-import streamlit as st
-
-# Debug: Check if OpenAI API Key is present
-api_key = os.environ.get("OPENAI_API_KEY", "Not Set")
-st.write(f"🔍 Debug: OPENAI_API_KEY = {api_key}")
-
-# Remove OpenAI API Key if causing issues
-os.environ.pop("OPENAI_API_KEY", None)
-st.write("✅ Removed OpenAI API Key from environment (if it was set).")
-
 
 # Title
 st.title("EUR/PLN Tail Risk Capital Simulation")
