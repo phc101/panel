@@ -2,18 +2,9 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import os
-import streamlit as st
-
-# ✅ Force remove OpenAI API Key
-if "OPENAI_API_KEY" in os.environ:
-    del os.environ["OPENAI_API_KEY"]
-    st.write("✅ Successfully removed OPENAI_API_KEY from environment.")
-else:
-    st.write("✅ No OpenAI API key found in the environment.")
 
 # Title
-st.title("EUR/PLN Tail Risk Capital Simulation")
+st.title("EUR/PLN Risk Management Model")
 
 # Sidebar Inputs
 st.sidebar.header("Market Inputs")
