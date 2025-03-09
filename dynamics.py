@@ -5,27 +5,12 @@ import matplotlib.pyplot as plt
 import os
 import streamlit as st
 
-# Forcefully remove OPENAI_API_KEY if it exists
+# ✅ Force remove OpenAI API Key
 if "OPENAI_API_KEY" in os.environ:
     del os.environ["OPENAI_API_KEY"]
-    st.write("✅ Removed OPENAI_API_KEY from environment.")
+    st.write("✅ Successfully removed OPENAI_API_KEY from environment.")
 else:
-    st.write("✅ No OpenAI API key found.")
-
-# Check if running inside Docker
-if os.path.exists("/.dockerenv"):
-    st.write("🐳 Running inside Docker!")
-else:
-    st.write("✅ Not running inside Docker.")
-
-# Check installed packages
-st.write("🔍 Checking installed packages...")
-try:
-    import openai
-    st.write("⚠️ OpenAI is installed!")
-except ImportError:
-    st.write("✅ OpenAI is NOT installed.")
-🚀 Run your app and check the output!
+    st.write("✅ No OpenAI API key found in the environment.")
 
 # Title
 st.title("EUR/PLN Tail Risk Capital Simulation")
