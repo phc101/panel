@@ -3,6 +3,25 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import streamlit as st
+
+# Run pip uninstall from inside Streamlit
+st.write("Checking for OpenAI installation...")
+
+try:
+    import subprocess
+    result = subprocess.run(["pip", "uninstall", "openai", "-y"], capture_output=True, text=True)
+    st.write("🔍 OpenAI Uninstall Output:", result.stdout)
+except Exception as e:
+    st.write("⚠️ Error Running Uninstall:", e)
+
+# Check if OpenAI is still installed
+try:
+    import openai
+    st.write("⚠️ OpenAI is still installed!")
+except ImportError:
+    st.write("✅ OpenAI has been removed successfully!")
+
 
 # Title
 st.title("EUR/PLN Tail Risk Capital Simulation")
