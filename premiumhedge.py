@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import timedelta
+from sklearn.linear_model import LinearRegression
 
 # Streamlit UI setup
 st.title("FX Valuation & Backtesting Tool")
@@ -40,7 +41,6 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         data["Yield Spread"] = data["Domestic Yield"] - data["Foreign Yield"]
         
         # Predictive Price using Linear Regression
-        from sklearn.linear_model import LinearRegression
         model = LinearRegression()
         valid_data = data.dropna()
         if not valid_data.empty:
@@ -85,13 +85,31 @@ if currency_file and domestic_yield_file and foreign_yield_file:
         ax2.legend()
         st.pyplot(fig2)
         
-        # Additional FX Price vs Predictive Price Chart
-        st.subheader("Additional Market Price vs. Predictive Price Chart")
-        fig3, ax3 = plt.subplots(figsize=(10, 5))
-        ax3.plot(data["Date"], data["FX Rate"], label="Market Price", color="blue")
-        ax3.plot(data["Date"], data["Predictive Price"], label="Predictive Price", linestyle="dotted", color="orange")
+        # FX Rate vs Yield Spread Chart
+        st.subheader("FX Rate vs. Yield Spread")
+        fig3, ax3 = plt.subplots()
+        ax3.plot(data["Date"], data["FX Rate"], label="FX Rate", color="blue")
+        ax3.plot(data["Date"], data["Yield Spread"], label="Yield Spread", linestyle="dashed", color="orange")
         ax3.legend()
         st.pyplot(fig3)
+        
+        # Histogram of P&L Distribution
+        st.subheader("P&L Distribution")
+        fig4, ax4 = plt.subplots()
+        ax4.hist(trades["PnL"], bins=20, color="purple", alpha=0.7, edgecolor="black")
+        ax4.set_xlabel("P&L")
+        ax4.set_ylabel("Frequency")
+        ax4.set_title("Distribution of Trade Profits & Losses")
+        st.pyplot(fig4)
+        
+        # Rolling Sharpe Ratio Over Time
+        st.subheader("Rolling Sharpe Ratio")
+        trades["Rolling Sharpe"] = trades["PnL"].rolling(window=10, min_periods=1).mean() / trades["PnL"].rolling(window=10, min_periods=1).std()
+        fig5, ax5 = plt.subplots()
+        ax5.plot(trades["Date"], trades["Rolling Sharpe"], label="Rolling Sharpe Ratio", color="brown")
+        ax5.axhline(y=0, color="black", linestyle="dotted")
+        ax5.legend()
+        st.pyplot(fig5)
     
     except Exception as e:
         st.error(f"An error occurred: {e}")
