@@ -11,15 +11,17 @@ def load_data(uploaded_file):
 st.title("FX Bond Spread Dashboard")
 
 st.sidebar.header("Upload CSV Files")
+poland_yield_curve_file = st.sidebar.file_uploader("Upload Poland Yield Curve CSV")
 germany_bond_file = st.sidebar.file_uploader("Upload Germany Bond Yield CSV")
 poland_bond_file = st.sidebar.file_uploader("Upload Poland Bond Yield CSV")
 us_bond_file = st.sidebar.file_uploader("Upload US Bond Yield CSV")
 eur_pln_file = st.sidebar.file_uploader("Upload EUR/PLN CSV")
 usd_pln_file = st.sidebar.file_uploader("Upload USD/PLN CSV")
 
-if all([germany_bond_file, poland_bond_file, us_bond_file, eur_pln_file, usd_pln_file]):
+if all([germany_bond_file, poland_bond_file, us_bond_file, eur_pln_file, usd_pln_file, poland_yield_curve_file]):
     germany_bond = load_data(germany_bond_file)
     poland_bond = load_data(poland_bond_file)
+    poland_yield_curve = load_data(poland_yield_curve_file)
     us_bond = load_data(us_bond_file)
     eur_pln = load_data(eur_pln_file)
     usd_pln = load_data(usd_pln_file)
@@ -48,6 +50,30 @@ if all([germany_bond_file, poland_bond_file, us_bond_file, eur_pln_file, usd_pln
     fx_data["Predicted_USDPLN"] = model_usdpln.predict(X_usdpln)
     
     st.write("### Processed FX and Bond Spread Data")
+    
+    # Process Poland Yield Curve Data
+    poland_yield_curve["Date"] = pd.to_datetime(poland_yield_curve["Date"])
+    poland_yield_curve = poland_yield_curve.sort_values("Date")
+    
+    # Interpolate yield curve to estimate missing maturities
+    from scipy.interpolate import interp1d
+    maturities = poland_yield_curve.columns[1:].astype(float)  # Assuming columns are maturities in years
+    yield_curve_interp = interp1d(maturities, poland_yield_curve.iloc[-1, 1:], kind='cubic', fill_value='extrapolate')
+    
+    # Generate smooth forward curve
+    smooth_maturities = np.linspace(maturities.min(), maturities.max(), 100)
+    forward_curve = yield_curve_interp(smooth_maturities)
+    
+    # Plot Poland Yield Curve
+    fig_yield, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(smooth_maturities, forward_curve, label="Interpolated Forward Curve", linewidth=2)
+    ax.scatter(maturities, poland_yield_curve.iloc[-1, 1:], color='red', label="Actual Yields")
+    ax.set_xlabel("Maturity (Years)")
+    ax.set_ylabel("Yield (%)")
+    ax.set_title("Poland Forward Yield Curve")
+    ax.legend()
+    
+    st.pyplot(fig_yield)
     st.dataframe(fx_data)
     
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
