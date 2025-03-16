@@ -1,173 +1,91 @@
 import streamlit as st
-import pandas as pd
+import cv2
+import mediapipe as mp
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.stats import norm
+import tempfile
+import os
 
-def calculate_volatility(prices):
-    """
-    Calculate the volatility based on the last 20 days of prices.
-    Volatility is calculated as the standard deviation of percentage changes, annualized.
-    """
-    percentage_changes = prices[1:] / prices[:-1] - 1  # Daily percentage changes
-    std_dev = np.std(percentage_changes)  # Standard deviation of daily returns
-    annualized_volatility = std_dev * np.sqrt(252) * 100  # Annualized volatility in percentage
-    return annualized_volatility
+# Initialize Mediapipe Pose Detection
+mp_pose = mp.solutions.pose
+mp_drawing = mp.solutions.drawing_utils
 
-def calculate_binomial_tree(prices, days=5):
-    """
-    Calculate a binomial tree using dynamically computed volatility.
-    """
-    # Ensure prices are valid and positive
-    prices = np.array(prices)
-    if np.any(prices <= 0):
-        raise ValueError("Prices must be positive and non-zero for log calculations.")
+# Function to extract frames from video
+def extract_frames(video_path, num_frames=5):
+    cap = cv2.VideoCapture(video_path)
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    frames_to_extract = np.linspace(0, frame_count - 1, num_frames, dtype=int)
+    
+    extracted_frames = []
+    for frame_num in frames_to_extract:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+        ret, frame = cap.read()
+        if ret:
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            extracted_frames.append(frame_rgb)
+    
+    cap.release()
+    return extracted_frames
 
-    # Calculate volatility dynamically
-    volatility = calculate_volatility(prices)
-    sigma = volatility / 100  # Convert percentage to decimal
-    dt = 1 / 252  # One trading day
+# Function to analyze form using Mediapipe
+def analyze_form(frames):
+    pose = mp_pose.Pose()
+    feedback = []
+    
+    for frame in frames:
+        image_rgb = frame.copy()
+        results = pose.process(image_rgb)
+        
+        if results.pose_landmarks:
+            mp_drawing.draw_landmarks(image_rgb, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+            landmarks = results.pose_landmarks.landmark
+            
+            # Extract key body angles
+            hip_angle = landmarks[mp_pose.PoseLandmark.LEFT_HIP].y - landmarks[mp_pose.PoseLandmark.LEFT_KNEE].y
+            knee_angle = landmarks[mp_pose.PoseLandmark.LEFT_KNEE].y - landmarks[mp_pose.PoseLandmark.LEFT_ANKLE].y
 
-    # Calculate up, down factors, and probabilities
-    up = np.exp(sigma * np.sqrt(dt))
-    down = 1 / up
-    p_up = (np.exp((sigma ** 2) * dt) - down) / (up - down)  # Up probability
-    p_down = 1 - p_up  # Down probability
-
-    # Initialize the binomial tree and probability tree
-    tree = np.zeros((days + 1, days + 1))
-    probabilities = np.zeros((days + 1, days + 1))
-    tree[0, 0] = prices[-1]
-    probabilities[0, 0] = 1  # Starting node has 100% probability
-
-    # Build the tree
-    for i in range(1, days + 1):
-        for j in range(i + 1):
-            tree[j, i] = prices[-1] * (up ** (i - j)) * (down ** j)
-            if j > 0:
-                probabilities[j, i] += probabilities[j - 1, i - 1] * p_up
-            if j < i:
-                probabilities[j, i] += probabilities[j, i - 1] * p_down
-
-    return tree, probabilities, up, down, p_up, volatility
+            # Basic feedback rules
+            if hip_angle < 0.1:  # Hips too high
+                feedback.append("Your hips are too high. Lower them for better deadlift mechanics.")
+            if knee_angle > 0.15:  # Excessive knee bend
+                feedback.append("Your knees are bending too much. Engage the hips more.")
+        
+        feedback.append(image_rgb)  # Store processed frame
+    
+    pose.close()
+    return feedback
 
 # Streamlit UI
-st.title("Binomial Tree Price Forecaster")
+st.title("Exercise Form Analysis")
+st.write("Upload a video of your exercise, and the system will analyze your form and provide feedback.")
 
-# Tab selection for EUR/PLN and USD/PLN
-tab1, tab2 = st.tabs(["EUR/PLN", "USD/PLN"])
+uploaded_video = st.file_uploader("Upload your exercise video", type=["mp4", "mov", "avi"])
 
-for tab, pair in zip([tab1, tab2], ["EUR/PLN", "USD/PLN"]):
-    with tab:
-        st.header(f"{pair} Binomial Tree")
+if uploaded_video:
+    # Save uploaded video temporarily
+    tfile = tempfile.NamedTemporaryFile(delete=False)
+    tfile.write(uploaded_video.read())
+    video_path = tfile.name
 
-        # File uploader
-        uploaded_file = st.file_uploader(f"Upload a file with historical {pair} prices", type=["csv", "xlsx"], key=pair)
+    st.video(video_path)  # Display uploaded video
 
-        if uploaded_file is not None:
-            # Load the data based on file type
-            if uploaded_file.name.endswith(".csv"):
-                data = pd.read_csv(uploaded_file)
-            elif uploaded_file.name.endswith(".xlsx"):
-                data = pd.read_excel(uploaded_file)
-            else:
-                st.error("Unsupported file format. Please upload a CSV or Excel file.")
-                continue
+    st.write("Extracting keyframes...")
+    frames = extract_frames(video_path)
 
-            st.write("Uploaded Data:", data.head())
+    st.write("Analyzing form...")
+    feedback = analyze_form(frames)
 
-            # Display column names for debugging
-            st.write("Columns in the uploaded file:", data.columns.tolist())
-
-            # Normalize column names to handle potential mismatches
-            data.columns = data.columns.str.strip().str.lower()
-
-            # Allow user to map columns if required ones are missing
-            if 'date' not in data.columns or 'close' not in data.columns:
-                st.warning("The required columns 'Date' and 'Close' were not found. Please map them below:")
-                date_col = st.selectbox("Select the Date column:", data.columns, key=f"{pair}_date")
-                close_col = st.selectbox("Select the Close column:", data.columns, key=f"{pair}_close")
-                data = data.rename(columns={date_col: 'date', close_col: 'close'})
-
-            if 'date' in data.columns and 'close' in data.columns:
-                data['date'] = pd.to_datetime(data['date'])
-
-                # Replace commas with dots and convert 'close' to numeric if necessary
-                data['close'] = data['close'].astype(str).str.replace(',', '.').astype(float)
-
-                # Drop rows with missing values
-                data = data.dropna(subset=['close'])
-
-                # Exclude weekends (Saturday = 5, Sunday = 6)
-                data = data[data['date'].dt.weekday < 5]
-
-                # Sort data by date and get the last 20 prices
-                data = data.sort_values(by='date')
-                if len(data) < 20:
-                    st.error("Not enough data. Please provide at least 20 valid weekday prices.")
-                else:
-                    prices = data['close'].tail(20).values  # Select only the last 20 prices
-
-                    try:
-                        # Calculate binomial tree
-                        tree, probabilities, up, down, p_up, volatility = calculate_binomial_tree(prices)
-
-                        # Display results
-                        st.subheader("Binomial Tree")
-                        st.write("Up Factor (u):", round(up, 6))
-                        st.write("Down Factor (d):", round(down, 6))
-                        st.write("Probability of Up Movement (p):", round(p_up, 4))
-                        st.write("Volatility (Annualized, %):", round(volatility, 4))
-
-                        # Convert tree to DataFrame for better display
-                        tree_df = pd.DataFrame(tree)
-                        tree_df.index.name = "Down Steps"
-                        tree_df.columns.name = "Days"
-
-                        st.write("Binomial Tree Table:")
-                        st.dataframe(tree_df.style.format(precision=4))
-
-                        # Convert probabilities to DataFrame for better display
-                        prob_df = pd.DataFrame(probabilities)
-                        prob_df.index.name = "Down Steps"
-                        prob_df.columns.name = "Days"
-
-                        st.write("Probability Tree Table:")
-                        st.dataframe(prob_df.style.format(precision=4))
-
-                        # Identify the most probable path
-                        most_probable_path = [np.argmax(probabilities[:, i]) for i in range(probabilities.shape[1])]
-                        most_probable_prices = [tree[most_probable_path[i], i] for i in range(len(most_probable_path))]
-
-                        st.subheader("Most Probable Path")
-                        st.write("Most probable prices:", most_probable_prices)
-
-                        # Plot the tree
-                        st.subheader("Binomial Tree Chart")
-
-                        fig, ax = plt.subplots(figsize=(12, 8))
-                        for i in range(tree.shape[1]):
-                            x = [i] * (i + 1)
-                            y = tree[:i + 1, i]
-                            ax.plot(x, y, 'o-', label=f"Day {i}")
-
-                            # Add price labels to nodes
-                            for j in range(i + 1):
-                                ax.text(i, tree[j, i], f"{tree[j, i]:.2f}", fontsize=8, ha='center', va='bottom')
-
-                        # Highlight the most probable path
-                        x_path = list(range(len(most_probable_path)))
-                        ax.plot(x_path, most_probable_prices, 'r-o', label="Most Probable Path")
-
-                        ax.set_title(f"{pair} Binomial Tree Price Forecast")
-                        ax.set_xlabel("Days")
-                        ax.set_ylabel("Price")
-                        ax.grid(True, linestyle='--', alpha=0.7)
-                        ax.legend()
-                        st.pyplot(fig)
-                    except ValueError as e:
-                        st.error(f"Error in calculation: {e}")
-            else:
-                st.error("The uploaded file does not contain the required 'Date' and 'Close' columns.")
+    # Display feedback
+    for item in feedback:
+        if isinstance(item, str):
+            st.warning(item)
         else:
-            st.info(f"Please upload a file for {pair} to proceed.")
+            st.image(item, caption="Analyzed Frame")
+
+    # Suggest corrective exercises
+    st.write("### Suggested Fixes")
+    if any("hips too high" in f for f in feedback):
+        st.write("- Try the **Squat to Deadlift Position Drill** to lower your hips at setup.")
+    if any("knees bending too much" in f for f in feedback):
+        st.write("- Focus on **hip engagement** instead of excessive knee flexion.")
+
+st.write("Upload another video after corrections to compare progress!")
