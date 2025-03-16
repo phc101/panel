@@ -74,6 +74,32 @@ if all([germany_bond_file, poland_bond_file, us_bond_file, eur_pln_file, usd_pln
     latest_spot_prices = fx_data.iloc[-1][["Price_EURPLN", "Price_USDPLN"]]
     
     st.write("### Latest Prices")
+    
+    # Calculate percentage difference
+    eurpln_diff = abs((latest_predicted_prices['Predicted_EURPLN'] - latest_spot_prices['Price_EURPLN']) / latest_spot_prices['Price_EURPLN']) * 100
+    usdpln_diff = abs((latest_predicted_prices['Predicted_USDPLN'] - latest_spot_prices['Price_USDPLN']) / latest_spot_prices['Price_USDPLN']) * 100
+    
+    st.write(f"**Actual EUR/PLN:** {latest_spot_prices['Price_EURPLN']:.4f}")
+    st.write(f"**Predicted EUR/PLN:** {latest_predicted_prices['Predicted_EURPLN']:.4f}")
+    st.write(f"**% Difference EUR/PLN:** {eurpln_diff:.2f}%")
+    
+    st.write(f"**Actual USD/PLN:** {latest_spot_prices['Price_USDPLN']:.4f}")
+    st.write(f"**Predicted USD/PLN:** {latest_predicted_prices['Predicted_USDPLN']:.4f}")
+    st.write(f"**% Difference USD/PLN:** {usdpln_diff:.2f}%")
+    
+    # Calculate average days to convergence based on last year
+    fx_data['Diff_EURPLN'] = abs(fx_data['Price_EURPLN'] - fx_data['Predicted_EURPLN'])
+    fx_data['Diff_USDPLN'] = abs(fx_data['Price_USDPLN'] - fx_data['Predicted_USDPLN'])
+    
+    convergence_threshold = 0.5 / 100  # Define threshold for convergence (0.5%)
+    fx_data['Converged_EURPLN'] = fx_data['Diff_EURPLN'] / fx_data['Price_EURPLN'] < convergence_threshold
+    fx_data['Converged_USDPLN'] = fx_data['Diff_USDPLN'] / fx_data['Price_USDPLN'] < convergence_threshold
+    
+    avg_days_eurpln = fx_data['Converged_EURPLN'].astype(int).rolling(365).sum().mean()
+    avg_days_usdpln = fx_data['Converged_USDPLN'].astype(int).rolling(365).sum().mean()
+    
+    st.write(f"**Average days for EUR/PLN to converge:** {avg_days_eurpln:.0f} days")
+    st.write(f"**Average days for USD/PLN to converge:** {avg_days_usdpln:.0f} days")
     st.write(f"**Predicted EUR/PLN:** {latest_predicted_prices['Predicted_EURPLN']:.4f}")
     st.write(f"**Predicted USD/PLN:** {latest_predicted_prices['Predicted_USDPLN']:.4f}")
     st.write(f"**Last Spot EUR/PLN:** {latest_spot_prices['Price_EURPLN']:.4f}")
