@@ -11,3 +11,5 @@ google-search-results
 firebase-admin
 statsmodels
 scikit-learn
+opencv-python 
+mediapipe 
