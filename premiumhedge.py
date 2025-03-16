@@ -20,7 +20,7 @@ usd_pln_file = st.sidebar.file_uploader("Upload USD/PLN CSV")
 if all([germany_bond_file, poland_bond_file, us_bond_file, eur_pln_file, usd_pln_file]):
     germany_bond = load_data(germany_bond_file)
     poland_bond = load_data(poland_bond_file)
-            us_bond = load_data(us_bond_file)
+                us_bond = load_data(us_bond_file)
     eur_pln = load_data(eur_pln_file)
     usd_pln = load_data(usd_pln_file)
     
