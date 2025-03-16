@@ -95,8 +95,8 @@ if all([germany_bond_file, poland_bond_file, us_bond_file, eur_pln_file, usd_pln
     fx_data['Converged_EURPLN'] = fx_data['Diff_EURPLN'] / fx_data['Price_EURPLN'] < convergence_threshold
     fx_data['Converged_USDPLN'] = fx_data['Diff_USDPLN'] / fx_data['Price_USDPLN'] < convergence_threshold
     
-    avg_days_eurpln = fx_data['Converged_EURPLN'].astype(int).rolling(365).sum().mean()
-    avg_days_usdpln = fx_data['Converged_USDPLN'].astype(int).rolling(365).sum().mean()
+    avg_days_eurpln = fx_data['Converged_EURPLN'].astype(int).rolling(365, min_periods=1).sum().mean()
+    avg_days_usdpln = fx_data['Converged_USDPLN'].astype(int).rolling(365, min_periods=1).sum().mean()
     
     st.write(f"**Average days for EUR/PLN to converge:** {avg_days_eurpln:.0f} days")
     st.write(f"**Average days for USD/PLN to converge:** {avg_days_usdpln:.0f} days")
