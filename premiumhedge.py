@@ -52,7 +52,13 @@ if all([germany_bond_file, poland_bond_file, us_bond_file, eur_pln_file, usd_pln
     st.write("### Processed FX and Bond Spread Data")
     
     # Process Poland Yield Curve Data
-    poland_yield_curve["Date"] = pd.to_datetime(poland_yield_curve["Date"])
+    # Convert maturities to numerical values in years
+    maturity_map = {"1 month": 1/12, "2 months": 2/12, "3 months": 3/12, "6 months": 6/12, "1 year": 1, "2 years": 2, "5 years": 5, "10 years": 10}
+    poland_yield_curve.iloc[:, 0] = poland_yield_curve.iloc[:, 0].map(maturity_map)
+    poland_yield_curve = poland_yield_curve.dropna()
+    
+    # Convert yield percentages to numeric values
+    poland_yield_curve.iloc[:, 1] = poland_yield_curve.iloc[:, 1].str.rstrip('%').astype(float)
     poland_yield_curve = poland_yield_curve.sort_values("Date")
     
     # Interpolate yield curve to estimate missing maturities
