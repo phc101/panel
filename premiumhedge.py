@@ -71,7 +71,7 @@ if all([germany_bond_file, poland_bond_file, us_bond_file, eur_pln_file, usd_pln
     st.pyplot(fig)
     
     latest_predicted_prices = fx_data.iloc[-1][["Predicted_EURPLN", "Predicted_USDPLN"]]
-    latest_spot_prices = fx_data.iloc[-1][["Price_EURPLN", "Price_USDPLN"]]
+    latest_spot_prices = fx_data.iloc[0][["Price_EURPLN", "Price_USDPLN"]]
     
     st.write("### Latest Prices")
     
