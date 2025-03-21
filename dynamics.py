@@ -1,75 +1,52 @@
 import streamlit as st
-import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+import yfinance as yf
+from datetime import datetime, timedelta
 
-# ---------- Streamlit UI Setup ----------
-st.set_page_config(page_title="EUR/PLN Risk Model", layout="wide")
-st.title("📊 EUR/PLN Risk Management Model")
+st.set_page_config(page_title="FX & Yield Data Downloader", layout="wide")
+st.title("📉 EUR/PLN, USD/PLN & Bond Yields Downloader")
 
-# ---------- Sidebar Inputs ----------
-st.sidebar.header("⚙️ Market Inputs")
-spot_rate = st.sidebar.number_input("Spot Rate (EUR/PLN)", value=4.30, format="%.4f")
-predicted_move_pct = st.sidebar.number_input("Expected Move in 30 Days (%)", value=1.35, format="%.2f")
-predicted_spot = spot_rate * (1 + predicted_move_pct / 100)
+st.markdown("Ten agent pobiera dane za ostatnie 12 miesięcy i zapisuje je do CSV.")
 
-st.sidebar.header("🏢 Exporter Exposure")
-exposure_eur = st.sidebar.number_input("Exposure Amount (€)", value=100_000_000, format="%d")
+# Ustaw daty
+end_date = datetime.today()
+start_date = end_date - timedelta(days=365)
 
-st.sidebar.header("💰 Risk Capital Requirements")
-client_deposit_pct = st.sidebar.slider("Client Deposit (%)", 0.5, 5.0, 1.0, step=0.1)
-broker_margin_pct = st.sidebar.slider("Broker Margin (%)", 1.0, 10.0, 5.0, step=0.5)
+# Symbole do pobrania
+symbols = {
+    "EUR/PLN": "EURPLN=X",
+    "USD/PLN": "USDPLN=X",
+    "PL 2M Yield": "PL3M.IR",  # Przybliżenie 2M
+    "DE 3M Yield": "^IRX.DE",  # Można zmienić na konkretny symbol jeśli inny
+    "US 2M Yield": "^IRX"      # Używamy 13-week T-Bill jako przybliżenie
+}
 
-st.sidebar.header("⚠️ Extreme Scenario Simulation")
-extreme_move = st.sidebar.slider("Extreme EUR/PLN Move (%)", 2.0, 20.0, 10.0, step=0.5)
-extreme_spot = spot_rate * (1 + extreme_move / 100)
+# Funkcja pobierająca dane
+@st.cache_data
+def fetch_data():
+    data = pd.DataFrame(index=pd.date_range(start=start_date, end=end_date, freq='D'))
 
-# ---------- Functions for Calculations ----------
-def calculate_capital_requirements(spot_rate, exposure_eur, client_deposit_pct, broker_margin_pct, extreme_spot):
-    """Calculates client deposit, broker margin, and tail risk loss."""
-    client_deposit = (exposure_eur * spot_rate * client_deposit_pct) / 100
-    broker_margin = (exposure_eur * spot_rate * broker_margin_pct) / 100
-    tail_risk_loss = max(exposure_eur * (extreme_spot - spot_rate), 0)
-    additional_capital_needed = max(tail_risk_loss - client_deposit, 0)
-    
-    return client_deposit, broker_margin, tail_risk_loss, additional_capital_needed
+    for name, ticker in symbols.items():
+        try:
+            df = yf.download(ticker, start=start_date, end=end_date)
+            df = df[['Close']].rename(columns={'Close': name})
+            data = data.join(df, how='left')
+        except Exception as e:
+            st.warning(f"Nie udało się pobrać danych dla {name}: {e}")
 
-client_deposit, broker_margin, tail_risk_loss, additional_capital_needed = calculate_capital_requirements(
-    spot_rate, exposure_eur, client_deposit_pct, broker_margin_pct, extreme_spot
-)
+    data = data.dropna(how='all')
+    data = data.fillna(method='ffill')  # Wypełnij luki
+    return data
 
-# ---------- Data Simulation for Visualization ----------
-spot_prices = np.linspace(spot_rate * 0.9, extreme_spot * 1.1, 100)
-losses = np.maximum(exposure_eur * (spot_prices - spot_rate), 0)
+if st.button("📥 Pobierz dane"):
+    df = fetch_data()
+    st.success("Dane pobrane pomyślnie!")
+    st.dataframe(df.tail(10), use_container_width=True)
 
-# ---------- Layout Setup ----------
-col1, col2 = st.columns(2)
-
-# ---------- Display Capital Requirements ----------
-with col1:
-    st.subheader("💡 Capital Requirements Summary")
-    st.write(f"**📉 Predicted Spot in 30 Days:** {predicted_spot:.4f}")
-    st.write(f"**⚠️ Extreme Move Spot (EUR/PLN {extreme_move}% increase):** {extreme_spot:.4f}")
-    st.write(f"**💰 Client Deposit Collected:** {client_deposit:,.0f} PLN")
-    st.write(f"**🏦 Broker Margin Required:** {broker_margin:,.0f} PLN")
-    st.write(f"**📉 Tail Risk Loss Estimate:** {tail_risk_loss:,.0f} PLN")
-    st.write(f"**⚠️ Additional Capital Needed:** {additional_capital_needed:,.0f} PLN")
-
-# ---------- Risk Simulation Plot ----------
-with col2:
-    st.subheader("📈 Risk Simulation Chart")
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(spot_prices, losses, label="Tail Risk Loss", color='red')
-    ax.axhline(client_deposit, color='blue', linestyle='dashed', label="Client Deposit")
-    ax.axhline(broker_margin, color='green', linestyle='dotted', label="Broker Margin")
-    ax.axhline(additional_capital_needed, color='purple', linestyle='dashed', label="Additional Capital Needed")
-    ax.legend()
-    ax.set_xlabel("EUR/PLN Spot Price")
-    ax.set_ylabel("Potential Loss (PLN)")
-    st.pyplot(fig)
-
-# ---------- Risk Notes ----------
-st.subheader("📝 Risk Notes")
-st.write("- If EUR/PLN rises significantly, you may need additional capital beyond the client deposit.")
-st.write("- Adjusting client deposit % and broker margin % affects capital requirements.")
-st.write("- Extreme market movements require a strong capital buffer to avoid liquidation.")
+    csv = df.to_csv(index=True).encode('utf-8')
+    st.download_button(
+        label="💾 Eksportuj do CSV",
+        data=csv,
+        file_name='fx_yield_data.csv',
+        mime='text/csv',
+    )
