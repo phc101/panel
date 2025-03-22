@@ -2,7 +2,8 @@ import streamlit as st
 import hashlib
 import time
 
-st.set_page_config(page_title="Toy Blockchain", layout="wide")
+# ✅ MUST BE FIRST STREAMLIT CALL
+st.set_page_config(page_title="Toy Blockchain with Mining", layout="wide")
 
 # --- BLOCK CLASS WITH PROOF OF WORK ---
 class Block:
@@ -24,12 +25,11 @@ class Block:
             self.nonce += 1
             self.hash = self.calculate_hash()
 
-
-# --- BLOCKCHAIN CLASS WITH MINING ---
+# --- BLOCKCHAIN CLASS ---
 class Blockchain:
     def __init__(self, difficulty=4):
-        self.chain = [self.create_genesis_block()]
         self.difficulty = difficulty
+        self.chain = [self.create_genesis_block()]
 
     def create_genesis_block(self):
         genesis_block = Block(0, "0", time.time(), "Genesis Block")
@@ -58,44 +58,43 @@ class Blockchain:
                 return False
         return True
 
-
-# --- INIT BLOCKCHAIN ---
+# --- INIT BLOCKCHAIN IN SESSION STATE ---
 if 'blockchain' not in st.session_state:
-    st.session_state.blockchain = Blockchain()
+    st.session_state.blockchain = Blockchain(difficulty=4)
 
-# --- SIDEBAR ---
-st.sidebar.title("Blockchain Controls")
+# --- SIDEBAR: ADD BLOCK ---
+st.sidebar.title("⛏️ Mine a New Block")
 
 with st.sidebar.form("add_block"):
     tx_data = st.text_input("Transaction Data", value="Alice pays Bob 5 BTC")
-    submitted = st.form_submit_button("Add Block")
+    submitted = st.form_submit_button("Mine Block")
     if submitted:
-        st.session_state.blockchain.add_block(tx_data)
-        st.success("✅ Block added!")
+        with st.spinner("⛏️ Mining in progress..."):
+            st.session_state.blockchain.add_block(tx_data)
+        st.success("✅ Block mined and added!")
 
-# --- MAIN VIEW ---
-st.title("🔗 Simple Blockchain Explorer")
+# --- MAIN APP: DISPLAY CHAIN ---
+st.title("🔗 Toy Blockchain with Proof of Work")
 
 for block in st.session_state.blockchain.chain:
-    with st.expander(f"Block #{block.index}"):
-        st.write(f"**Timestamp**: {block.timestamp}")
-        st.write(f"**Data**: {block.data}")
-        st.write(f"**Nonce**: {block.nonce}")
-        st.write(f"**Hash**: `{block.hash}`")
-        st.write(f"**Previous Hash**: `{block.previous_hash}`")
+    with st.expander(f"📦 Block #{block.index}"):
+        st.markdown(f"**Timestamp**: {block.timestamp}")
+        st.markdown(f"**Data**: {block.data}")
+        st.markdown(f"**Nonce**: `{block.nonce}`")
+        st.markdown(f"**Hash**: `{block.hash}`")
+        st.markdown(f"**Previous Hash**: `{block.previous_hash}`")
 
-# --- VALIDATION ---
+# --- VALIDATE CHAIN ---
 st.subheader("🔐 Blockchain Integrity Check")
-is_valid = st.session_state.blockchain.is_chain_valid()
-if is_valid:
+if st.session_state.blockchain.is_chain_valid():
     st.success("✅ Blockchain is valid.")
 else:
     st.error("❌ Blockchain has been tampered with!")
 
-# --- OPTIONAL HACK BUTTON ---
+# --- OPTIONAL: TAMPER TEST BUTTON ---
 if st.button("💣 Tamper with Block #1"):
     if len(st.session_state.blockchain.chain) > 1:
-        st.session_state.blockchain.chain[1].data = "🔥 Someone stole 1000 BTC!"
+        st.session_state.blockchain.chain[1].data = "🔥 Hacked!"
         st.warning("⚠️ Block #1 has been tampered with!")
     else:
-        st.info("Add at least 2 blocks to try tampering.")
+        st.info("ℹ️ Add at least one block to test tampering.")
