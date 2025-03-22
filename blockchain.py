@@ -1,6 +1,9 @@
 import streamlit as st
 import hashlib
 import time
+if st.button("Hack Block #1"):
+    st.session_state.blockchain.chain[1].data = "Someone stole 1000 BTC"
+    st.warning("⚠️ Block #1 has been tampered with!")
 
 # --- BLOCK & BLOCKCHAIN CLASSES ---
 class Block:
