@@ -206,6 +206,30 @@ if history:
     st.dataframe(history)
 else:
     st.info("This wallet has no transactions yet.")
+    import pandas as pd
+
+st.subheader("📊 Balance Over Time")
+
+wallet_for_chart = st.selectbox("Select Wallet for Chart", wallets, key="balance_chart")
+
+balance_timeline = []
+running_balance = 0
+
+for block in b.chain:
+    for tx in block.transactions:
+        if isinstance(tx, dict):
+            if tx["sender"] == wallet_for_chart:
+                running_balance -= tx["amount"]
+            if tx["recipient"] == wallet_for_chart:
+                running_balance += tx["amount"]
+    balance_timeline.append({
+        "Block": block.index,
+        "Balance": running_balance
+    })
+
+chart_df = pd.DataFrame(balance_timeline)
+st.line_chart(chart_df.set_index("Block"))
+
 
 
 # --- VALIDATION ---
