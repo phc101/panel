@@ -3,10 +3,19 @@ from web3 import Web3
 import os
 import json
 
+
+
 # Absolute path to ERC20Token ABI
-erc20_path = os.path.join(os.getcwd(), "artifacts/contracts/ERC20Token.sol/ERC20Token.json")
+
+erc20_path = os.path.abspath("artifacts/contracts/ERC20Token.sol/ERC20Token.json")
+fx_path = os.path.abspath("artifacts/contracts/FXConverter.sol/FXConverter.json")
+
 with open(erc20_path) as f:
     token_abi = json.load(f)["abi"]
+
+with open(fx_path) as f:
+    fx_abi = json.load(f)["abi"]
+
 
 # Absolute path to FXConverter ABI
 fx_path = os.path.join(os.getcwd(), "artifacts/contracts/FXConverter.sol/FXConverter.json")
