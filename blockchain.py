@@ -3,10 +3,10 @@ import hashlib
 import time
 import json
 
-# --- Streamlit page config ---
+# --- CONFIG ---
 st.set_page_config(page_title="Blockchain with Wallets", layout="wide")
 
-# --- Block class ---
+# --- BLOCK CLASS ---
 class Block:
     def __init__(self, index, previous_hash, timestamp, transactions, nonce=0):
         self.index = index
@@ -26,7 +26,7 @@ class Block:
             self.nonce += 1
             self.hash = self.calculate_hash()
 
-# --- Blockchain class ---
+# --- BLOCKCHAIN CLASS ---
 class Blockchain:
     def __init__(self, difficulty=3):
         self.difficulty = difficulty
@@ -88,79 +88,79 @@ class Blockchain:
                 return False
         return True
 
-# --- Initialize blockchain in session state ---
+# --- INIT ---
 if 'blockchain' not in st.session_state:
     st.session_state.blockchain = Blockchain()
 
 b = st.session_state.blockchain
 wallets = ["Alice", "Bob", "Charlie"]
 
-st.title("💼 Blockchain with Wallets, Mining & Top-Ups")
+st.title("💼 Blockchain with Wallets, Mining, and Top-Ups")
 
-# --- Balances ---
-st.subheader("💰 Wallet Balances")
+# --- BALANCES ---
+st.subheader("💰 Wallet Balances (after mining only)")
 cols = st.columns(len(wallets))
 for i, wallet in enumerate(wallets):
     cols[i].metric(label=wallet, value=f"{b.get_balance(wallet):.1f} coins")
 
-# --- Top-up form (SYSTEM -> Wallet) ---
-st.subheader("💸 Top Up a Wallet from SYSTEM")
+st.caption(f"🕒 Pending transactions: {len(b.pending_transactions)} — you must mine them for balances to update.")
+
+# --- TOP-UP FORM ---
+st.subheader("💸 Top Up Wallet (SYSTEM → User)")
 
 with st.form("topup_form"):
     target = st.selectbox("Select Wallet", wallets, key="topup_wallet")
     topup_amount = st.number_input("Amount", min_value=0.1, step=0.1, key="topup_amt")
-    topup_submit = st.form_submit_button("Top Up Now")
+    topup_submit = st.form_submit_button("Top Up")
 
     if topup_submit:
         b.add_transaction("SYSTEM", target, topup_amount)
-        st.success(f"✅ {topup_amount:.1f} coins added to {target}'s wallet.")
+        st.success(f"Added {topup_amount:.1f} coins to {target} — now mine to confirm.")
 
-# --- Create transaction form ---
-st.subheader("🧾 Create a Transaction")
+# --- SEND TRANSACTION ---
+st.subheader("🧾 Send a Transaction")
 
 with st.form("tx_form"):
-    sender = st.selectbox("Sender", wallets)
-    recipient = st.selectbox("Recipient", [w for w in wallets if w != sender])
-    amount = st.number_input("Amount", min_value=0.1, step=0.1, key="tx_amt")
-    tx_submit = st.form_submit_button("Add Transaction")
+    sender = st.selectbox("Sender", wallets, key="tx_sender")
+    recipient = st.selectbox("Recipient", [w for w in wallets if w != sender], key="tx_recipient")
+    amount = st.number_input("Amount", min_value=0.1, step=0.1, key="tx_amount")
+    tx_submit = st.form_submit_button("Send")
 
     if tx_submit:
         success = b.add_transaction(sender, recipient, amount)
         if success:
-            st.success("✅ Transaction added to pending pool.")
+            st.success("✅ Transaction added to pending pool. Now mine it to finalize.")
         else:
-            st.error("❌ Insufficient balance.")
+            st.error("❌ Insufficient balance. You may need to mine first.")
 
-# --- Mine pending transactions ---
+# --- MINING ---
 st.subheader("⛏️ Mine Pending Transactions")
-
-miner = st.selectbox("Select Miner", wallets, key="miner")
-if st.button("Mine Block"):
-    with st.spinner("⛏️ Mining..."):
+miner = st.selectbox("Choose Miner", wallets, key="miner_select")
+if st.button("Mine Now"):
+    with st.spinner("Mining..."):
         result = b.mine_pending_transactions(miner)
         if result:
-            st.success(f"✅ Block successfully mined by {miner}!")
+            st.success(f"✅ Block mined! {miner} received 50 coin reward.")
         else:
-            st.info("No transactions to mine.")
+            st.info("Nothing to mine.")
 
-# --- Blockchain Explorer ---
+# --- EXPLORER ---
 st.subheader("📦 Blockchain Explorer")
 for block in b.chain:
     with st.expander(f"Block #{block.index}"):
-        st.write(f"🕒 Timestamp: {block.timestamp}")
+        st.write(f"⏱ Timestamp: {block.timestamp}")
         st.write(f"🔢 Nonce: {block.nonce}")
-        st.write(f"🔗 Previous Hash: `{block.previous_hash}`")
-        st.write(f"🔐 Hash: `{block.hash}`")
+        st.code(f"Hash: {block.hash}\nPrev: {block.previous_hash}")
         st.markdown("🧾 Transactions:")
         for tx in block.transactions:
             if isinstance(tx, str):
                 st.markdown(f"- *{tx}*")
             else:
-                st.markdown(f"- `{tx['sender']}` → `{tx['recipient']}` : `{tx['amount']} coins`")
+                st.markdown(f"- `{tx['sender']}` → `{tx['recipient']}`: `{tx['amount']}` coins")
 
-# --- Chain validation ---
+# --- VALIDATION ---
 st.subheader("🔐 Blockchain Integrity")
 if b.is_chain_valid():
-    st.success("✅ Blockchain is valid.")
+    st.success("✅ Chain is valid.")
 else:
-    st.error("❌ Chain has been tampered with!")
+    st.error("❌ Chain is invalid!")
