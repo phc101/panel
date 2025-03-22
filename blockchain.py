@@ -2,10 +2,9 @@ import streamlit as st
 import hashlib
 import time
 
-# ✅ Set page config FIRST
 st.set_page_config(page_title="Toy Blockchain", layout="wide")
 
-# --- BLOCK CLASS ---
+# --- BLOCK CLASS WITH PROOF OF WORK ---
 class Block:
     def __init__(self, index, previous_hash, timestamp, data, nonce=0):
         self.index = index
@@ -19,13 +18,23 @@ class Block:
         block_string = f"{self.index}{self.previous_hash}{self.timestamp}{self.data}{self.nonce}"
         return hashlib.sha256(block_string.encode()).hexdigest()
 
-# --- BLOCKCHAIN CLASS ---
+    def mine_block(self, difficulty):
+        target = "0" * difficulty
+        while not self.hash.startswith(target):
+            self.nonce += 1
+            self.hash = self.calculate_hash()
+
+
+# --- BLOCKCHAIN CLASS WITH MINING ---
 class Blockchain:
-    def __init__(self):
+    def __init__(self, difficulty=4):
         self.chain = [self.create_genesis_block()]
+        self.difficulty = difficulty
 
     def create_genesis_block(self):
-        return Block(0, "0", time.time(), "Genesis Block")
+        genesis_block = Block(0, "0", time.time(), "Genesis Block")
+        genesis_block.mine_block(self.difficulty)
+        return genesis_block
 
     def get_latest_block(self):
         return self.chain[-1]
@@ -35,6 +44,7 @@ class Blockchain:
         new_index = previous_block.index + 1
         new_timestamp = time.time()
         new_block = Block(new_index, previous_block.hash, new_timestamp, data)
+        new_block.mine_block(self.difficulty)
         self.chain.append(new_block)
 
     def is_chain_valid(self):
@@ -47,6 +57,7 @@ class Blockchain:
             if current.previous_hash != previous.hash:
                 return False
         return True
+
 
 # --- INIT BLOCKCHAIN ---
 if 'blockchain' not in st.session_state:
