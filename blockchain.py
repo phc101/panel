@@ -2,9 +2,10 @@ import streamlit as st
 import hashlib
 import time
 import json
+import pandas as pd  # For the balance-over-time chart
 
-# --- CONFIG ---
-st.set_page_config(page_title="Blockchain with Wallets", layout="wide")
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="Blockchain with Charts", layout="wide")
 
 # --- BLOCK CLASS ---
 class Block:
@@ -88,63 +89,59 @@ class Blockchain:
                 return False
         return True
 
-# --- INIT ---
+# --- INIT STATE ---
 if 'blockchain' not in st.session_state:
     st.session_state.blockchain = Blockchain()
 
 b = st.session_state.blockchain
 wallets = ["Alice", "Bob", "Charlie"]
 
-st.title("💼 Blockchain with Wallets, Mining, and Top-Ups")
+st.title("💼 Blockchain App with Wallets, Mining, Mempool & Charts")
 
 # --- BALANCES ---
-st.subheader("💰 Wallet Balances (after mining only)")
+st.subheader("💰 Wallet Balances")
 cols = st.columns(len(wallets))
 for i, wallet in enumerate(wallets):
     cols[i].metric(label=wallet, value=f"{b.get_balance(wallet):.1f} coins")
 
-st.caption(f"🕒 Pending transactions: {len(b.pending_transactions)} — you must mine them for balances to update.")
+st.caption(f"🕒 Pending transactions: {len(b.pending_transactions)} — mine them to finalize.")
 
-# --- TOP-UP FORM ---
-st.subheader("💸 Top Up Wallet (SYSTEM → User)")
-
+# --- TOP-UP ---
+st.subheader("💸 Top-Up Wallet from SYSTEM")
 with st.form("topup_form"):
-    target = st.selectbox("Select Wallet", wallets, key="topup_wallet")
-    topup_amount = st.number_input("Amount", min_value=0.1, step=0.1, key="topup_amt")
+    target = st.selectbox("Top-Up Wallet", wallets, key="topup_wallet")
+    topup_amount = st.number_input("Amount", min_value=0.1, step=0.1)
     topup_submit = st.form_submit_button("Top Up")
-
     if topup_submit:
         b.add_transaction("SYSTEM", target, topup_amount)
-        st.success(f"Added {topup_amount:.1f} coins to {target} — now mine to confirm.")
+        st.success(f"Added {topup_amount:.1f} coins to {target}. Now mine it!")
 
 # --- SEND TRANSACTION ---
-st.subheader("🧾 Send a Transaction")
-
+st.subheader("🧾 Send Transaction")
 with st.form("tx_form"):
     sender = st.selectbox("Sender", wallets, key="tx_sender")
-    recipient = st.selectbox("Recipient", [w for w in wallets if w != sender], key="tx_recipient")
-    amount = st.number_input("Amount", min_value=0.1, step=0.1, key="tx_amount")
+    recipient = st.selectbox("Recipient", [w for w in wallets if w != sender])
+    amount = st.number_input("Amount", min_value=0.1, step=0.1)
     tx_submit = st.form_submit_button("Send")
-
     if tx_submit:
         success = b.add_transaction(sender, recipient, amount)
         if success:
-            st.success("✅ Transaction added to pending pool. Now mine it to finalize.")
+            st.success("✅ Transaction added. Now mine it!")
         else:
-            st.error("❌ Insufficient balance. You may need to mine first.")
+            st.error("❌ Insufficient balance.")
 
-# --- MINING ---
+# --- MINE BLOCK ---
 st.subheader("⛏️ Mine Pending Transactions")
-miner = st.selectbox("Choose Miner", wallets, key="miner_select")
+miner = st.selectbox("Miner", wallets, key="miner_select")
 if st.button("Mine Now"):
     with st.spinner("Mining..."):
         result = b.mine_pending_transactions(miner)
         if result:
-            st.success(f"✅ Block mined! {miner} received 50 coin reward.")
+            st.success(f"✅ Block mined! {miner} earned 50 coins.")
         else:
-            st.info("Nothing to mine.")
+            st.info("No transactions to mine.")
 
-# --- EXPLORER ---
+# --- BLOCKCHAIN EXPLORER ---
 st.subheader("📦 Blockchain Explorer")
 for block in b.chain:
     with st.expander(f"Block #{block.index}"):
@@ -157,33 +154,12 @@ for block in b.chain:
                 st.markdown(f"- *{tx}*")
             else:
                 st.markdown(f"- `{tx['sender']}` → `{tx['recipient']}`: `{tx['amount']}` coins")
-                # --- WALLET HISTORY ---
+
+# --- WALLET HISTORY ---
 st.subheader("📜 View Wallet Transaction History")
-# --- MEMPOOL VIEWER ---
-st.subheader("⏳ Pending Transactions (Mempool)")
-
-if b.pending_transactions:
-    tx_rows = []
-    for tx in b.pending_transactions:
-        if isinstance(tx, dict):
-            tx_type = "Top-Up" if tx["sender"] == "SYSTEM" else "Transfer"
-            tx_rows.append({
-                "Sender": tx["sender"],
-                "Recipient": tx["recipient"],
-                "Amount": f"{tx['amount']:.1f}",
-                "Type": tx_type
-            })
-
-    st.table(tx_rows)
-else:
-    st.success("✅ Mempool is empty. All transactions have been mined.")
-
-
-selected_wallet = st.selectbox("Choose Wallet", wallets, key="wallet_history")
-
+selected_wallet = st.selectbox("Wallet for History", wallets, key="wallet_history")
 history = []
 balance = 0
-
 for block in b.chain:
     for tx in block.transactions:
         if isinstance(tx, dict):
@@ -200,21 +176,16 @@ for block in b.chain:
                     "Amount": f"{abs(tx['amount']):.1f}",
                     "Balance": f"{balance:.1f}"
                 })
-
 if history:
-    st.write(f"📖 Full transaction history for **{selected_wallet}**:")
     st.dataframe(history)
 else:
-    st.info("This wallet has no transactions yet.")
-    import pandas as pd
+    st.info("This wallet has no transactions.")
 
+# --- BALANCE OVER TIME CHART ---
 st.subheader("📊 Balance Over Time")
-
-wallet_for_chart = st.selectbox("Select Wallet for Chart", wallets, key="balance_chart")
-
+wallet_for_chart = st.selectbox("Wallet for Chart", wallets, key="chart_wallet")
 balance_timeline = []
 running_balance = 0
-
 for block in b.chain:
     for tx in block.transactions:
         if isinstance(tx, dict):
@@ -222,19 +193,30 @@ for block in b.chain:
                 running_balance -= tx["amount"]
             if tx["recipient"] == wallet_for_chart:
                 running_balance += tx["amount"]
-    balance_timeline.append({
-        "Block": block.index,
-        "Balance": running_balance
-    })
-
+    balance_timeline.append({"Block": block.index, "Balance": running_balance})
 chart_df = pd.DataFrame(balance_timeline)
 st.line_chart(chart_df.set_index("Block"))
 
-
+# --- MEMPOOL VIEWER ---
+st.subheader("⏳ Pending Transactions (Mempool)")
+if b.pending_transactions:
+    tx_rows = []
+    for tx in b.pending_transactions:
+        if isinstance(tx, dict):
+            tx_type = "Top-Up" if tx["sender"] == "SYSTEM" else "Transfer"
+            tx_rows.append({
+                "Sender": tx["sender"],
+                "Recipient": tx["recipient"],
+                "Amount": f"{tx['amount']:.1f}",
+                "Type": tx_type
+            })
+    st.table(tx_rows)
+else:
+    st.success("✅ Mempool is empty.")
 
 # --- VALIDATION ---
 st.subheader("🔐 Blockchain Integrity")
 if b.is_chain_valid():
-    st.success("✅ Chain is valid.")
+    st.success("✅ Blockchain is valid.")
 else:
-    st.error("❌ Chain is invalid!")
+    st.error("❌ Blockchain has been tampered with!")
