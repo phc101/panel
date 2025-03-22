@@ -45,15 +45,15 @@ accounts = w3.eth.accounts
 user_address = st.selectbox("Select wallet", accounts)
 
 # -------------------------
-# Set deployed contract addresses (copy from your deploy output)
+# 🧠 INSERT YOUR ACTUAL CONTRACT ADDRESSES HERE
 # -------------------------
 
 TOKEN_ADDRESSES = {
-    "EURx": "0xYourEurxAddressHere",
-    "USDx": "0xYourUsdxAddressHere"
+    "EURx": "0xYourActualEurxContractAddressHere",
+    "USDx": "0xYourActualUsdxContractAddressHere"
 }
 
-FX_CONVERTER_ADDRESS = "0xYourFxConverterAddressHere"
+FX_CONVERTER_ADDRESS = "0xYourActualFXConverterAddressHere"
 
 # -------------------------
 # Load contract instances
