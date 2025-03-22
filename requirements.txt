@@ -13,3 +13,4 @@ statsmodels
 scikit-learn
 opencv-python 
 mediapipe 
+web3
