@@ -220,3 +220,53 @@ if b.is_chain_valid():
     st.success("✅ Blockchain is valid.")
 else:
     st.error("❌ Blockchain has been tampered with!")
+    # --- ESCROW CONTRACT SIMULATOR ---
+st.subheader("🧠 Escrow Smart Contract Simulation")
+
+# Store in session state
+if 'escrow' not in st.session_state:
+    st.session_state.escrow = None
+
+escrow = st.session_state.escrow
+
+# Create Escrow Form
+with st.form("escrow_form"):
+    st.markdown("🔐 Create a new escrow contract")
+    escrow_sender = st.selectbox("Escrow Sender", wallets, key="escrow_sender")
+    escrow_recipient = st.selectbox("Escrow Recipient", [w for w in wallets if w != escrow_sender], key="escrow_recipient")
+    escrow_amount = st.number_input("Amount to Escrow", min_value=0.1, step=0.1, key="escrow_amt")
+    create_escrow = st.form_submit_button("Create Escrow")
+
+    if create_escrow:
+        if b.get_balance(escrow_sender) >= escrow_amount:
+            st.session_state.escrow = {
+                "sender": escrow_sender,
+                "recipient": escrow_recipient,
+                "amount": escrow_amount,
+                "status": "Pending"
+            }
+            st.success(f"✅ {escrow_amount} coins placed into escrow from {escrow_sender}.")
+        else:
+            st.error("❌ Insufficient balance to fund escrow.")
+
+# Display and manage escrow
+if escrow := st.session_state.escrow:
+    st.markdown(f"**Sender:** {escrow['sender']}  \n"
+                f"**Recipient:** {escrow['recipient']}  \n"
+                f"**Amount:** {escrow['amount']} coins  \n"
+                f"**Status:** `{escrow['status']}`")
+
+    if escrow['status'] == "Pending":
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("✅ Release to Recipient"):
+                b.add_transaction(escrow['sender'], escrow['recipient'], escrow['amount'])
+                escrow['status'] = "Released"
+                st.success("✅ Funds released to recipient. Please mine to confirm.")
+
+        with col2:
+            if st.button("🔄 Refund to Sender"):
+                escrow['status'] = "Refunded"
+                st.success("🔁 Escrow canceled. Funds returned to sender.")
+
