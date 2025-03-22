@@ -3,10 +3,10 @@ import hashlib
 import time
 import json
 
-# --- MUST BE FIRST STREAMLIT COMMAND ---
+# --- Streamlit page config ---
 st.set_page_config(page_title="Blockchain with Wallets", layout="wide")
 
-# --- BLOCK CLASS ---
+# --- Block class ---
 class Block:
     def __init__(self, index, previous_hash, timestamp, transactions, nonce=0):
         self.index = index
@@ -17,8 +17,8 @@ class Block:
         self.hash = self.calculate_hash()
 
     def calculate_hash(self):
-        block_content = f"{self.index}{self.previous_hash}{self.timestamp}{json.dumps(self.transactions, sort_keys=True)}{self.nonce}"
-        return hashlib.sha256(block_content.encode()).hexdigest()
+        block_string = f"{self.index}{self.previous_hash}{self.timestamp}{json.dumps(self.transactions, sort_keys=True)}{self.nonce}"
+        return hashlib.sha256(block_string.encode()).hexdigest()
 
     def mine_block(self, difficulty):
         target = "0" * difficulty
@@ -26,7 +26,7 @@ class Block:
             self.nonce += 1
             self.hash = self.calculate_hash()
 
-# --- BLOCKCHAIN CLASS ---
+# --- Blockchain class ---
 class Blockchain:
     def __init__(self, difficulty=3):
         self.difficulty = difficulty
@@ -81,76 +81,86 @@ class Blockchain:
     def is_chain_valid(self):
         for i in range(1, len(self.chain)):
             current = self.chain[i]
-            prev = self.chain[i - 1]
+            previous = self.chain[i - 1]
             if current.hash != current.calculate_hash():
                 return False
-            if current.previous_hash != prev.hash:
+            if current.previous_hash != previous.hash:
                 return False
         return True
 
-# --- STREAMLIT APP STARTS HERE ---
+# --- Initialize blockchain in session state ---
 if 'blockchain' not in st.session_state:
     st.session_state.blockchain = Blockchain()
 
-bchain = st.session_state.blockchain
+b = st.session_state.blockchain
 wallets = ["Alice", "Bob", "Charlie"]
 
-st.title("💼 Blockchain with Wallets, Balances & Mining")
+st.title("💼 Blockchain with Wallets, Mining & Top-Ups")
 
-# --- BALANCE OVERVIEW ---
+# --- Balances ---
 st.subheader("💰 Wallet Balances")
 cols = st.columns(len(wallets))
 for i, wallet in enumerate(wallets):
-    cols[i].metric(label=wallet, value=f"{bchain.get_balance(wallet):.1f} coins")
+    cols[i].metric(label=wallet, value=f"{b.get_balance(wallet):.1f} coins")
 
-# --- TRANSACTION FORM ---
+# --- Top-up form (SYSTEM -> Wallet) ---
+st.subheader("💸 Top Up a Wallet from SYSTEM")
+
+with st.form("topup_form"):
+    target = st.selectbox("Select Wallet", wallets, key="topup_wallet")
+    topup_amount = st.number_input("Amount", min_value=0.1, step=0.1, key="topup_amt")
+    topup_submit = st.form_submit_button("Top Up Now")
+
+    if topup_submit:
+        b.add_transaction("SYSTEM", target, topup_amount)
+        st.success(f"✅ {topup_amount:.1f} coins added to {target}'s wallet.")
+
+# --- Create transaction form ---
 st.subheader("🧾 Create a Transaction")
 
 with st.form("tx_form"):
-    sender = st.selectbox("Sender", ["SYSTEM"] + wallets)
-    recipient = st.selectbox("Recipient", wallets)
-    amount = st.number_input("Amount", min_value=0.1, step=0.1)
-    submitted = st.form_submit_button("Add Transaction")
+    sender = st.selectbox("Sender", wallets)
+    recipient = st.selectbox("Recipient", [w for w in wallets if w != sender])
+    amount = st.number_input("Amount", min_value=0.1, step=0.1, key="tx_amt")
+    tx_submit = st.form_submit_button("Add Transaction")
 
-    if submitted:
-        if sender == recipient:
-            st.error("Sender and recipient must be different.")
+    if tx_submit:
+        success = b.add_transaction(sender, recipient, amount)
+        if success:
+            st.success("✅ Transaction added to pending pool.")
         else:
-            success = bchain.add_transaction(sender, recipient, amount)
-            if success:
-                st.success("✅ Transaction added to pending pool.")
-            else:
-                st.error("❌ Insufficient balance.")
+            st.error("❌ Insufficient balance.")
 
-# --- MINE BLOCK ---
+# --- Mine pending transactions ---
 st.subheader("⛏️ Mine Pending Transactions")
-miner = st.selectbox("Select Miner", wallets)
+
+miner = st.selectbox("Select Miner", wallets, key="miner")
 if st.button("Mine Block"):
-    with st.spinner("Mining in progress..."):
-        mined = bchain.mine_pending_transactions(miner)
-        if mined:
-            st.success("✅ Block successfully mined and added.")
+    with st.spinner("⛏️ Mining..."):
+        result = b.mine_pending_transactions(miner)
+        if result:
+            st.success(f"✅ Block successfully mined by {miner}!")
         else:
             st.info("No transactions to mine.")
 
-# --- BLOCKCHAIN EXPLORER ---
+# --- Blockchain Explorer ---
 st.subheader("📦 Blockchain Explorer")
-for block in bchain.chain:
+for block in b.chain:
     with st.expander(f"Block #{block.index}"):
-        st.write(f"Timestamp: {block.timestamp}")
-        st.write(f"Nonce: {block.nonce}")
-        st.write(f"Previous Hash: `{block.previous_hash}`")
-        st.write(f"Hash: `{block.hash}`")
-        st.write("Transactions:")
+        st.write(f"🕒 Timestamp: {block.timestamp}")
+        st.write(f"🔢 Nonce: {block.nonce}")
+        st.write(f"🔗 Previous Hash: `{block.previous_hash}`")
+        st.write(f"🔐 Hash: `{block.hash}`")
+        st.markdown("🧾 Transactions:")
         for tx in block.transactions:
             if isinstance(tx, str):
-                st.write(f"- {tx}")
+                st.markdown(f"- *{tx}*")
             else:
-                st.write(f"- {tx['sender']} → {tx['recipient']} : {tx['amount']} coins")
+                st.markdown(f"- `{tx['sender']}` → `{tx['recipient']}` : `{tx['amount']} coins`")
 
-# --- VALIDATE CHAIN ---
+# --- Chain validation ---
 st.subheader("🔐 Blockchain Integrity")
-if bchain.is_chain_valid():
-    st.success("✅ Chain is valid.")
+if b.is_chain_valid():
+    st.success("✅ Blockchain is valid.")
 else:
     st.error("❌ Chain has been tampered with!")
