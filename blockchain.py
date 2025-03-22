@@ -157,6 +157,37 @@ for block in b.chain:
                 st.markdown(f"- *{tx}*")
             else:
                 st.markdown(f"- `{tx['sender']}` → `{tx['recipient']}`: `{tx['amount']}` coins")
+                # --- WALLET HISTORY ---
+st.subheader("📜 View Wallet Transaction History")
+
+selected_wallet = st.selectbox("Choose Wallet", wallets, key="wallet_history")
+
+history = []
+balance = 0
+
+for block in b.chain:
+    for tx in block.transactions:
+        if isinstance(tx, dict):
+            if tx["sender"] == selected_wallet or tx["recipient"] == selected_wallet:
+                direction = "Sent" if tx["sender"] == selected_wallet else "Received"
+                other_party = tx["recipient"] if direction == "Sent" else tx["sender"]
+                amount = -tx["amount"] if direction == "Sent" else tx["amount"]
+                balance += amount
+                history.append({
+                    "Block": block.index,
+                    "Timestamp": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(block.timestamp)),
+                    "Direction": direction,
+                    "Counterparty": other_party,
+                    "Amount": f"{abs(tx['amount']):.1f}",
+                    "Balance": f"{balance:.1f}"
+                })
+
+if history:
+    st.write(f"📖 Full transaction history for **{selected_wallet}**:")
+    st.dataframe(history)
+else:
+    st.info("This wallet has no transactions yet.")
+
 
 # --- VALIDATION ---
 st.subheader("🔐 Blockchain Integrity")
