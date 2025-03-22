@@ -159,6 +159,25 @@ for block in b.chain:
                 st.markdown(f"- `{tx['sender']}` → `{tx['recipient']}`: `{tx['amount']}` coins")
                 # --- WALLET HISTORY ---
 st.subheader("📜 View Wallet Transaction History")
+# --- MEMPOOL VIEWER ---
+st.subheader("⏳ Pending Transactions (Mempool)")
+
+if b.pending_transactions:
+    tx_rows = []
+    for tx in b.pending_transactions:
+        if isinstance(tx, dict):
+            tx_type = "Top-Up" if tx["sender"] == "SYSTEM" else "Transfer"
+            tx_rows.append({
+                "Sender": tx["sender"],
+                "Recipient": tx["recipient"],
+                "Amount": f"{tx['amount']:.1f}",
+                "Type": tx_type
+            })
+
+    st.table(tx_rows)
+else:
+    st.success("✅ Mempool is empty. All transactions have been mined.")
+
 
 selected_wallet = st.selectbox("Choose Wallet", wallets, key="wallet_history")
 
