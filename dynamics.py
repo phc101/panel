@@ -1,61 +1,115 @@
 import streamlit as st
-import requests
 import pandas as pd
-from bs4 import BeautifulSoup
+import numpy as np
 import matplotlib.pyplot as plt
+from datetime import timedelta
+from sklearn.linear_model import LinearRegression
 
-st.set_page_config(page_title="USD/PLN Forward Rates", layout="wide")
+# Streamlit UI setup
+st.title("FX Valuation & Backtesting Tool")
 
-st.title("📈 USD/PLN Forward Rates (in pips)")
+# Upload CSV files
+st.sidebar.header("Upload Data")
+currency_file = st.sidebar.file_uploader("Upload Currency Pair Data (CSV)", type=["csv"])
+domestic_yield_file = st.sidebar.file_uploader("Upload Domestic Bond Yield Data (CSV)", type=["csv"])
+foreign_yield_file = st.sidebar.file_uploader("Upload Foreign Bond Yield Data (CSV)", type=["csv"])
 
-@st.cache_data(ttl=3600)
-def scrape_forward_rates():
-    url = "https://www.investing.com/currencies/usd-pln-forward-rates"
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.content, "html.parser")
-
-    table = soup.find("table", {"class": "genTbl closedTbl crossRatesTbl"})
-    rows = table.find_all("tr")[1:]
-
-    data = []
-    for row in rows:
-        cols = row.find_all("td")
-        if len(cols) < 4:
-            continue
-        name = cols[0].text.strip()
-        try:
-            bid = float(cols[1].text.strip().replace(",", "")) / 10000
-            ask = float(cols[2].text.strip().replace(",", "")) / 10000
-        except:
-            continue
-        change = cols[3].text.strip()
-        data.append({
-            "Tenor": name,
-            "Bid (pips)": bid,
-            "Ask (pips)": ask,
-            "Change": change
-        })
-
-    return pd.DataFrame(data)
-
-# Scrape and show data
-df = scrape_forward_rates()
-
-# Show table
-st.dataframe(df, use_container_width=True)
-
-# Plot chart
-fig, ax = plt.subplots(figsize=(12, 6))
-x = df["Tenor"]
-ax.bar(x, df["Bid (pips)"], width=0.4, label="Bid (pips)", align='center')
-ax.bar(x, df["Ask (pips)"], width=0.4, label="Ask (pips)", align='edge')
-
-plt.xticks(rotation=45, ha='right')
-ax.set_ylabel("Forward Points (pips)")
-ax.set_title("USD/PLN Forward Curve (Bid/Ask in Pips)")
-ax.legend()
-st.pyplot(fig)
+if currency_file and domestic_yield_file and foreign_yield_file:
+    try:
+        # Load Data
+        currency_data = pd.read_csv(currency_file)
+        domestic_yield = pd.read_csv(domestic_yield_file)
+        foreign_yield = pd.read_csv(foreign_yield_file)
+        
+        # Detect and rename columns
+        currency_data.rename(columns={currency_data.columns[0]: "Date", currency_data.columns[1]: "FX Rate"}, inplace=True)
+        domestic_yield.rename(columns={domestic_yield.columns[0]: "Date", domestic_yield.columns[1]: "Domestic Yield"}, inplace=True)
+        foreign_yield.rename(columns={foreign_yield.columns[0]: "Date", foreign_yield.columns[1]: "Foreign Yield"}, inplace=True)
+        
+        # Convert Date columns
+        currency_data["Date"] = pd.to_datetime(currency_data["Date"], errors='coerce')
+        domestic_yield["Date"] = pd.to_datetime(domestic_yield["Date"], errors='coerce')
+        foreign_yield["Date"] = pd.to_datetime(foreign_yield["Date"], errors='coerce')
+        
+        # Merge data
+        data = currency_data.merge(domestic_yield, on="Date", how="outer").merge(foreign_yield, on="Date", how="outer")
+        data.sort_values(by="Date", inplace=True)
+        data.fillna(method="ffill", inplace=True)  # Forward fill missing values
+        data.dropna(inplace=True)  # Drop any remaining NaNs
+        
+        # Calculate bond yield spread
+        data["Yield Spread"] = data["Domestic Yield"] - data["Foreign Yield"]
+        
+        # Predictive Price using Linear Regression
+        model = LinearRegression()
+        valid_data = data.dropna()
+        if not valid_data.empty:
+            model.fit(valid_data[["Yield Spread"]], valid_data["FX Rate"])
+            data["Predictive Price"] = model.predict(data[["Yield Spread"]])
+        else:
+            data["Predictive Price"] = np.nan
+        
+        # Generate trading signals
+        data.dropna(inplace=True)  # Ensure no NaNs remain
+        data["Weekday"] = data["Date"].dt.weekday
+        data["Signal"] = np.where(data["FX Rate"] < data["Predictive Price"], "Buy", 
+                                   np.where(data["FX Rate"] > data["Predictive Price"], "Sell", "Hold"))
+        
+        trades = data[(data["Weekday"] == 0) & (data["Signal"] != "Hold")].copy()
+        trades["Exit Date"] = trades["Date"] + timedelta(days=30)
+        trades = trades.merge(data[["Date", "FX Rate"]], left_on="Exit Date", right_on="Date", suffixes=("", "_Exit"))
+        
+        # Calculate P&L
+        trades["PnL"] = np.where(trades["Signal"] == "Buy", 
+                                  trades["FX Rate_Exit"] - trades["FX Rate"], 
+                                  trades["FX Rate"] - trades["FX Rate_Exit"])
+        trades["Cumulative PnL"] = trades["PnL"].cumsum()
+        
+        # Display results
+        st.subheader("Backtest Results")
+        st.write(trades[["Date", "Signal", "FX Rate", "Predictive Price", "Exit Date", "FX Rate_Exit", "PnL", "Cumulative PnL"]])
+        
+        # Visualization
+        st.subheader("Market Price vs. Predictive Price")
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(data["Date"], data["FX Rate"], label="Market Price", color="blue")
+        ax.plot(data["Date"], data["Predictive Price"], label="Predictive Price (Regression Model)", linestyle="dashed", color="red")
+        ax.legend()
+        st.pyplot(fig)
+        
+        # Cumulative P&L Chart
+        st.subheader("Cumulative P&L")
+        fig2, ax2 = plt.subplots()
+        ax2.plot(trades["Date"], trades["Cumulative PnL"], label="Cumulative P&L", color="green")
+        ax2.axhline(y=0, color="black", linestyle="dotted")
+        ax2.legend()
+        st.pyplot(fig2)
+        
+        # FX Rate vs Yield Spread Chart
+        st.subheader("FX Rate vs. Yield Spread")
+        fig3, ax3 = plt.subplots()
+        ax3.plot(data["Date"], data["FX Rate"], label="FX Rate", color="blue")
+        ax3.plot(data["Date"], data["Yield Spread"], label="Yield Spread", linestyle="dashed", color="orange")
+        ax3.legend()
+        st.pyplot(fig3)
+        
+        # Histogram of P&L Distribution
+        st.subheader("P&L Distribution")
+        fig4, ax4 = plt.subplots()
+        ax4.hist(trades["PnL"], bins=20, color="purple", alpha=0.7, edgecolor="black")
+        ax4.set_xlabel("P&L")
+        ax4.set_ylabel("Frequency")
+        ax4.set_title("Distribution of Trade Profits & Losses")
+        st.pyplot(fig4)
+        
+        # Rolling Sharpe Ratio Over Time
+        st.subheader("Rolling Sharpe Ratio")
+        trades["Rolling Sharpe"] = trades["PnL"].rolling(window=10, min_periods=1).mean() / trades["PnL"].rolling(window=10, min_periods=1).std()
+        fig5, ax5 = plt.subplots()
+        ax5.plot(trades["Date"], trades["Rolling Sharpe"], label="Rolling Sharpe Ratio", color="brown")
+        ax5.axhline(y=0, color="black", linestyle="dotted")
+        ax5.legend()
+        st.pyplot(fig5)
+    
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
