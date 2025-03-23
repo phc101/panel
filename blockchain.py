@@ -67,3 +67,9 @@ else:
     ax.set_title("USD/PLN Forward Curve")
     ax.legend()
     st.pyplot(fig)
+    import subprocess
+
+subprocess.run(["git", "add", "usdpln_forward_rates.csv"])
+subprocess.run(["git", "commit", "-m", "Update forward rates"])
+subprocess.run(["git", "push", "origin", "main"])
+
