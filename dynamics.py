@@ -27,8 +27,11 @@ def scrape_forward_rates():
         if len(cols) < 4:
             continue
         name = cols[0].text.strip()
-        bid = float(cols[1].text.strip().replace(",", "")) / 10000
-        ask = float(cols[2].text.strip().replace(",", "")) / 10000
+        try:
+            bid = float(cols[1].text.strip().replace(",", "")) / 10000
+            ask = float(cols[2].text.strip().replace(",", "")) / 10000
+        except:
+            continue
         change = cols[3].text.strip()
         data.append({
             "Tenor": name,
