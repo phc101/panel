@@ -1,91 +1,107 @@
 import streamlit as st
-import cv2
-import mediapipe as mp
+import pandas as pd
 import numpy as np
-import tempfile
-import os
+from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
 
-# Initialize Mediapipe Pose Detection
-mp_pose = mp.solutions.pose
-mp_drawing = mp.solutions.drawing_utils
-
-# Function to extract frames from video
-def extract_frames(video_path, num_frames=5):
-    cap = cv2.VideoCapture(video_path)
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    frames_to_extract = np.linspace(0, frame_count - 1, num_frames, dtype=int)
+def main():
+    st.title("FX Valuation Backtesting Tool")
     
-    extracted_frames = []
-    for frame_num in frames_to_extract:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-        ret, frame = cap.read()
-        if ret:
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            extracted_frames.append(frame_rgb)
+    # File Uploads
+    st.sidebar.header("Upload Data")
+    fx_file = st.sidebar.file_uploader("Upload Currency Pair Prices (CSV)", type=["csv"])
+    dom_yield_file = st.sidebar.file_uploader("Upload Domestic Bond Yields (CSV)", type=["csv"])
+    for_yield_file = st.sidebar.file_uploader("Upload Foreign Bond Yields (CSV)", type=["csv"])
     
-    cap.release()
-    return extracted_frames
-
-# Function to analyze form using Mediapipe
-def analyze_form(frames):
-    pose = mp_pose.Pose()
-    feedback = []
-    
-    for frame in frames:
-        image_rgb = frame.copy()
-        results = pose.process(image_rgb)
+    if fx_file and dom_yield_file and for_yield_file:
+        # Load Data
+        fx_data = pd.read_csv(fx_file, parse_dates=["Date"], dayfirst=True)
+        dom_yield_data = pd.read_csv(dom_yield_file, parse_dates=["Date"], dayfirst=True)
+        for_yield_data = pd.read_csv(for_yield_file, parse_dates=["Date"], dayfirst=True)
         
-        if results.pose_landmarks:
-            mp_drawing.draw_landmarks(image_rgb, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-            landmarks = results.pose_landmarks.landmark
-            
-            # Extract key body angles
-            hip_angle = landmarks[mp_pose.PoseLandmark.LEFT_HIP].y - landmarks[mp_pose.PoseLandmark.LEFT_KNEE].y
-            knee_angle = landmarks[mp_pose.PoseLandmark.LEFT_KNEE].y - landmarks[mp_pose.PoseLandmark.LEFT_ANKLE].y
-
-            # Basic feedback rules
-            if hip_angle < 0.1:  # Hips too high
-                feedback.append("Your hips are too high. Lower them for better deadlift mechanics.")
-            if knee_angle > 0.15:  # Excessive knee bend
-                feedback.append("Your knees are bending too much. Engage the hips more.")
+        # Convert Date column to datetime
+        for df in [fx_data, dom_yield_data, for_yield_data]:
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
         
-        feedback.append(image_rgb)  # Store processed frame
-    
-    pose.close()
-    return feedback
+        # Merge Data
+        data = fx_data.merge(dom_yield_data, on="Date").merge(for_yield_data, on="Date").sort_values(by="Date")
+        
+        # Check if Date is still not recognized as datetime
+        if not np.issubdtype(data["Date"].dtype, np.datetime64):
+            st.error("Error: Date column is not in datetime format. Please check your input files.")
+            return
+        
+        # Compute Yield Spread
+        data["Yield Spread"] = data.iloc[:, 1] - data.iloc[:, 2]
+        
+        # Train Linear Regression Model
+        model = LinearRegression()
+        model.fit(data[["Yield Spread"]], data.iloc[:, 3])
+        data["Predictive Price"] = model.predict(data[["Yield Spread"]])
+        
+        # Establish Trading Strategy
+        data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", "SELL")
+        data["Weekday"] = data["Date"].dt.weekday
+        data = data[data["Weekday"] == 0]  # Filter only Mondays
+        data["Exit Date"] = data["Date"] + pd.DateOffset(days=30)
+        
+        # Calculate Returns
+        results = []
+        stop_loss_pct = st.sidebar.slider("Stop Loss (%)", min_value=0.0, max_value=10.0, value=1.5, step=0.5)
+        
+        for i, row in data.iterrows():
+            exit_row = fx_data[fx_data["Date"] == row["Exit Date"]]
+            if not exit_row.empty:
+                exit_price = exit_row.iloc[0, 1]
+                entry_price = row.iloc[3]
+                stop_loss_price = entry_price * (1 - stop_loss_pct / 100) if row["Signal"] == "BUY" else entry_price * (1 + stop_loss_pct / 100)
+                
+                if row["Signal"] == "BUY":
+                    if exit_price < stop_loss_price:
+                        exit_price = stop_loss_price  # Enforce stop loss
+                    revenue = (exit_price - entry_price) / entry_price * 100
+                else:
+                    if exit_price > stop_loss_price:
+                        exit_price = stop_loss_price  # Enforce stop loss
+                    revenue = (entry_price - exit_price) / entry_price * 100
+                
+                results.append([row["Date"], row["Exit Date"], row["Signal"], entry_price, exit_price, revenue])
+        
+        result_df = pd.DataFrame(results, columns=["Entry Date", "Exit Date", "Signal", "Entry Price", "Exit Price", "Revenue %"])
+        result_df["Cumulative Revenue %"] = result_df["Revenue %"].cumsum()
+        result_df["Drawdown %"] = result_df["Cumulative Revenue %"].cummax() - result_df["Cumulative Revenue %"]
+        
+        # Display Results
+        st.subheader("Backtest Results")
+        
+        # Plot Currency Price vs Predictive Price
+        fig, ax = plt.subplots()
+        ax.plot(data["Date"], data.iloc[:, 3], linestyle='-', linewidth=1, color='blue', label="Actual Price")
+        ax.plot(data["Date"], data["Predictive Price"], linestyle='--', linewidth=1, color='orange', label="Predictive Price")
+        ax.set_title("Actual vs Predictive Price Over Time")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Price")
+        ax.legend()
+        st.pyplot(fig)
+        st.dataframe(result_df)
+        
+        # Plot Cumulative Revenue
+        fig, ax = plt.subplots()
+        ax.plot(result_df["Entry Date"], result_df["Cumulative Revenue %"], linestyle='-', linewidth=1, color='blue', label="Cumulative Revenue")
+        ax.set_title("Cumulative Revenue Over Time")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Cumulative Revenue %")
+        ax.legend()
+        st.pyplot(fig)
+        
+        # Plot Negative Drawdown
+        fig, ax = plt.subplots()
+        ax.plot(result_df["Entry Date"], -result_df["Drawdown %"], color='red', linestyle='-', linewidth=1, label="Negative Drawdown")
+        ax.set_title("Negative Drawdown Over Time")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Drawdown %")
+        ax.legend()
+        st.pyplot(fig)
 
-# Streamlit UI
-st.title("Exercise Form Analysis")
-st.write("Upload a video of your exercise, and the system will analyze your form and provide feedback.")
-
-uploaded_video = st.file_uploader("Upload your exercise video", type=["mp4", "mov", "avi"])
-
-if uploaded_video:
-    # Save uploaded video temporarily
-    tfile = tempfile.NamedTemporaryFile(delete=False)
-    tfile.write(uploaded_video.read())
-    video_path = tfile.name
-
-    st.video(video_path)  # Display uploaded video
-
-    st.write("Extracting keyframes...")
-    frames = extract_frames(video_path)
-
-    st.write("Analyzing form...")
-    feedback = analyze_form(frames)
-
-    # Display feedback
-    for item in feedback:
-        if isinstance(item, str):
-            st.warning(item)
-        else:
-            st.image(item, caption="Analyzed Frame")
-
-    # Suggest corrective exercises
-    st.write("### Suggested Fixes")
-    if any("hips too high" in f for f in feedback):
-        st.write("- Try the **Squat to Deadlift Position Drill** to lower your hips at setup.")
-    if any("knees bending too much" in f for f in feedback):
-        st.write("- Focus on **hip engagement** instead of excessive knee flexion.")
-
-st.write("Upload another video after corrections to compare progress!")
+if __name__ == "__main__":
+    main()
