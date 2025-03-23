@@ -1,52 +1,58 @@
 import streamlit as st
+import requests
 import pandas as pd
-import yfinance as yf
-from datetime import datetime, timedelta
+from bs4 import BeautifulSoup
+import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="FX & Yield Data Downloader", layout="wide")
-st.title("📉 EUR/PLN, USD/PLN & Bond Yields Downloader")
+st.set_page_config(page_title="USD/PLN Forward Rates", layout="wide")
 
-st.markdown("Ten agent pobiera dane za ostatnie 12 miesięcy i zapisuje je do CSV.")
+st.title("📈 USD/PLN Forward Rates (in pips)")
 
-# Ustaw daty
-end_date = datetime.today()
-start_date = end_date - timedelta(days=365)
+@st.cache_data(ttl=3600)
+def scrape_forward_rates():
+    url = "https://www.investing.com/currencies/usd-pln-forward-rates"
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
-# Symbole do pobrania
-symbols = {
-    "EUR/PLN": "EURPLN=X",
-    "USD/PLN": "USDPLN=X",
-    "PL 3M Yield": "PL3M.IR",       # Przybliżenie 2M
-    "DE 3M Yield": "^IRX.DE",       # Możliwe, że trzeba zmienić na konkretny ticker
-    "US 3M Yield": "^IRX"           # 13-week T-Bill (3M) jako przybliżenie 2M
-}
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.content, "html.parser")
 
-# Funkcja pobierająca dane
-@st.cache_data
-def fetch_data():
-    data = pd.DataFrame(index=pd.date_range(start=start_date, end=end_date, freq='D'))
+    table = soup.find("table", {"class": "genTbl closedTbl crossRatesTbl"})
+    rows = table.find_all("tr")[1:]
 
-    for label, ticker in symbols.items():
-        try:
-            df = yf.download(ticker, start=start_date, end=end_date)
-            df = df[['Close']].rename(columns={'Close': label})
-            data = data.join(df, how='left')
-        except Exception as e:
-            st.warning(f"Nie udało się pobrać danych dla {label}: {e}")
+    data = []
+    for row in rows:
+        cols = row.find_all("td")
+        if len(cols) < 4:
+            continue
+        name = cols[0].text.strip()
+        bid = float(cols[1].text.strip().replace(",", "")) / 10000
+        ask = float(cols[2].text.strip().replace(",", "")) / 10000
+        change = cols[3].text.strip()
+        data.append({
+            "Tenor": name,
+            "Bid (pips)": bid,
+            "Ask (pips)": ask,
+            "Change": change
+        })
 
-    data = data.dropna(how='all')
-    data = data.fillna(method='ffill')  # Uzupełnij luki
-    return data
+    return pd.DataFrame(data)
 
-if st.button("📥 Pobierz dane"):
-    df = fetch_data()
-    st.success("✅ Dane pobrane pomyślnie!")
-    st.dataframe(df.tail(10), use_container_width=True)
+# Scrape and show data
+df = scrape_forward_rates()
 
-    csv = df.to_csv(index=True).encode('utf-8')
-    st.download_button(
-        label="💾 Eksportuj do CSV",
-        data=csv,
-        file_name='fx_yield_data.csv',
-        mime='text/csv',
-    )
+# Show table
+st.dataframe(df, use_container_width=True)
+
+# Plot chart
+fig, ax = plt.subplots(figsize=(12, 6))
+x = df["Tenor"]
+ax.bar(x, df["Bid (pips)"], width=0.4, label="Bid (pips)", align='center')
+ax.bar(x, df["Ask (pips)"], width=0.4, label="Ask (pips)", align='edge')
+
+plt.xticks(rotation=45, ha='right')
+ax.set_ylabel("Forward Points (pips)")
+ax.set_title("USD/PLN Forward Curve (Bid/Ask in Pips)")
+ax.legend()
+st.pyplot(fig)
