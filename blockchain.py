@@ -10,6 +10,9 @@ st.title("📈 USD/PLN Forward Rates (in pips)")
 
 @st.cache_data(ttl=3600)
 def scrape_forward_rates():
+    st.write("Scraped columns:", df.columns)
+st.write(df)
+
     url = "https://www.investing.com/currencies/usd-pln-forward-rates"
     headers = {"User-Agent": "Mozilla/5.0"}
 
