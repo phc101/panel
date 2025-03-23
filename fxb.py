@@ -37,8 +37,7 @@ accounts = w3.eth.accounts
 user_address = st.selectbox("Select your wallet", accounts)
 
 # -------------------------
-# Example deployed contract addresses
-# Replace these only if needed
+# ✅ Paste your deployed contract addresses here
 # -------------------------
 
 TOKEN_ADDRESSES = {
@@ -71,7 +70,7 @@ st.write(f"**EURx:** {eur_balance:.4f}")
 st.write(f"**USDx:** {usd_balance:.4f}")
 
 # -------------------------
-# Mint EURx (only by admin)
+# Mint EURx (admin only)
 # -------------------------
 
 st.subheader("🪙 Mint EURx")
@@ -97,5 +96,5 @@ if st.button("Convert"):
     eurx.functions.approve(FX_CONVERTER_ADDRESS, amt).transact({"from": user_address})
     tx = converter.functions.convert(eurx.address, usdx.address, amt).transact({"from": user_address})
     w3.eth.wait_for_transaction_receipt(tx)
-    st.success("✅ Converted successfully!")
+    st.success("✅ Conversion complete!")
     st.rerun()
