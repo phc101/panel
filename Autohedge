@@ -1,33 +1,56 @@
+# main.py
 import streamlit as st
-from datetime import datetime
 import requests
+import pandas as pd
+from bs4 import BeautifulSoup
+import matplotlib.pyplot as plt
 
-# Mocked function to get spot rate
-def get_spot_rate(currency):
-    # Replace with a real API for live rates
-    spot_rates = {'EUR': 4.3, 'USD': 4.10}  # Example static data
-    return spot_rates.get(currency, 0)
+st.set_page_config(page_title="USD/PLN Forward Rates", layout="wide")
+st.title("📈 USD/PLN Forward Rates (in pips)")
 
-# Function to calculate forward rate
-def calculate_forward_rate(spot_rate, domestic_rate, foreign_rate, days):
-    years = days / 365
-    return spot_rate * ((1 + domestic_rate) / (1 + foreign_rate)) ** years
+@st.cache_data(ttl=3600)
+def scrape_forward_rates():
+    url = "https://www.investing.com/currencies/usd-pln-forward-rates"
+    headers = {"User-Agent": "Mozilla/5.0"}
 
-# Streamlit App
-st.title("FX Forward Rate Calculator")
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.content, "html.parser")
 
-st.markdown("""
-This app allows you to calculate the forward rate for future cashflows in EUR or USD and see the equivalent value in PLN.
-""")
+    table = soup.find("table", {"class": "genTbl closedTbl crossRatesTbl"})
+    rows = table.find_all("tr")[1:]
 
-# User Input
-st.sidebar.header("Inputs")
-currency = st.sidebar.selectbox("Select Currency", ["EUR", "USD"])
-amount = st.sidebar.number_input("Enter Cashflow Amount", min_value=0.0, value=1000.0, step=100.0)
-future_date = st.sidebar.date_input("Select Future Date", min_value=datetime.today())
-domestic_rate = st.sidebar.slider("Domestic Interest Rate (%)", min_value=0.0, max_value=10.0, value=5.0) / 100
-foreign_rate = st.sidebar.slider("Foreign Interest Rate (%)", min_value=0.0, max_value=10.0, value=3.0) / 100
+    data = []
+    for row in rows:
+        cols = row.find_all("td")
+        if len(cols) < 4:
+            continue
+        name = cols[0].text.strip()
+        try:
+            bid = float(cols[1].text.strip().replace(",", "")) / 10000
+            ask = float(cols[2].text.strip().replace(",", "")) / 10000
+        except ValueError:
+            continue
+        change = cols[3].text.strip()
+        data.append({
+            "Tenor": name,
+            "Bid (pips)": bid,
+            "Ask (pips)": ask,
+            "Change": change
+        })
 
-# Calculate Forward Rate
-st.header("Results")
-if st.button("Calcula
+    return pd.DataFrame(data)
+
+# Run scraper
+df = scrape_forward_rates()
+st.dataframe(df, use_container_width=True)
+
+# Plot
+fig, ax = plt.subplots(figsize=(12, 6))
+x = df["Tenor"]
+ax.bar(x, df["Bid (pips)"], width=0.4, label="Bid (pips)", align='center')
+ax.bar(x, df["Ask (pips)"], width=0.4, label="Ask (pips)", align='edge')
+plt.xticks(rotation=45, ha='right')
+ax.set_ylabel("Forward Points (pips)")
+ax.set_title("USD/PLN Forward Curve")
+ax.legend()
+st.pyplot(fig)
