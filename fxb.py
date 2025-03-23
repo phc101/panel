@@ -10,6 +10,7 @@ st.markdown("Mint and convert between 5 currencies using smart contracts.")
 erc20_path = os.path.abspath("artifacts/contracts/ERC20Token.sol/ERC20Token.json")
 fx_path = os.path.abspath("artifacts/contracts/FXConverter.sol/FXConverter.json")
 
+
 try:
     with open(erc20_path) as f:
         token_abi = json.load(f)["abi"]
