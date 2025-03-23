@@ -43,7 +43,7 @@ def main():
         stop_loss_pct = st.sidebar.slider("Stop Loss (%)", min_value=0.0, max_value=10.0, value=1.5, step=0.5)
 
         # Strategy selection
-        strategy = st.sidebar.selectbox("Strategy Mode", ("Both", "Buy Only", "Sell Only", "Stablecoin Yield"))
+        strategy = st.sidebar.selectbox("Strategy Mode", ("Both", "Buy Only", "Sell Only", "Buy + Stablecoin"))
 
         # Establish Trading Strategy
         data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", "SELL")
@@ -65,8 +65,15 @@ def main():
                 entry_price = row.iloc[3]
                 stop_loss_price = entry_price * (1 - stop_loss_pct / 100) if row["Signal"] == "BUY" else entry_price * (1 + stop_loss_pct / 100)
 
-                if strategy == "Stablecoin Yield":
-                    revenue = (0.40 / 12) * 100  # 0.40% annual, converted to monthly
+                if strategy == "Buy + Stablecoin":
+                    if row["Signal"] == "BUY":
+                        fx_return = (exit_price - entry_price) / entry_price * 100 * leverage
+                        stablecoin_yield = 0.40  # Monthly boost from USDT yield
+                        revenue = fx_return + stablecoin_yield
+                    else:
+                        if exit_price > stop_loss_price:
+                            exit_price = stop_loss_price
+                        revenue = (entry_price - exit_price) / entry_price * 100 * leverage
                 elif row["Signal"] == "BUY":
                     if exit_price < stop_loss_price:
                         exit_price = stop_loss_price
