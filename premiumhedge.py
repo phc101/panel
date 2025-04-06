@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import statsmodels.api as sm
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
 
 # -------------------- Load and Clean Uploaded Data --------------------
 
@@ -23,7 +23,7 @@ def load_data(uploaded_file, label):
             st.error(f"❌ '{label}' must include 'Date' and 'Price'. Found: {list(df.columns)}")
             return None
 
-        # Clean up: fix commas, remove %, convert types
+        # Clean and convert
         df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
         df["Price"] = df["Price"].astype(str).str.replace(",", ".").str.replace("%", "").str.strip()
         df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
@@ -31,44 +31,6 @@ def load_data(uploaded_file, label):
 
         return df
     return None
-
-# -------------------- FX Style Plotly Chart Styling --------------------
-
-def style_fx_chart(fig, title):
-    fig.update_layout(
-        title=title,
-        xaxis_title="Date",
-        yaxis_title="Exchange Rate",
-        plot_bgcolor="white",
-        hovermode="x unified",
-        font=dict(size=13),
-        xaxis=dict(
-            showgrid=True,
-            gridwidth=0.5,
-            gridcolor="lightgray",
-            showline=True,
-            linewidth=1,
-            linecolor="black",
-            ticks="outside"
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridwidth=0.5,
-            gridcolor="lightgray",
-            showline=True,
-            linewidth=1,
-            linecolor="black",
-            ticks="outside"
-        ),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    return fig
 
 # -------------------- Streamlit App UI --------------------
 
@@ -92,7 +54,6 @@ usd_pln = load_data(usd_pln_file, "USD/PLN FX")
 # -------------------- Proceed if All Files Loaded --------------------
 
 if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, usd_pln]):
-
     # Merge bond data
     bond_data = poland_bond.merge(germany_bond, on="Date", suffixes=("_PL", "_DE"))
     bond_data = bond_data.merge(us_bond, on="Date", suffixes=("", "_US"))
@@ -125,39 +86,35 @@ if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, us
     model_usd = sm.OLS(y_usd, X_usd).fit()
     fx_data["Predicted_USDPLN"] = model_usd.predict(X_usd)
 
-    # -------------------- Charts --------------------
+    # -------------------- Matplotlib Charts (Styled Like Your Screenshot) --------------------
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
 
     # EUR/PLN chart
-    fig_eur = go.Figure()
-    fig_eur.add_trace(go.Scatter(
-        x=fx_data["Date"], y=fx_data["Price_EURPLN"],
-        name='EUR/PLN (Actual)',
-        line=dict(color="black", width=1.5, dash='dash')
-    ))
-    fig_eur.add_trace(go.Scatter(
-        x=fx_data["Date"], y=fx_data["Predicted_EURPLN"],
-        name='EUR/PLN (Predicted)',
-        line=dict(color="green", width=2)
-    ))
-    fig_eur = style_fx_chart(fig_eur, "EUR/PLN: Historical vs Predicted")
-    st.plotly_chart(fig_eur, use_container_width=True)
+    axes[0].plot(fx_data["Date"], fx_data["Price_EURPLN"], label="Historical EUR/PLN",
+                 linestyle="--", color="steelblue")
+    axes[0].plot(fx_data["Date"], fx_data["Predicted_EURPLN"], label="Predicted EUR/PLN",
+                 color="darkorange", linewidth=2)
+    axes[0].set_title("EUR/PLN: Historical vs Predicted")
+    axes[0].set_xlabel("Date")
+    axes[0].set_ylabel("Exchange Rate")
+    axes[0].legend()
+    axes[0].tick_params(axis='x', rotation=45)
 
     # USD/PLN chart
-    fig_usd = go.Figure()
-    fig_usd.add_trace(go.Scatter(
-        x=fx_data["Date"], y=fx_data["Price_USDPLN"],
-        name='USD/PLN (Actual)',
-        line=dict(color="black", width=1.5, dash='dash')
-    ))
-    fig_usd.add_trace(go.Scatter(
-        x=fx_data["Date"], y=fx_data["Predicted_USDPLN"],
-        name='USD/PLN (Predicted)',
-        line=dict(color="blue", width=2)
-    ))
-    fig_usd = style_fx_chart(fig_usd, "USD/PLN: Historical vs Predicted")
-    st.plotly_chart(fig_usd, use_container_width=True)
+    axes[1].plot(fx_data["Date"], fx_data["Price_USDPLN"], label="Historical USD/PLN",
+                 linestyle="--", color="steelblue")
+    axes[1].plot(fx_data["Date"], fx_data["Predicted_USDPLN"], label="Predicted USD/PLN",
+                 color="darkorange", linewidth=2)
+    axes[1].set_title("USD/PLN: Historical vs Predicted")
+    axes[1].set_xlabel("Date")
+    axes[1].legend()
+    axes[1].tick_params(axis='x', rotation=45)
 
-    # -------------------- Latest Price Metrics --------------------
+    fig.tight_layout()
+    st.pyplot(fig)
+
+    # -------------------- Latest Price Display --------------------
 
     latest = fx_data.sort_values("Date").iloc[-1]
     st.write("### 📊 Latest FX vs Predicted")
