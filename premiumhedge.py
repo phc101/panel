@@ -3,57 +3,40 @@ import pandas as pd
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
 
-# -------------------- Load and Clean Uploaded Data --------------------
-
-def load_data(uploaded_file, label):
+# ---------- Load CSVs with clean English structure ----------
+def load_data(uploaded_file):
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
-
-        # Rename common Polish/English headers
-        col_map = {
-            "Data": "Date",
-            "Ostatnio": "Price",
-            "Date": "Date",
-            "Last": "Price"
-        }
-        df.rename(columns={col: col_map.get(col, col) for col in df.columns}, inplace=True)
-
         if "Date" not in df.columns or "Price" not in df.columns:
-            st.error(f"❌ '{label}' must include 'Date' and 'Price'. Found: {list(df.columns)}")
+            st.error(f"❌ Uploaded file must have columns: 'Date' and 'Price'. Found: {df.columns.tolist()}")
             return None
-
-        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-        df["Price"] = df["Price"].astype(str).str.replace(",", ".").str.replace("%", "").str.strip()
+        df["Date"] = pd.to_datetime(df["Date"])
         df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
         df.dropna(subset=["Date", "Price"], inplace=True)
-
         return df
     return None
 
-# -------------------- Streamlit App --------------------
+# ---------- Streamlit UI ----------
+st.title("📈 FX Bond Spread Dashboard")
 
-st.title("📈 FX Bond Spread Dashboard (Smoothed Matplotlib Version)")
+st.sidebar.header("Upload Clean CSV Files")
+germany_bond_file = st.sidebar.file_uploader("Germany Bond Yield CSV")
+poland_bond_file = st.sidebar.file_uploader("Poland Bond Yield CSV")
+us_bond_file = st.sidebar.file_uploader("US Bond Yield CSV")
+eur_pln_file = st.sidebar.file_uploader("EUR/PLN FX CSV")
+usd_pln_file = st.sidebar.file_uploader("USD/PLN FX CSV")
 
-# Uploads
-st.sidebar.header("Upload CSV Files")
-germany_bond_file = st.sidebar.file_uploader("🇩🇪 Germany Bond Yield CSV")
-poland_bond_file = st.sidebar.file_uploader("🇵🇱 Poland Bond Yield CSV")
-us_bond_file = st.sidebar.file_uploader("🇺🇸 US Bond Yield CSV")
-eur_pln_file = st.sidebar.file_uploader("💶 EUR/PLN FX CSV")
-usd_pln_file = st.sidebar.file_uploader("💵 USD/PLN FX CSV")
+# ---------- Load all files ----------
+germany_bond = load_data(germany_bond_file)
+poland_bond = load_data(poland_bond_file)
+us_bond = load_data(us_bond_file)
+eur_pln = load_data(eur_pln_file)
+usd_pln = load_data(usd_pln_file)
 
-# Load CSVs
-germany_bond = load_data(germany_bond_file, "Germany Bond Yield")
-poland_bond = load_data(poland_bond_file, "Poland Bond Yield")
-us_bond = load_data(us_bond_file, "US Bond Yield")
-eur_pln = load_data(eur_pln_file, "EUR/PLN FX")
-usd_pln = load_data(usd_pln_file, "USD/PLN FX")
-
-# -------------------- If all files loaded --------------------
-
+# ---------- Proceed only if all files are valid ----------
 if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, usd_pln]):
 
-    # Merge bond data
+    # Merge bond yields
     bond_data = poland_bond.merge(germany_bond, on="Date", suffixes=("_PL", "_DE"))
     bond_data = bond_data.merge(us_bond, on="Date", suffixes=("", "_US"))
     bond_data.rename(columns={
@@ -62,26 +45,16 @@ if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, us
         "Price": "US_Yield"
     }, inplace=True)
 
+    # Calculate spreads
     bond_data["EURPLN_Spread"] = bond_data["Germany_Yield"] - bond_data["Poland_Yield"]
     bond_data["USDPLN_Spread"] = bond_data["US_Yield"] - bond_data["Poland_Yield"]
 
-    # -------------------- Smoothing with full date range --------------------
-
-    start = max(eur_pln["Date"].min(), usd_pln["Date"].min(), bond_data["Date"].min())
-    end = min(eur_pln["Date"].max(), usd_pln["Date"].max(), bond_data["Date"].max())
-    full_dates = pd.DataFrame({"Date": pd.date_range(start=start, end=end)})
-
-    eur_pln_full = full_dates.merge(eur_pln, on="Date", how="left").fillna(method="ffill")
-    usd_pln_full = full_dates.merge(usd_pln, on="Date", how="left").fillna(method="ffill")
-    bond_full = full_dates.merge(bond_data, on="Date", how="left").fillna(method="ffill")
-
-    fx_data = eur_pln_full.merge(usd_pln_full, on="Date", suffixes=("_EURPLN", "_USDPLN"))
-    fx_data = fx_data.merge(bond_full, on="Date")
+    # Merge with FX data
+    fx_data = eur_pln.merge(usd_pln, on="Date", suffixes=("_EURPLN", "_USDPLN")).merge(bond_data, on="Date")
     fx_data = fx_data[["Date", "Price_EURPLN", "Price_USDPLN", "EURPLN_Spread", "USDPLN_Spread"]]
     fx_data.sort_values("Date", inplace=True)
 
-    # -------------------- Regressions --------------------
-
+    # ---------- Regressions ----------
     X_eur = sm.add_constant(fx_data["EURPLN_Spread"])
     y_eur = fx_data["Price_EURPLN"]
     model_eur = sm.OLS(y_eur, X_eur).fit()
@@ -92,8 +65,7 @@ if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, us
     model_usd = sm.OLS(y_usd, X_usd).fit()
     fx_data["Predicted_USDPLN"] = model_usd.predict(X_usd)
 
-    # -------------------- Matplotlib Chart --------------------
-
+    # ---------- Matplotlib Charts ----------
     fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
 
     # EUR/PLN
@@ -120,8 +92,7 @@ if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, us
     fig.tight_layout()
     st.pyplot(fig)
 
-    # -------------------- Latest Price Metrics --------------------
-
+    # ---------- Latest Price Display ----------
     latest = fx_data.sort_values("Date").iloc[-1]
     st.write("### 📊 Latest FX vs Predicted")
     col1, col2 = st.columns(2)
