@@ -3,13 +3,28 @@ import pandas as pd
 import statsmodels.api as sm
 import plotly.graph_objects as go
 
+# Automatically map known Polish or English columns to 'Date' and 'Price'
 def load_data(uploaded_file, label):
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
+
+        # Rename known Polish/English columns to standard ones
+        col_map = {
+            "Data": "Date",
+            "Ostatnio": "Price",  # Polish
+            "Date": "Date",
+            "Last": "Price",      # English Investing.com
+        }
+
+        df.rename(columns={col: col_map.get(col, col) for col in df.columns}, inplace=True)
+
         if "Date" not in df.columns or "Price" not in df.columns:
-            st.error(f"'{label}' file must have columns: Date and Price. Found: {list(df.columns)}")
+            st.error(f"❌ '{label}' file must include columns: 'Date' and 'Price'. Found: {list(df.columns)}")
             return None
-        df["Date"] = pd.to_datetime(df["Date"])
+
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df.dropna(subset=["Date", "Price"], inplace=True)
+
         return df
     return None
 
@@ -45,7 +60,7 @@ if all([germany_bond_file, poland_bond_file, us_bond_file, eur_pln_file, usd_pln
         fx_data = fx_data[["Date", "Price_EURPLN", "Price_USDPLN", "EURPLN_Spread", "USDPLN_Spread"]]
         fx_data.sort_values("Date", inplace=True)
 
-        # Regression
+        # Regressions
         X_eurpln = sm.add_constant(fx_data["EURPLN_Spread"])
         y_eurpln = fx_data["Price_EURPLN"]
         model_eurpln = sm.OLS(y_eurpln, X_eurpln).fit()
@@ -58,14 +73,18 @@ if all([germany_bond_file, poland_bond_file, us_bond_file, eur_pln_file, usd_pln
 
         # Plotly charts
         fig_eur = go.Figure()
-        fig_eur.add_trace(go.Scatter(x=fx_data["Date"], y=fx_data["Price_EURPLN"], name='Historical EUR/PLN', line=dict(dash='dash')))
-        fig_eur.add_trace(go.Scatter(x=fx_data["Date"], y=fx_data["Predicted_EURPLN"], name='Predicted EUR/PLN'))
-        fig_eur.update_layout(title="EUR/PLN", xaxis_title="Date", yaxis_title="Rate")
+        fig_eur.add_trace(go.Scatter(x=fx_data["Date"], y=fx_data["Price_EURPLN"],
+                                     name='Historical EUR/PLN', line=dict(dash='dash')))
+        fig_eur.add_trace(go.Scatter(x=fx_data["Date"], y=fx_data["Predicted_EURPLN"],
+                                     name='Predicted EUR/PLN'))
+        fig_eur.update_layout(title="EUR/PLN: Historical vs Predicted", xaxis_title="Date", yaxis_title="Rate")
 
         fig_usd = go.Figure()
-        fig_usd.add_trace(go.Scatter(x=fx_data["Date"], y=fx_data["Price_USDPLN"], name='Historical USD/PLN', line=dict(dash='dash')))
-        fig_usd.add_trace(go.Scatter(x=fx_data["Date"], y=fx_data["Predicted_USDPLN"], name='Predicted USD/PLN'))
-        fig_usd.update_layout(title="USD/PLN", xaxis_title="Date", yaxis_title="Rate")
+        fig_usd.add_trace(go.Scatter(x=fx_data["Date"], y=fx_data["Price_USDPLN"],
+                                     name='Historical USD/PLN', line=dict(dash='dash')))
+        fig_usd.add_trace(go.Scatter(x=fx_data["Date"], y=fx_data["Predicted_USDPLN"],
+                                     name='Predicted USD/PLN'))
+        fig_usd.update_layout(title="USD/PLN: Historical vs Predicted", xaxis_title="Date", yaxis_title="Rate")
 
         st.plotly_chart(fig_eur, use_container_width=True)
         st.plotly_chart(fig_usd, use_container_width=True)
