@@ -96,27 +96,26 @@ if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, us
     axes[1].legend()
     axes[1].tick_params(axis='x', rotation=45)
 
-    # Show last prices as text on right
-    latest = fx_data.sort_values("Date").iloc[-1]
-    price_actual = latest["Price_USDPLN"]
-    price_pred = latest["Predicted_USDPLN"]
-    percent_diff = ((price_pred - price_actual) / price_actual) * 100
-
-    axes[1].annotate(f"{price_actual:.4f} (Actual)", xy=(latest["Date"], price_actual),
-                     xytext=(10, 0), textcoords="offset points", color="steelblue", fontsize=10)
-    axes[1].annotate(f"{price_pred:.4f} (Predicted)", xy=(latest["Date"], price_pred),
-                     xytext=(10, -15), textcoords="offset points", color="darkorange", fontsize=10)
-
     fig.tight_layout()
     st.pyplot(fig)
 
     # ---------- Latest Price Display ----------
+    latest = fx_data.sort_values("Date").iloc[-1]
+    price_actual_usd = latest["Price_USDPLN"]
+    price_pred_usd = latest["Predicted_USDPLN"]
+    price_actual_eur = latest["Price_EURPLN"]
+    price_pred_eur = latest["Predicted_EURPLN"]
+
+    percent_diff_usd = ((price_pred_usd - price_actual_usd) / price_actual_usd) * 100
+    percent_diff_eur = ((price_pred_eur - price_actual_eur) / price_actual_eur) * 100
+
     st.write("### 📊 Latest FX vs Predicted")
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("Actual EUR/PLN", f"{latest['Price_EURPLN']:.4f}")
-        st.metric("Predicted EUR/PLN", f"{latest['Predicted_EURPLN']:.4f}")
+        st.metric("Actual EUR/PLN", f"{price_actual_eur:.4f}")
+        st.metric("Predicted EUR/PLN", f"{price_pred_eur:.4f}")
+        st.write(f"**% Difference EUR/PLN:** {percent_diff_eur:.2f}%")
     with col2:
-        st.metric("Actual USD/PLN", f"{price_actual:.4f}")
-        st.metric("Predicted USD/PLN", f"{price_pred:.4f}")
-        st.write(f"**% Difference USD/PLN:** {percent_diff:.2f}%")
+        st.metric("Actual USD/PLN", f"{price_actual_usd:.4f}")
+        st.metric("Predicted USD/PLN", f"{price_pred_usd:.4f}")
+        st.write(f"**% Difference USD/PLN:** {percent_diff_usd:.2f}%")
