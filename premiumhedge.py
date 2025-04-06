@@ -18,12 +18,12 @@ def load_data(uploaded_file, label):
         }
         df.rename(columns={col: col_map.get(col, col) for col in df.columns}, inplace=True)
 
-        # Validate
+        # Validate required columns
         if "Date" not in df.columns or "Price" not in df.columns:
             st.error(f"❌ '{label}' must include 'Date' and 'Price'. Found: {list(df.columns)}")
             return None
 
-        # Clean and convert
+        # Clean and convert values
         df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
         df["Price"] = df["Price"].astype(str).str.replace(",", ".").str.replace("%", "").str.strip()
         df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
@@ -34,7 +34,7 @@ def load_data(uploaded_file, label):
 
 # -------------------- Streamlit App UI --------------------
 
-st.title("📈 FX Bond Spread Dashboard")
+st.title("📈 FX Bond Spread Dashboard (Matplotlib Version)")
 
 st.sidebar.header("Upload CSV Files")
 germany_bond_file = st.sidebar.file_uploader("🇩🇪 Germany Bond Yield CSV")
@@ -43,7 +43,7 @@ us_bond_file = st.sidebar.file_uploader("🇺🇸 US Bond Yield CSV")
 eur_pln_file = st.sidebar.file_uploader("💶 EUR/PLN FX CSV")
 usd_pln_file = st.sidebar.file_uploader("💵 USD/PLN FX CSV")
 
-# -------------------- Load Data --------------------
+# -------------------- Load and Validate Data --------------------
 
 germany_bond = load_data(germany_bond_file, "Germany Bond Yield")
 poland_bond = load_data(poland_bond_file, "Poland Bond Yield")
@@ -51,10 +51,8 @@ us_bond = load_data(us_bond_file, "US Bond Yield")
 eur_pln = load_data(eur_pln_file, "EUR/PLN FX")
 usd_pln = load_data(usd_pln_file, "USD/PLN FX")
 
-# -------------------- Proceed if All Files Loaded --------------------
-
 if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, usd_pln]):
-    # Merge bond data
+    # Merge bond yields
     bond_data = poland_bond.merge(germany_bond, on="Date", suffixes=("_PL", "_DE"))
     bond_data = bond_data.merge(us_bond, on="Date", suffixes=("", "_US"))
     bond_data.rename(columns={
@@ -63,34 +61,32 @@ if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, us
         "Price": "US_Yield"
     }, inplace=True)
 
-    # Calculate bond spreads
+    # Calculate spreads
     bond_data["EURPLN_Spread"] = bond_data["Germany_Yield"] - bond_data["Poland_Yield"]
     bond_data["USDPLN_Spread"] = bond_data["US_Yield"] - bond_data["Poland_Yield"]
 
-    # Merge FX data with spreads
+    # Merge with FX rates
     fx_data = eur_pln.merge(usd_pln, on="Date", suffixes=("_EURPLN", "_USDPLN")).merge(bond_data, on="Date")
     fx_data = fx_data[["Date", "Price_EURPLN", "Price_USDPLN", "EURPLN_Spread", "USDPLN_Spread"]]
     fx_data.sort_values("Date", inplace=True)
 
-    # -------------------- Regressions --------------------
+    # -------------------- Run Regressions --------------------
 
-    # EUR/PLN model
     X_eur = sm.add_constant(fx_data["EURPLN_Spread"])
     y_eur = fx_data["Price_EURPLN"]
     model_eur = sm.OLS(y_eur, X_eur).fit()
     fx_data["Predicted_EURPLN"] = model_eur.predict(X_eur)
 
-    # USD/PLN model
     X_usd = sm.add_constant(fx_data["USDPLN_Spread"])
     y_usd = fx_data["Price_USDPLN"]
     model_usd = sm.OLS(y_usd, X_usd).fit()
     fx_data["Predicted_USDPLN"] = model_usd.predict(X_usd)
 
-    # -------------------- Matplotlib Charts (Styled Like Your Screenshot) --------------------
+    # -------------------- Plot Charts --------------------
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
 
-    # EUR/PLN chart
+    # EUR/PLN Chart
     axes[0].plot(fx_data["Date"], fx_data["Price_EURPLN"], label="Historical EUR/PLN",
                  linestyle="--", color="steelblue")
     axes[0].plot(fx_data["Date"], fx_data["Predicted_EURPLN"], label="Predicted EUR/PLN",
@@ -101,7 +97,7 @@ if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, us
     axes[0].legend()
     axes[0].tick_params(axis='x', rotation=45)
 
-    # USD/PLN chart
+    # USD/PLN Chart
     axes[1].plot(fx_data["Date"], fx_data["Price_USDPLN"], label="Historical USD/PLN",
                  linestyle="--", color="steelblue")
     axes[1].plot(fx_data["Date"], fx_data["Predicted_USDPLN"], label="Predicted USD/PLN",
@@ -114,7 +110,7 @@ if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, us
     fig.tight_layout()
     st.pyplot(fig)
 
-    # -------------------- Latest Price Display --------------------
+    # -------------------- Latest Spot vs Predicted --------------------
 
     latest = fx_data.sort_values("Date").iloc[-1]
     st.write("### 📊 Latest FX vs Predicted")
