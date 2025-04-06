@@ -14,4 +14,4 @@ scikit-learn
 opencv-python 
 mediapipe 
 web3
-
+plotly
