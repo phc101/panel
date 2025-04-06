@@ -3,12 +3,12 @@ import pandas as pd
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
 
-# ---------- Load CSVs with clean English structure ----------
+# ---------- Load CSVs with English headers ----------
 def load_data(uploaded_file):
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
         if "Date" not in df.columns or "Price" not in df.columns:
-            st.error(f"❌ Uploaded file must have columns: 'Date' and 'Price'. Found: {df.columns.tolist()}")
+            st.error(f"❌ File must have columns: 'Date' and 'Price'. Found: {df.columns.tolist()}")
             return None
         df["Date"] = pd.to_datetime(df["Date"])
         df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
@@ -66,9 +66,15 @@ if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, us
     fx_data["Predicted_USDPLN"] = model_usd.predict(X_usd)
 
     # ---------- Matplotlib Charts ----------
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=False)
 
-    # EUR/PLN
+    # Auto-scale based on USD/PLN range
+    min_rate = min(fx_data["Price_USDPLN"].min(), fx_data["Predicted_USDPLN"].min())
+    max_rate = max(fx_data["Price_USDPLN"].max(), fx_data["Predicted_USDPLN"].max())
+    padding = 0.01
+    ymin, ymax = min_rate - padding, max_rate + padding
+
+    # EUR/PLN chart
     axes[0].plot(fx_data["Date"], fx_data["Price_EURPLN"], label="EUR/PLN (Actual)",
                  linestyle="--", color="steelblue")
     axes[0].plot(fx_data["Date"], fx_data["Predicted_EURPLN"], label="EUR/PLN (Predicted)",
@@ -79,26 +85,38 @@ if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, us
     axes[0].legend()
     axes[0].tick_params(axis='x', rotation=45)
 
-    # USD/PLN
+    # USD/PLN chart
     axes[1].plot(fx_data["Date"], fx_data["Price_USDPLN"], label="USD/PLN (Actual)",
                  linestyle="--", color="steelblue")
     axes[1].plot(fx_data["Date"], fx_data["Predicted_USDPLN"], label="USD/PLN (Predicted)",
                  color="darkorange", linewidth=2)
+    axes[1].set_ylim([ymin, ymax])
     axes[1].set_title("USD/PLN: Historical vs Predicted")
     axes[1].set_xlabel("Date")
     axes[1].legend()
     axes[1].tick_params(axis='x', rotation=45)
 
+    # Show last prices as text on right
+    latest = fx_data.sort_values("Date").iloc[-1]
+    price_actual = latest["Price_USDPLN"]
+    price_pred = latest["Predicted_USDPLN"]
+    percent_diff = ((price_pred - price_actual) / price_actual) * 100
+
+    axes[1].annotate(f"{price_actual:.4f} (Actual)", xy=(latest["Date"], price_actual),
+                     xytext=(10, 0), textcoords="offset points", color="steelblue", fontsize=10)
+    axes[1].annotate(f"{price_pred:.4f} (Predicted)", xy=(latest["Date"], price_pred),
+                     xytext=(10, -15), textcoords="offset points", color="darkorange", fontsize=10)
+
     fig.tight_layout()
     st.pyplot(fig)
 
     # ---------- Latest Price Display ----------
-    latest = fx_data.sort_values("Date").iloc[-1]
     st.write("### 📊 Latest FX vs Predicted")
     col1, col2 = st.columns(2)
     with col1:
         st.metric("Actual EUR/PLN", f"{latest['Price_EURPLN']:.4f}")
         st.metric("Predicted EUR/PLN", f"{latest['Predicted_EURPLN']:.4f}")
     with col2:
-        st.metric("Actual USD/PLN", f"{latest['Price_USDPLN']:.4f}")
-        st.metric("Predicted USD/PLN", f"{latest['Predicted_USDPLN']:.4f}")
+        st.metric("Actual USD/PLN", f"{price_actual:.4f}")
+        st.metric("Predicted USD/PLN", f"{price_pred:.4f}")
+        st.write(f"**% Difference USD/PLN:** {percent_diff:.2f}%")
