@@ -1,24 +1,79 @@
 import streamlit as st
 import pandas as pd
+from database import get_connection
 
-st.title("📉 FX Exposure & Risk")
+st.title("📉 FX Exposure & Risk Dashboard")
 
-st.markdown("Monitor your currency exposure by client and currency.")
+conn = get_connection()
 
-# Dummy data for now
-exposure_data = pd.DataFrame({
-    "Client": ["Client A", "Client B", "Client C"],
-    "Currency": ["EUR", "USD", "PLN"],
-    "Open Position": [150000, -75000, 32000],
-    "Budget Rate": [4.25, 3.90, 1.00],
-    "Current Rate": [4.30, 4.00, 1.00],
-})
+# --- Load client info ---
+clients_df = pd.read_sql_query("SELECT name, base_currency, budget_rate FROM clients", conn)
 
-exposure_data["Valuation Gap"] = (exposure_data["Current Rate"] - exposure_data["Budget Rate"]) * exposure_data["Open Position"]
+if clients_df.empty:
+    st.warning("No client data found.")
+    st.stop()
 
-st.dataframe(exposure_data.style.format({
-    "Open Position": "{:,.0f}",
-    "Budget Rate": "{:.4f}",
-    "Current Rate": "{:.4f}",
-    "Valuation Gap": "{:,.2f}"
-}))
+# --- Load payments ---
+payments_df = pd.read_sql_query("""
+    SELECT client_name, currency, direction, amount
+    FROM payments
+    WHERE status = 'Unpaid'
+""", conn)
+
+# --- Load hedges ---
+hedges_df = pd.read_sql_query("""
+    SELECT client_name, currency, notional
+    FROM hedges
+""", conn)
+
+# --- Calculate Exposure per Client ---
+exposure_summary = []
+
+for _, row in clients_df.iterrows():
+    client = row["name"]
+    base_currency = row["base_currency"]
+    budget_rate = row["budget_rate"]
+
+    # Total inflows/outflows
+    client_payments = payments_df[payments_df["client_name"] == client]
+    net_exposure = 0
+
+    for _, p in client_payments.iterrows():
+        direction = p["direction"]
+        amount = p["amount"]
+        net_exposure += amount if direction == "Incoming" else -amount
+
+    # Hedge total
+    client_hedges = hedges_df[hedges_df["client_name"] == client]
+    total_hedged = client_hedges["notional"].sum() if not client_hedges.empty else 0
+
+    # Net open exposure
+    open_exposure = net_exposure - total_hedged
+
+    # Valuation (assuming current rate = 1.00 for simplicity)
+    current_rate = 1.00
+    valuation_gap = (current_rate - budget_rate) * open_exposure if budget_rate else 0
+
+    exposure_summary.append({
+        "Client": client,
+        "Currency": base_currency,
+        "Net Payments": net_exposure,
+        "Hedged": total_hedged,
+        "Open Exposure": open_exposure,
+        "Budget Rate": budget_rate,
+        "Valuation Gap": valuation_gap
+    })
+
+# --- Display Table ---
+summary_df = pd.DataFrame(exposure_summary)
+
+if not summary_df.empty:
+    st.dataframe(summary_df.style.format({
+        "Net Payments": "{:,.2f}",
+        "Hedged": "{:,.2f}",
+        "Open Exposure": "{:,.2f}",
+        "Budget Rate": "{:.4f}",
+        "Valuation Gap": "{:,.2f}"
+    }))
+else:
+    st.info("No exposure data available.")
