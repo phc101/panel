@@ -8,7 +8,7 @@ os.makedirs("data", exist_ok=True)
 DB_NAME = "data/treasury.db"
 
 def get_connection():
-    # Connect to the SQLite database (creates file if it doesn't exist)
+    # Connect to the SQLite database
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     return conn
 
@@ -16,17 +16,22 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Create clients table
+    # Clients table (no email, no phone)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS clients (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         base_currency TEXT,
-        industry TEXT
+        industry TEXT,
+        payment_terms TEXT,
+        budget_rate REAL,
+        risk_profile TEXT,
+        tags TEXT,
+        notes TEXT
     )
     """)
 
-    # Create payments table
+    # Payments table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,7 +44,7 @@ def init_db():
     )
     """)
 
-    # Create hedges table
+    # Hedges table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS hedges (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
