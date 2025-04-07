@@ -1,28 +1,20 @@
-import os
-
-if os.path.exists("data/treasury.db"):
-    os.remove("data/treasury.db")
-
 import sqlite3
 import os
 
 # Ensure the "data" folder exists
 os.makedirs("data", exist_ok=True)
 
-# Define path to the database file
-DB_NAME = "data/treasury.db"
+# Change this to force a fresh DB creation
+DB_NAME = "data/treasury_v2.db"
 
 def get_connection():
-    """Establish a connection to the SQLite database."""
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     return conn
 
 def init_db():
-    """Initialize all required tables."""
     conn = get_connection()
     cursor = conn.cursor()
 
-    # --- Clients Table ---
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS clients (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,7 +29,6 @@ def init_db():
     )
     """)
 
-    # --- Payments Table ---
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +42,6 @@ def init_db():
     )
     """)
 
-    # --- Hedges Table ---
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS hedges (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
