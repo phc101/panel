@@ -57,4 +57,62 @@ for _, row in clients_df.iterrows():
         "Valuation Gap": valuation_gap
     })
 
-summary_df = pd_
+summary_df = pd.DataFrame(exposure_summary)
+
+# --- UI: Select Metric ---
+st.subheader("📊 Bar Chart by Client")
+chart_option = st.selectbox("Select Metric to Plot", ["Open Exposure", "Net Payments", "Hedged", "Valuation Gap"])
+
+if not summary_df.empty:
+    st.dataframe(summary_df.style.format({
+        "Net Payments": "{:,.2f}",
+        "Hedged": "{:,.2f}",
+        "Open Exposure": "{:,.2f}",
+        "Budget Rate": "{:.4f}",
+        "Valuation Gap": "{:,.2f}"
+    }))
+
+    # Bar Chart
+    fig1, ax1 = plt.subplots()
+    ax1.bar(summary_df["Client"], summary_df[chart_option])
+    ax1.set_ylabel(chart_option)
+    ax1.set_title(f"{chart_option} by Client")
+    ax1.grid(True, linestyle="--", linewidth=0.3)
+    st.pyplot(fig1)
+
+# --- Timeline Chart ---
+st.subheader("📆 Timeline Chart by Payment Date")
+
+if not payments_df.empty:
+    payments_df["payment_date"] = pd.to_datetime(payments_df["payment_date"])
+
+    # Apply direction to amounts
+    payments_df["net_amount"] = payments_df.apply(
+        lambda row: row["amount"] if row["direction"] == "Incoming" else -row["amount"], axis=1
+    )
+
+    timeline = (
+        payments_df.groupby("payment_date")["net_amount"]
+        .sum()
+        .reset_index()
+        .rename(columns={"net_amount": "Net Payments"})
+    )
+
+    # Cumulative Exposure
+    timeline["Open Exposure"] = timeline["Net Payments"].cumsum()
+
+    # Add chart option if it's not one of the above
+    if chart_option not in timeline.columns:
+        timeline[chart_option] = timeline["Open Exposure"]
+
+    # Line Chart with formatted dates
+    fig2, ax2 = plt.subplots(figsize=(10, 4))
+    ax2.plot(timeline["payment_date"], timeline[chart_option], marker='o')
+    ax2.set_title(f"{chart_option} Over Time")
+    ax2.set_ylabel(chart_option)
+    ax2.set_xlabel("Payment Date")
+    ax2.grid(True, linestyle="--", linewidth=0.3)
+    fig2.autofmt_xdate(rotation=45)
+    st.pyplot(fig2)
+else:
+    st.info("No unpaid payments with valid dates to plot.")
