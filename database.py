@@ -1,3 +1,8 @@
+import os
+
+if os.path.exists("data/treasury.db"):
+    os.remove("data/treasury.db")
+
 import sqlite3
 import os
 
