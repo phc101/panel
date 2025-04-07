@@ -44,7 +44,7 @@ for _, row in clients_df.iterrows():
     total_hedged = client_hedges["notional"].sum() if not client_hedges.empty else 0
 
     open_exposure = net_exposure - total_hedged
-    current_rate = 1.00  # placeholder for real FX rate
+    current_rate = 1.00  # placeholder for FX rate
     valuation_gap = (current_rate - budget_rate) * open_exposure if budget_rate else 0
 
     exposure_summary.append({
@@ -57,60 +57,4 @@ for _, row in clients_df.iterrows():
         "Valuation Gap": valuation_gap
     })
 
-summary_df = pd.DataFrame(exposure_summary)
-
-# --- UI: Select Metric to Plot ---
-st.subheader("📊 Bar Chart by Client")
-chart_option = st.selectbox("Select Metric to Plot", ["Open Exposure", "Net Payments", "Hedged", "Valuation Gap"])
-
-if not summary_df.empty:
-    st.dataframe(summary_df.style.format({
-        "Net Payments": "{:,.2f}",
-        "Hedged": "{:,.2f}",
-        "Open Exposure": "{:,.2f}",
-        "Budget Rate": "{:.4f}",
-        "Valuation Gap": "{:,.2f}"
-    }))
-
-    # Bar Chart
-    fig1, ax1 = plt.subplots()
-    ax1.bar(summary_df["Client"], summary_df[chart_option])
-    ax1.set_ylabel(chart_option)
-    ax1.set_title(f"{chart_option} by Client")
-    ax1.grid(True, linestyle="--", linewidth=0.3)
-    st.pyplot(fig1)
-
-# --- Timeline Chart (Payment-Based) ---
-st.subheader("📆 Timeline Chart by Payment Date")
-
-if not payments_df.empty:
-    payments_df["payment_date"] = pd.to_datetime(payments_df["payment_date"])
-
-    # Apply direction to amounts
-    payments_df["net_amount"] = payments_df.apply(
-        lambda row: row["amount"] if row["direction"] == "Incoming" else -row["amount"], axis=1
-    )
-
-    timeline = (
-        payments_df.groupby("payment_date")["net_amount"]
-        .sum()
-        .reset_index()
-        .rename(columns={"net_amount": "Net Payments"})
-    )
-
-    # Cumulative Exposure
-    timeline["Open Exposure"] = timeline["Net Payments"].cumsum()
-
-    # Placeholder for other metrics if needed
-    if chart_option not in timeline.columns:
-        timeline[chart_option] = timeline["Open Exposure"]
-
-    fig2, ax2 = plt.subplots()
-    ax2.plot(timeline["payment_date"], timeline[chart_option], marker='o')
-    ax2.set_title(f"{chart_option} Over Time")
-    ax2.set_ylabel(chart_option)
-    ax2.set_xlabel("Payment Date")
-    ax2.grid(True, linestyle="--", linewidth=0.3)
-    st.pyplot(fig2)
-else:
-    st.info("No unpaid payments with valid dates to plot.")
+summary_df = pd_
