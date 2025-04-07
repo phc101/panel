@@ -66,26 +66,19 @@ pivoted = coverage.pivot_table(
     fill_value=0
 )
 
-# --- Add Summary Columns ---
-summary = coverage.groupby("client_name").agg({
+# --- Summary per Client per Month ---
+summary = coverage.groupby(["client_name", "month"]).agg({
     "fx_need": "sum",
     "hedged_volume": "sum",
-    "to_hedge": "sum"
+    "to_hedge": "sum",
+    "coverage_pct": "mean"
 }).reset_index()
-summary["coverage_pct"] = np.where(
-    summary["fx_need"] != 0,
-    (summary["hedged_volume"] / summary["fx_need"]) * 100,
-    0
-)
+
+summary_pivot = summary.pivot(index="client_name", columns="month").fillna(0)
 
 # --- Display ---
 st.subheader("📊 Monthly Hedge Volumes")
 st.dataframe(pivoted.style.format("{:,.0f}"))
 
-st.subheader("📈 Summary by Client")
-st.dataframe(summary.style.format({
-    "fx_need": "{:,.0f}",
-    "hedged_volume": "{:,.0f}",
-    "to_hedge": "{:,.0f}",
-    "coverage_pct": "{:.2f}%"
-}))
+st.subheader("📈 Summary by Client and Month")
+st.dataframe(summary_pivot.style.format("{:,.2f}"))
