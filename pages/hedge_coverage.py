@@ -57,7 +57,16 @@ coverage["coverage_pct"] = np.where(
 )
 coverage["to_hedge"] = coverage["fx_need"] - coverage["hedged_volume"]
 
-# --- Pivot to Monthly View ---
+# --- Reshape Summary Vertically ---
+summary = coverage.melt(
+    id_vars=["client_name", "month"],
+    value_vars=["fx_need", "hedged_volume", "to_hedge", "coverage_pct"],
+    var_name="category",
+    value_name="value"
+).sort_values(by=["client_name", "month", "category"])
+
+# --- Display ---
+st.subheader("📊 Monthly Hedge Volumes (Hedged Notional)")
 pivoted = coverage.pivot_table(
     index="client_name",
     columns="month",
@@ -65,20 +74,7 @@ pivoted = coverage.pivot_table(
     aggfunc="sum",
     fill_value=0
 )
-
-# --- Summary per Client per Month ---
-summary = coverage.groupby(["client_name", "month"]).agg({
-    "fx_need": "sum",
-    "hedged_volume": "sum",
-    "to_hedge": "sum",
-    "coverage_pct": "mean"
-}).reset_index()
-
-summary_pivot = summary.pivot(index="client_name", columns="month").fillna(0)
-
-# --- Display ---
-st.subheader("📊 Monthly Hedge Volumes")
 st.dataframe(pivoted.style.format("{:,.0f}"))
 
-st.subheader("📈 Summary by Client and Month")
-st.dataframe(summary_pivot.style.format("{:,.2f}"))
+st.subheader("📈 Vertical Summary by Client and Month")
+st.dataframe(summary.style.format({"value": "{:,.2f}"}))
