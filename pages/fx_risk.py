@@ -22,7 +22,7 @@ payments_df = pd.read_sql_query("""
 
 # --- Load Hedges ---
 hedges_df = pd.read_sql_query("""
-    SELECT client_name, currency, notional
+    SELECT client_name, currency, notional, maturity
     FROM hedges
 """, conn)
 
@@ -44,7 +44,7 @@ for _, row in clients_df.iterrows():
     total_hedged = client_hedges["notional"].sum() if not client_hedges.empty else 0
 
     open_exposure = net_exposure - total_hedged
-    current_rate = 1.00  # placeholder for FX rate
+    current_rate = 1.00  # placeholder
     valuation_gap = (current_rate - budget_rate) * open_exposure if budget_rate else 0
 
     exposure_summary.append({
@@ -59,8 +59,32 @@ for _, row in clients_df.iterrows():
 
 summary_df = pd.DataFrame(exposure_summary)
 
-# --- UI: Select Metric ---
-st.subheader("📊 Bar Chart by Client")
+# --- Risk Threshold Inputs ---
+st.sidebar.header("⚠️ Risk Alerts Settings")
+exposure_limit = st.sidebar.number_input("Max Open Exposure", value=50000.0, step=1000.0)
+valuation_limit = st.sidebar.number_input("Max Valuation Gap", value=10000.0, step=500.0)
+
+# --- Risk Alerts ---
+st.subheader("⚠️ Risk Alerts")
+
+if not summary_df.empty:
+    alerts = summary_df[
+        (summary_df["Open Exposure"].abs() > exposure_limit) |
+        (summary_df["Valuation Gap"].abs() > valuation_limit)
+    ]
+    if not alerts.empty:
+        st.warning("⚠️ Clients breaching risk thresholds:")
+        st.dataframe(alerts.style.format({
+            "Open Exposure": "{:,.2f}",
+            "Valuation Gap": "{:,.2f}"
+        }))
+    else:
+        st.success("✅ No clients breaching risk thresholds.")
+else:
+    st.info("No exposure data to evaluate.")
+
+# --- Chart Selector ---
+st.subheader("📊 Exposure Chart by Client")
 chart_option = st.selectbox("Select Metric to Plot", ["Open Exposure", "Net Payments", "Hedged", "Valuation Gap"])
 
 if not summary_df.empty:
@@ -85,8 +109,6 @@ st.subheader("📆 Timeline Chart by Payment Date")
 
 if not payments_df.empty:
     payments_df["payment_date"] = pd.to_datetime(payments_df["payment_date"])
-
-    # Apply direction to amounts
     payments_df["net_amount"] = payments_df.apply(
         lambda row: row["amount"] if row["direction"] == "Incoming" else -row["amount"], axis=1
     )
@@ -98,14 +120,11 @@ if not payments_df.empty:
         .rename(columns={"net_amount": "Net Payments"})
     )
 
-    # Cumulative Exposure
     timeline["Open Exposure"] = timeline["Net Payments"].cumsum()
 
-    # Add chart option if it's not one of the above
     if chart_option not in timeline.columns:
         timeline[chart_option] = timeline["Open Exposure"]
 
-    # Line Chart with formatted dates
     fig2, ax2 = plt.subplots(figsize=(10, 4))
     ax2.plot(timeline["payment_date"], timeline[chart_option], marker='o')
     ax2.set_title(f"{chart_option} Over Time")
@@ -116,3 +135,25 @@ if not payments_df.empty:
     st.pyplot(fig2)
 else:
     st.info("No unpaid payments with valid dates to plot.")
+
+# --- Hedge Maturity Calendar ---
+st.subheader("📅 Hedge Maturity Calendar")
+
+if not hedges_df.empty:
+    hedges_df["maturity"] = pd.to_datetime(hedges_df["maturity"])
+    maturity_summary = (
+        hedges_df.groupby(pd.Grouper(key="maturity", freq="M"))["notional"]
+        .sum()
+        .reset_index()
+    )
+
+    fig3, ax3 = plt.subplots(figsize=(10, 4))
+    ax3.bar(maturity_summary["maturity"].dt.strftime("%Y-%m"), maturity_summary["notional"])
+    ax3.set_title("Hedge Maturities by Month")
+    ax3.set_ylabel("Notional Amount")
+    ax3.set_xlabel("Maturity Month")
+    ax3.grid(True, linestyle="--", linewidth=0.3)
+    fig3.autofmt_xdate(rotation=45)
+    st.pyplot(fig3)
+else:
+    st.info("No hedge data with maturity dates.")
