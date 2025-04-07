@@ -1,5 +1,9 @@
-import sqlite3
 import os
+
+os.makedirs("data", exist_ok=True)  # ensures the folder exists
+
+import sqlite3
+
 
 DB_NAME = "data/treasury.db"
 
