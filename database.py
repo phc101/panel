@@ -1,63 +1,64 @@
 import sqlite3
 import os
-import streamlit as st
 
+# Ensure the "data" folder exists
+os.makedirs("data", exist_ok=True)
 
-st.title("👤 Clients")
+# Define path to the database file
+DB_NAME = "data/treasury.db"
 
-conn = get_connection()
-cursor = conn.cursor()
+def get_connection():
+    """Establish a connection to the SQLite database."""
+    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
+    return conn
 
-# --- Add New Client ---
-with st.form("add_client"):
-    st.subheader("➕ Add New Client")
+def init_db():
+    """Initialize all required tables."""
+    conn = get_connection()
+    cursor = conn.cursor()
 
-    name = st.text_input("Client Name")
-    base_currency = st.selectbox("Base Currency", ["EUR", "USD", "PLN", "GBP"])
-    industry = st.text_input("Industry")
-    payment_terms = st.selectbox("Payment Terms", ["30 days", "45 days", "60 days", "Advance"])
-    budget_rate = st.number_input("FX Budget Rate", step=0.0001, format="%.4f")
-    risk_profile = st.selectbox("Risk Profile", ["Low", "Moderate", "High"])
-    tags = st.text_input("Tags (comma-separated)")
-    notes = st.text_area("Notes")
+    # --- Clients Table ---
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS clients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        base_currency TEXT,
+        industry TEXT,
+        payment_terms TEXT,
+        budget_rate REAL,
+        risk_profile TEXT,
+        tags TEXT,
+        notes TEXT
+    )
+    """)
 
-    submitted = st.form_submit_button("Add Client")
+    # --- Payments Table ---
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_name TEXT,
+        amount REAL,
+        currency TEXT,
+        direction TEXT,
+        payment_date TEXT,
+        notes TEXT,
+        status TEXT
+    )
+    """)
 
-    if submitted and name:
-        cursor.execute("""
-            INSERT INTO clients (
-                name, base_currency, industry,
-                payment_terms, budget_rate, risk_profile, tags, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            name, base_currency, industry,
-            payment_terms, budget_rate, risk_profile, tags, notes
-        ))
-        conn.commit()
-        st.success(f"Client '{name}' added!")
+    # --- Hedges Table ---
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS hedges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_name TEXT,
+        hedge_type TEXT,
+        notional REAL,
+        currency TEXT,
+        strike REAL,
+        maturity TEXT,
+        premium REAL
+    )
+    """)
 
-# --- View Clients ---
-st.subheader("📋 Client List")
-
-cursor.execute("""
-    SELECT name, base_currency, industry, payment_terms,
-           budget_rate, risk_profile, tags, notes
-    FROM clients
-    ORDER BY name
-""")
-clients = cursor.fetchall()
-
-if clients:
-    for c in clients:
-        with st.expander(f"{c[0]}"):
-            st.markdown(f"""
-            - **Base Currency**: {c[1]}  
-            - **Industry**: {c[2]}  
-            - **Payment Terms**: {c[3]}  
-            - **Budget Rate**: {c[4]:.4f}  
-            - **Risk Profile**: {c[5]}  
-            - **Tags**: {c[6]}  
-            - **Notes**: {c[7] or "—"}
-            """)
-else:
-    st.info("No clients added yet.")
+    conn.commit()
+    conn.close()
