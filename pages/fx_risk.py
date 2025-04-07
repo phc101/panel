@@ -51,7 +51,7 @@ for _, row in clients_df.iterrows():
     open_exposure = net_exposure - total_hedged
 
     # Valuation (assuming current rate = 1.00 for simplicity)
-    current_rate = 1.00
+    current_rate = 4.29
     valuation_gap = (current_rate - budget_rate) * open_exposure if budget_rate else 0
 
     exposure_summary.append({
