@@ -1,32 +1,32 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
+from io import StringIO
+from database import get_connection
 
-st.title("📊 Reports & Exports")
+st.title("📊 Reports & Export")
 
-st.markdown("View and download summary reports per client or globally.")
+conn = get_connection()
 
-# Dummy report data
-df = pd.DataFrame({
-    "Client": ["Client A", "Client B", "Client C"],
-    "Total Payments": [120000, 80000, 95000],
-    "Net FX Exposure": [50000, -20000, 12000],
-    "Hedged Amount": [30000, 0, 12000],
-    "Remaining Exposure": [20000, -20000, 0],
-})
+# --- Fetch and display payments ---
+st.subheader("💸 All Payments")
 
-st.dataframe(df.style.format({
-    "Total Payments": "{:,.0f}",
-    "Net FX Exposure": "{:,.0f}",
-    "Hedged Amount": "{:,.0f}",
-    "Remaining Exposure": "{:,.0f}",
-}))
+payments = pd.read_sql_query("SELECT * FROM payments ORDER BY payment_date DESC", conn)
 
-# Download button
-csv = df.to_csv(index=False).encode("utf-8")
-st.download_button(
-    label="📥 Download CSV Report",
-    data=csv,
-    file_name="fx_treasury_report.csv",
-    mime="text/csv"
-)
+if not payments.empty:
+    st.dataframe(payments)
+    csv = payments.to_csv(index=False).encode("utf-8")
+    st.download_button("📥 Download Payments CSV", csv, "payments.csv", "text/csv")
+else:
+    st.info("No payments to display.")
+
+# --- Fetch and display hedges ---
+st.subheader("🛡️ All Hedges")
+
+hedges = pd.read_sql_query("SELECT * FROM hedges ORDER BY maturity ASC", conn)
+
+if not hedges.empty:
+    st.dataframe(hedges)
+    csv2 = hedges.to_csv(index=False).encode("utf-8")
+    st.download_button("📥 Download Hedges CSV", csv2, "hedges.csv", "text/csv")
+else:
+    st.info("No hedging data yet.")
