@@ -1,20 +1,20 @@
 import sqlite3
 import os
 
-# Ensure the "data" folder exists
+# Ensure data folder exists
 os.makedirs("data", exist_ok=True)
 
-# Change this to force a fresh DB creation
-DB_NAME = "data/treasury_v2.db"
+# NEW database file name to force rebuild
+DB_NAME = "data/treasury_v3.db"
 
 def get_connection():
-    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
-    return conn
+    return sqlite3.connect(DB_NAME, check_same_thread=False)
 
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
+    # Clients table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS clients (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,6 +29,7 @@ def init_db():
     )
     """)
 
+    # Payments table with status
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,6 +43,7 @@ def init_db():
     )
     """)
 
+    # Hedges table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS hedges (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
