@@ -1,3 +1,5 @@
+from database import init_db
+init_db()
 import streamlit as st
 
 st.set_page_config(
