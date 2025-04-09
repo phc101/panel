@@ -18,16 +18,19 @@ window = st.slider("Rolling Window Size (days)", min_value=30, max_value=180, va
 if fx_file and domestic_file and foreign_file:
     fx = pd.read_csv(fx_file).iloc[:, :2]
     fx.columns = ["Date", "FX"]
-    fx["Date"] = pd.to_datetime(fx["Date"])
+    fx.dropna(subset=["Date"], inplace=True)
+    fx["Date"] = pd.to_datetime(fx["Date"], errors='coerce')
 
     dom = pd.read_csv(domestic_file).iloc[:, :2]
     dom.columns = ["Date", "Domestic"]
-    dom["Date"] = pd.to_datetime(dom["Date"])
+    dom.dropna(subset=["Date"], inplace=True)
+    dom["Date"] = pd.to_datetime(dom["Date"], errors='coerce')
     dom["Domestic"] = dom["Domestic"].astype(str).str.replace('%', '', regex=False).astype(float) / 100
 
     for_ = pd.read_csv(foreign_file).iloc[:, :2]
     for_.columns = ["Date", "Foreign"]
-    for_["Date"] = pd.to_datetime(for_["Date"])
+    for_.dropna(subset=["Date"], inplace=True)
+    for_["Date"] = pd.to_datetime(for_["Date"], errors='coerce')
     for_["Foreign"] = for_["Foreign"].astype(str).str.replace('%', '', regex=False).astype(float) / 100
 
     df = fx.merge(dom, on="Date").merge(for_, on="Date").dropna().sort_values("Date")
