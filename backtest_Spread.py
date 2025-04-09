@@ -72,12 +72,16 @@ if fx_file and domestic_file and foreign_file:
         df_result = df_result[df_result["Action"] != "Hold"].copy()
         df_result["CumPnL"] = df_result["PnL"].cumsum()
         df_result["CumPnL_pct"] = df_result["CumPnL"] / (trade_amount * df_result.shape[0]) * 100
-        if len(df_result) > 0:
-            num_years = (df_result["Date"].iloc[-1] - df_result["Date"].iloc[0]).days / 365.25
-            annualized_return = df_result["CumPnL_pct"].iloc[-1] / num_years if num_years > 0 else 0
-            plt.plot(df_result["Date"], df_result["CumPnL_pct"], label=f"{days}-Day Hold ({annualized_return:.2f}%/yr)", color=colors[days])
+        df_result["Year"] = df_result["Date"].dt.year
+        yearly_returns = df_result.groupby("Year")["PnL"].sum() / trade_amount * 100
         df_result["Days"] = days
         results_all.append(df_result)
+
+        plt.plot(df_result["Date"], df_result["CumPnL_pct"], label=f"{days}-Day Hold", color=colors[days])
+
+        for year, ret in yearly_returns.items():
+            mid_date = pd.Timestamp(f"{year}-07-01")
+            plt.text(mid_date, df_result["CumPnL_pct"].max() + 0.1, f"{ret:.2f}%", color=colors[days], fontsize=8)
 
     plt.axhline(0, color='gray', linestyle='--')
     plt.xlabel("Date")
