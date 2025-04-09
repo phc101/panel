@@ -10,8 +10,8 @@ st.title("📈 FX Hedge Strategy Backtester")
 
 # --- File Upload ---
 fx_file = st.file_uploader("Upload FX Price CSV (Date, Price)", type=["csv"])
-domestic_file = st.file_uploader("Upload Domestic Bond Yield CSV (Date, Price %)", type=["csv"])
-foreign_file = st.file_uploader("Upload Foreign Bond Yield CSV (Date, Price %)", type=["csv"])
+domestic_file = st.file_uploader("Upload Domestic Bond Yield CSV (Date, Yield %)", type=["csv"])
+foreign_file = st.file_uploader("Upload Foreign Bond Yield CSV (Date, Yield %)", type=["csv"])
 
 strategy = st.selectbox("Choose Strategy", ["Seller", "Buyer", "Both"])
 holding_days = st.number_input("Holding Period (days)", min_value=1, max_value=365, value=90)
@@ -25,22 +25,21 @@ if fx_file and domestic_file and foreign_file:
     fx = fx.iloc[:, :2]
     fx.columns = ["Date", "FX"]
     fx["Date"] = pd.to_datetime(fx["Date"])
+    fx = fx.sort_values("Date")
 
     dom = pd.read_csv(domestic_file)
-    if dom.shape[1] != 2:
-        st.error("❌ Domestic bond file must have exactly 2 columns: Date and Yield %.")
-        st.stop()
+    dom = dom.iloc[:, :2]
     dom.columns = ["Date", "Domestic"]
     dom["Date"] = pd.to_datetime(dom["Date"])
-    dom["Domestic"] = dom["Domestic"].astype(str).str.replace('%', '').astype(float) / 100
+    dom["Domestic"] = dom["Domestic"].astype(str).str.replace('%', '', regex=False).astype(float) / 100
+    dom = dom.sort_values("Date")
 
     for_ = pd.read_csv(foreign_file)
-    if for_.shape[1] != 2:
-        st.error("❌ Foreign bond file must have exactly 2 columns: Date and Yield %.")
-        st.stop()
+    for_ = for_.iloc[:, :2]
     for_.columns = ["Date", "Foreign"]
     for_["Date"] = pd.to_datetime(for_["Date"])
-    for_["Foreign"] = for_["Foreign"].astype(str).str.replace('%', '').astype(float) / 100
+    for_["Foreign"] = for_["Foreign"].astype(str).str.replace('%', '', regex=False).astype(float) / 100
+    for_ = for_.sort_values("Date")
 
     # --- Merge ---
     df = fx.merge(dom, on="Date").merge(for_, on="Date")
