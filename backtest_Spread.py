@@ -71,8 +71,11 @@ if fx_file and domestic_file and foreign_file:
         df_result = pd.DataFrame(results)
         df_result = df_result[df_result["Action"] != "Hold"].copy()
         df_result["CumPnL"] = df_result["PnL"].cumsum()
-        df_result["CumPnL_pct"] = df_result["CumPnL"] / (trade_amount * len(df_result)) * 100
-        plt.plot(df_result["Date"], df_result["CumPnL_pct"], label=f"{days}-Day Hold", color=colors[days])
+        df_result["CumPnL_pct"] = df_result["CumPnL"] / (trade_amount * df_result.shape[0]) * 100
+        if len(df_result) > 0:
+            num_years = (df_result["Date"].iloc[-1] - df_result["Date"].iloc[0]).days / 365.25
+            annualized_return = df_result["CumPnL_pct"].iloc[-1] / num_years if num_years > 0 else 0
+            plt.plot(df_result["Date"], df_result["CumPnL_pct"], label=f"{days}-Day Hold ({annualized_return:.2f}%/yr)", color=colors[days])
         df_result["Days"] = days
         results_all.append(df_result)
 
