@@ -13,7 +13,6 @@ domestic_file = st.file_uploader("Upload Domestic Bond Yield CSV (Date, Yield %)
 foreign_file = st.file_uploader("Upload Foreign Bond Yield CSV (Date, Yield %)", type=["csv"])
 
 strategy = st.selectbox("Choose Strategy", ["Seller", "Buyer", "Both"])
-window = st.slider("Rolling Window Size (days)", min_value=30, max_value=180, value=90, step=15)
 
 if fx_file and domestic_file and foreign_file:
     fx = pd.read_csv(fx_file).iloc[:, :2]
@@ -37,6 +36,7 @@ if fx_file and domestic_file and foreign_file:
     df["Spread"] = df["Domestic"] - df["Foreign"]
 
     predicted = []
+    window = 90
     for i in range(window, len(df)):
         X = df.iloc[i - window:i][["Spread"]]
         y = df.iloc[i - window:i]["FX"]
