@@ -45,6 +45,7 @@ if fx_file and domestic_file and foreign_file:
         predicted.append([df.iloc[i]["Date"], df.iloc[i]["FX"], pred])
 
     reg_df = pd.DataFrame(predicted, columns=["Date", "FX", "Predicted"])
+    reg_df = reg_df[reg_df["Date"].dt.weekday == 0].copy()  # only Mondays
 
     trade_amount = 250000
     results_all = []
@@ -56,7 +57,7 @@ if fx_file and domestic_file and foreign_file:
 
     for days in [30, 60, 90]:
         temp = reg_df.copy()
-        temp["Future"] = temp["FX"].shift(-days)
+        temp["Future"] = temp["FX"].shift(-days // 7)
 
         temp.dropna(inplace=True)
 
