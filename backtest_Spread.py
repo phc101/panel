@@ -45,7 +45,9 @@ if fx_file and domestic_file and foreign_file:
         predicted.append([df.iloc[i]["Date"], df.iloc[i]["FX"], pred])
 
     reg_df = pd.DataFrame(predicted, columns=["Date", "FX", "Predicted"])
-    reg_df = reg_df[reg_df["Date"].dt.weekday == 0].copy()  # only Mondays
+
+    # Ensure only trades initiated on Mondays
+    reg_df = reg_df[reg_df["Date"].dt.weekday == 0].copy()
 
     trade_amount = 250000
     results_all = []
@@ -57,9 +59,11 @@ if fx_file and domestic_file and foreign_file:
 
     for days in [30, 60, 90]:
         temp = reg_df.copy()
-        temp["Future"] = temp["FX"].shift(-days // 7)
 
-        temp.dropna(inplace=True)
+        # Ensure exit happens exactly after X calendar days
+        temp["ExitDate"] = temp["Date"] + pd.to_timedelta(days, unit="D")
+        temp = temp.merge(fx[["Date", "FX"]].rename(columns={"Date": "ExitDate", "FX": "Future"}), on="ExitDate", how="left")
+        temp.dropna(subset=["Future"], inplace=True)
 
         def calc_pnl(row):
             if strategy in ["Seller", "Both"] and row["FX"] > row["Predicted"]:
