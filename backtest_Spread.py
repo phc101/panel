@@ -19,9 +19,10 @@ holding_days = st.number_input("Holding Period (days)", min_value=1, max_value=3
 if fx_file and domestic_file and foreign_file:
     # --- Load Data ---
     fx = pd.read_csv(fx_file)
-    if fx.shape[1] != 2:
-        st.error("❌ FX file must have exactly 2 columns: Date and Price.")
+    if fx.shape[1] < 2:
+        st.error("❌ FX file must have at least 2 columns: Date and Price.")
         st.stop()
+    fx = fx.iloc[:, :2]
     fx.columns = ["Date", "FX"]
     fx["Date"] = pd.to_datetime(fx["Date"])
 
