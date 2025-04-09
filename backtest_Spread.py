@@ -17,18 +17,18 @@ strategy = st.selectbox("Choose Strategy", ["Seller", "Buyer", "Both"])
 if fx_file and domestic_file and foreign_file:
     fx = pd.read_csv(fx_file).iloc[:, :2]
     fx.columns = ["Date", "FX"]
-    fx["Date"] = pd.to_datetime(fx["Date"], errors='coerce')
+    fx["Date"] = pd.to_datetime(fx["Date"], errors='coerce', dayfirst=True)
     fx.dropna(subset=["Date"], inplace=True)
 
     dom = pd.read_csv(domestic_file).iloc[:, :2]
     dom.columns = ["Date", "Domestic"]
-    dom["Date"] = pd.to_datetime(dom["Date"], errors='coerce')
+    dom["Date"] = pd.to_datetime(dom["Date"], errors='coerce', dayfirst=True)
     dom.dropna(subset=["Date"], inplace=True)
     dom["Domestic"] = dom["Domestic"].astype(str).str.replace('%', '', regex=False).astype(float) / 100
 
     for_ = pd.read_csv(foreign_file).iloc[:, :2]
     for_.columns = ["Date", "Foreign"]
-    for_["Date"] = pd.to_datetime(for_["Date"], errors='coerce')
+    for_["Date"] = pd.to_datetime(for_["Date"], errors='coerce', dayfirst=True)
     for_.dropna(subset=["Date"], inplace=True)
     for_["Foreign"] = for_["Foreign"].astype(str).str.replace('%', '', regex=False).astype(float) / 100
 
