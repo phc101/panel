@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import timedelta
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
 
@@ -14,12 +13,12 @@ domestic_file = st.file_uploader("Upload Domestic Bond Yield CSV (Date, Yield %)
 foreign_file = st.file_uploader("Upload Foreign Bond Yield CSV (Date, Yield %)", type=["csv"])
 
 strategy = st.selectbox("Choose Strategy", ["Seller", "Buyer", "Both"])
+window = st.slider("Rolling Window Size (days)", min_value=30, max_value=180, value=90, step=15)
 
 if fx_file and domestic_file and foreign_file:
     fx = pd.read_csv(fx_file).iloc[:, :2]
     fx.columns = ["Date", "FX"]
     fx["Date"] = pd.to_datetime(fx["Date"])
-    fx = fx.sort_values("Date")
 
     dom = pd.read_csv(domestic_file).iloc[:, :2]
     dom.columns = ["Date", "Domestic"]
@@ -31,14 +30,13 @@ if fx_file and domestic_file and foreign_file:
     for_["Date"] = pd.to_datetime(for_["Date"])
     for_["Foreign"] = for_["Foreign"].astype(str).str.replace('%', '', regex=False).astype(float) / 100
 
-    df = fx.merge(dom, on="Date").merge(for_, on="Date").sort_values("Date")
+    df = fx.merge(dom, on="Date").merge(for_, on="Date").dropna().sort_values("Date")
     df["Spread"] = df["Domestic"] - df["Foreign"]
 
-    window = 90
     predicted = []
     for i in range(window, len(df)):
-        X = df.iloc[i - window:i][["Spread"]].values
-        y = df.iloc[i - window:i]["FX"].values
+        X = df.iloc[i - window:i][["Spread"]]
+        y = df.iloc[i - window:i]["FX"]
         model = LinearRegression().fit(X, y)
         pred = model.predict([[df.iloc[i]["Spread"]]])[0]
         predicted.append([df.iloc[i]["Date"], df.iloc[i]["FX"], pred])
@@ -48,55 +46,48 @@ if fx_file and domestic_file and foreign_file:
     trade_amount = 250000
     results_all = []
     colors = {30: "blue", 60: "orange", 90: "green"}
+    yearly_summary = {}
 
     st.subheader("📈 Cumulative PnL (% of Base Currency)")
-    plt.figure(figsize=(14, 6))
+    fig, ax = plt.subplots(figsize=(14, 6))
 
     for days in [30, 60, 90]:
         temp = reg_df.copy()
         temp["Future"] = temp["FX"].shift(-days)
-        results = []
-        for _, row in temp.iterrows():
-            action = "Hold"
-            pnl = 0
+
+        temp.dropna(inplace=True)
+
+        def calc_pnl(row):
             if strategy in ["Seller", "Both"] and row["FX"] > row["Predicted"]:
-                action = "Sell"
-                pnl = (row["FX"] - row["Future"]) * trade_amount
+                return (row["FX"] - row["Future"]) * trade_amount
             elif strategy in ["Buyer", "Both"] and row["FX"] < row["Predicted"]:
-                action = "Buy"
-                pnl = (row["Future"] - row["FX"]) * trade_amount
-            results.append({"Date": row["Date"], "FX": row["FX"], "Predicted": row["Predicted"],
-                            "Future": row["Future"], "Action": action, "PnL": pnl})
+                return (row["Future"] - row["FX"]) * trade_amount
+            return 0
 
-        df_result = pd.DataFrame(results)
-        df_result = df_result[df_result["Action"] != "Hold"].copy()
-        df_result["CumPnL"] = df_result["PnL"].cumsum()
-        df_result["CumPnL_pct"] = df_result["CumPnL"] / (trade_amount * df_result.shape[0]) * 100
-        df_result["Year"] = df_result["Date"].dt.year
-        yearly_returns = df_result.groupby("Year")["PnL"].sum() / trade_amount * 100
-        df_result["Days"] = days
-        results_all.append(df_result)
+        temp["PnL"] = temp.apply(calc_pnl, axis=1)
+        temp = temp[temp["PnL"] != 0]
+        temp["CumPnL_pct"] = temp["PnL"].cumsum() / (trade_amount * len(temp)) * 100
 
-        plt.plot(df_result["Date"], df_result["CumPnL_pct"], label=f"{days}-Day Hold", color=colors[days])
+        yearly_returns = temp.groupby(temp["Date"].dt.year)["PnL"].sum() / trade_amount * 100
+        yearly_summary[f"{days}-Day Hold"] = yearly_returns
 
-        for year, ret in yearly_returns.items():
-            mid_date = pd.Timestamp(f"{year}-07-01")
-            y_level = df_result[df_result["Date"].dt.year == year]["CumPnL_pct"].max()
-            if np.isnan(y_level):
-                continue
-            y_offset = 0.2
-            plt.text(mid_date, y_level + y_offset, f"{ret:.2f}%", color=colors[days], fontsize=9, ha='center')
+        ax.plot(temp["Date"], temp["CumPnL_pct"], label=f"{days}-Day Hold", color=colors[days])
+        results_all.append(temp.assign(Holding_Period=days))
 
-    plt.axhline(0, color='gray', linestyle='--')
-    plt.xlabel("Date")
-    plt.ylabel("Cumulative PnL (%)")
-    plt.title("Cumulative PnL by Holding Period")
-    plt.grid(True)
-    plt.legend()
-    st.pyplot(plt)
+    ax.axhline(0, color='gray', linestyle='--')
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Cumulative PnL (%)")
+    ax.set_title("Cumulative PnL by Holding Period")
+    ax.grid(True)
+    ax.legend()
+    st.pyplot(fig)
 
-    st.subheader("📊 Strategy Results (All Holding Periods)")
-    full_result_df = pd.concat(results_all).reset_index(drop=True)
-    st.dataframe(full_result_df)
+    st.subheader("📊 Yearly Revenue Summary (%)")
+    yearly_df = pd.DataFrame(yearly_summary).fillna(0)
+    st.dataframe(yearly_df.style.format("{:.2f}%"))
+
+    st.subheader("📊 Detailed Trade Results")
+    final_results_df = pd.concat(results_all).reset_index(drop=True)
+    st.dataframe(final_results_df)
 else:
     st.info("📂 Please upload all three CSV files to begin.")
