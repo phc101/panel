@@ -81,7 +81,11 @@ if fx_file and domestic_file and foreign_file:
 
         for year, ret in yearly_returns.items():
             mid_date = pd.Timestamp(f"{year}-07-01")
-            plt.text(mid_date, df_result["CumPnL_pct"].max() + 0.1, f"{ret:.2f}%", color=colors[days], fontsize=8)
+            y_level = df_result[df_result["Date"].dt.year == year]["CumPnL_pct"].max()
+            if np.isnan(y_level):
+                continue
+            y_offset = 0.2
+            plt.text(mid_date, y_level + y_offset, f"{ret:.2f}%", color=colors[days], fontsize=9, ha='center')
 
     plt.axhline(0, color='gray', linestyle='--')
     plt.xlabel("Date")
