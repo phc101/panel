@@ -1,125 +1,85 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from datetime import timedelta
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
 
-def main():
-    st.title("FX Valuation Backtesting Tool")
+st.set_page_config(page_title="FX Hedge Backtester", layout="wide")
+st.title("📈 FX Hedge Strategy Backtester")
 
-    # File Uploads
-    st.sidebar.header("Upload Data")
-    fx_file = st.sidebar.file_uploader("Upload Currency Pair Prices (CSV)", type=["csv"])
-    dom_yield_file = st.sidebar.file_uploader("Upload Domestic Bond Yields (CSV)", type=["csv"])
-    for_yield_file = st.sidebar.file_uploader("Upload Foreign Bond Yields (CSV)", type=["csv"])
+# --- File Upload ---
+fx_file = st.file_uploader("Upload FX Price CSV (Date, Price)", type=["csv"])
+domestic_file = st.file_uploader("Upload Domestic Bond Yield CSV (Date, Price %)", type=["csv"])
+foreign_file = st.file_uploader("Upload Foreign Bond Yield CSV (Date, Price %)", type=["csv"])
 
-    if fx_file and dom_yield_file and for_yield_file:
-        # Load Data
-        fx_data = pd.read_csv(fx_file, parse_dates=["Date"], dayfirst=True)
-        dom_yield_data = pd.read_csv(dom_yield_file, parse_dates=["Date"], dayfirst=True)
-        for_yield_data = pd.read_csv(for_yield_file, parse_dates=["Date"], dayfirst=True)
+strategy = st.selectbox("Choose Strategy", ["Seller", "Buyer", "Both"])
+holding_days = st.number_input("Holding Period (days)", min_value=1, max_value=365, value=90)
 
-        # Convert Date column to datetime
-        for df in [fx_data, dom_yield_data, for_yield_data]:
-            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+if fx_file and domestic_file and foreign_file:
+    # --- Load Data ---
+    fx = pd.read_csv(fx_file)
+    fx.columns = ["Date", "FX"]
+    fx["Date"] = pd.to_datetime(fx["Date"])
 
-        # Merge Data
-        data = fx_data.merge(dom_yield_data, on="Date").merge(for_yield_data, on="Date").sort_values(by="Date")
+    dom = pd.read_csv(domestic_file)
+    dom.columns = ["Date", "Domestic"]
+    dom["Date"] = pd.to_datetime(dom["Date"])
+    dom["Domestic"] = dom["Domestic"].astype(str).str.replace('%', '').astype(float) / 100
 
-        if not np.issubdtype(data["Date"].dtype, np.datetime64):
-            st.error("Error: Date column is not in datetime format. Please check your input files.")
-            return
+    for_ = pd.read_csv(foreign_file)
+    for_.columns = ["Date", "Foreign"]
+    for_["Date"] = pd.to_datetime(for_["Date"])
+    for_["Foreign"] = for_["Foreign"].astype(str).str.replace('%', '').astype(float) / 100
 
-        # Compute Yield Spread
-        data["Yield Spread"] = data.iloc[:, 1] - data.iloc[:, 2]
+    # --- Merge ---
+    df = fx.merge(dom, on="Date").merge(for_, on="Date")
+    df = df.sort_values("Date")
+    df["Spread"] = df["Domestic"] - df["Foreign"]
 
-        # Train Linear Regression Model
-        model = LinearRegression()
-        model.fit(data[["Yield Spread"]], data.iloc[:, 3])
-        data["Predictive Price"] = model.predict(data[["Yield Spread"]])
+    # --- Rolling Regression ---
+    window = 90
+    predicted = []
+    for i in range(window, len(df)):
+        X = df.iloc[i - window:i][["Spread"]].values
+        y = df.iloc[i - window:i]["FX"].values
+        model = LinearRegression().fit(X, y)
+        pred = model.predict([[df.iloc[i]["Spread"]]])[0]
+        predicted.append([df.iloc[i]["Date"], df.iloc[i]["FX"], pred])
 
-        # Leverage selection
-        leverage = st.sidebar.slider("Leverage (x)", min_value=1, max_value=20, value=1)
-        stop_loss_pct = st.sidebar.slider("Stop Loss (%)", min_value=0.0, max_value=10.0, value=1.5, step=0.5)
+    reg_df = pd.DataFrame(predicted, columns=["Date", "FX", "Predicted"])
+    reg_df["Future"] = reg_df["FX"].shift(-holding_days)
 
-        # Strategy selection
-        strategy = st.sidebar.selectbox("Strategy Mode", ("Both", "Buy Only", "Sell Only", "Buy + Stablecoin"))
+    results = []
+    trade_amount = 250000
 
-        # Establish Trading Strategy
-        data["Signal"] = np.where(data.iloc[:, 3] < data["Predictive Price"], "BUY", "SELL")
-        data["Weekday"] = data["Date"].dt.weekday
-        data = data[data["Weekday"] == 0]
-        data["Exit Date"] = data["Date"] + pd.DateOffset(days=30)
+    for _, row in reg_df.iterrows():
+        action = "Hold"
+        pnl = 0
+        if strategy in ["Seller", "Both"] and row["FX"] > row["Predicted"]:
+            action = "Sell"
+            pnl = (row["FX"] - row["Future"]) * trade_amount
+        elif strategy in ["Buyer", "Both"] and row["FX"] < row["Predicted"]:
+            action = "Buy"
+            pnl = (row["Future"] - row["FX"]) * trade_amount
+        results.append({"Date": row["Date"], "FX": row["FX"], "Predicted": row["Predicted"],
+                        "Future": row["Future"], "Action": action, "PnL": pnl})
 
-        if strategy == "Buy Only":
-            data = data[data["Signal"] == "BUY"]
-        elif strategy == "Sell Only":
-            data = data[data["Signal"] == "SELL"]
+    res_df = pd.DataFrame(results)
+    res_df["Cumulative_PnL"] = res_df["PnL"].cumsum()
 
-        # Calculate Returns
-        results = []
-        for i, row in data.iterrows():
-            exit_row = fx_data[fx_data["Date"] == row["Exit Date"]]
-            if not exit_row.empty:
-                exit_price = exit_row.iloc[0, 1]
-                entry_price = row.iloc[3]
-                stop_loss_price = entry_price * (1 - stop_loss_pct / 100) if row["Signal"] == "BUY" else entry_price * (1 + stop_loss_pct / 100)
+    st.subheader("📊 Strategy Results")
+    st.dataframe(res_df[res_df["Action"] != "Hold"].reset_index(drop=True))
 
-                if strategy == "Buy + Stablecoin":
-                    if row["Signal"] == "BUY":
-                        fx_return = (exit_price - entry_price) / entry_price * 100 * leverage
-                        stablecoin_yield = 0.40  # Monthly boost from USDT yield
-                        revenue = fx_return + stablecoin_yield
-                    else:
-                        if exit_price > stop_loss_price:
-                            exit_price = stop_loss_price
-                        revenue = (entry_price - exit_price) / entry_price * 100 * leverage
-                elif row["Signal"] == "BUY":
-                    if exit_price < stop_loss_price:
-                        exit_price = stop_loss_price
-                    revenue = (exit_price - entry_price) / entry_price * 100 * leverage
-                else:
-                    if exit_price > stop_loss_price:
-                        exit_price = stop_loss_price
-                    revenue = (entry_price - exit_price) / entry_price * 100 * leverage
-
-                results.append([row["Date"], row["Exit Date"], row["Signal"], entry_price, exit_price, revenue])
-
-        result_df = pd.DataFrame(results, columns=["Entry Date", "Exit Date", "Signal", "Entry Price", "Exit Price", "Revenue %"])
-        result_df["Cumulative Revenue %"] = result_df["Revenue %"].cumsum()
-        result_df["Drawdown %"] = result_df["Cumulative Revenue %"].cummax() - result_df["Cumulative Revenue %"]
-
-        # Display Results
-        st.subheader("Backtest Results")
-
-        # Plot Currency Price vs Predictive Price
-        fig, ax = plt.subplots()
-        ax.plot(data["Date"], data.iloc[:, 3], linestyle='-', linewidth=1, color='blue', label="Actual Price")
-        ax.plot(data["Date"], data["Predictive Price"], linestyle='--', linewidth=1, color='orange', label="Predictive Price")
-        ax.set_title("Actual vs Predictive Price Over Time")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Price")
-        ax.legend()
-        st.pyplot(fig)
-        st.dataframe(result_df)
-
-        # Plot Cumulative Revenue
-        fig, ax = plt.subplots()
-        ax.plot(result_df["Entry Date"], result_df["Cumulative Revenue %"], linestyle='-', linewidth=1, color='blue', label="Cumulative Revenue")
-        ax.set_title("Cumulative Revenue Over Time")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Cumulative Revenue %")
-        ax.legend()
-        st.pyplot(fig)
-
-        # Plot Negative Drawdown
-        fig, ax = plt.subplots()
-        ax.plot(result_df["Entry Date"], -result_df["Drawdown %"], color='red', linestyle='-', linewidth=1, label="Negative Drawdown")
-        ax.set_title("Negative Drawdown Over Time")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Drawdown %")
-        ax.legend()
-        st.pyplot(fig)
-
-if __name__ == "__main__":
-    main()
+    st.subheader("📈 Cumulative PnL")
+    plt.figure(figsize=(12, 5))
+    plt.plot(res_df["Date"], res_df["Cumulative_PnL"], label="Cumulative PnL")
+    plt.axhline(0, color='gray', linestyle='--')
+    plt.xlabel("Date")
+    plt.ylabel("PnL (PLN)")
+    plt.title("Cumulative PnL Over Time")
+    plt.grid(True)
+    plt.legend()
+    st.pyplot(plt)
+else:
+    st.info("📂 Please upload all three CSV files to begin.")
