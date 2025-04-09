@@ -19,15 +19,24 @@ holding_days = st.number_input("Holding Period (days)", min_value=1, max_value=3
 if fx_file and domestic_file and foreign_file:
     # --- Load Data ---
     fx = pd.read_csv(fx_file)
+    if fx.shape[1] != 2:
+        st.error("❌ FX file must have exactly 2 columns: Date and Price.")
+        st.stop()
     fx.columns = ["Date", "FX"]
     fx["Date"] = pd.to_datetime(fx["Date"])
 
     dom = pd.read_csv(domestic_file)
+    if dom.shape[1] != 2:
+        st.error("❌ Domestic bond file must have exactly 2 columns: Date and Yield %.")
+        st.stop()
     dom.columns = ["Date", "Domestic"]
     dom["Date"] = pd.to_datetime(dom["Date"])
     dom["Domestic"] = dom["Domestic"].astype(str).str.replace('%', '').astype(float) / 100
 
     for_ = pd.read_csv(foreign_file)
+    if for_.shape[1] != 2:
+        st.error("❌ Foreign bond file must have exactly 2 columns: Date and Yield %.")
+        st.stop()
     for_.columns = ["Date", "Foreign"]
     for_["Date"] = pd.to_datetime(for_["Date"])
     for_["Foreign"] = for_["Foreign"].astype(str).str.replace('%', '').astype(float) / 100
