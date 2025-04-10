@@ -117,6 +117,7 @@ if fx_file and domestic_file and foreign_file:
         st.markdown(f"- Win Rate: `{win_rate:.2f}%`")
         st.markdown(f"- Avg PnL per Trade: `{avg_pnl:,.2f}`")
         st.markdown(f"- Max Drawdown: `{max_drawdown:,.2f}`")
+        st.markdown(f"- Nominal Volume YTD: `{total_trades * trade_amount:,.0f}`")
 
     st.subheader("📊 Strategy Results (All Holding Periods)")
     full_result_df = pd.concat(results_all).reset_index(drop=True)
