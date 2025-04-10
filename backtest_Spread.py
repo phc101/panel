@@ -14,6 +14,8 @@ domestic_file = st.file_uploader("Upload Domestic Bond Yield CSV (Date, Yield %)
 foreign_file = st.file_uploader("Upload Foreign Bond Yield CSV (Date, Yield %)", type=["csv"])
 
 strategy = st.selectbox("Choose Strategy", ["Seller", "Buyer", "Both"])
+trade_day = st.selectbox("Choose Trading Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"])
+day_mapping = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4}
 
 if fx_file and domestic_file and foreign_file:
     fx = pd.read_csv(fx_file).iloc[:, :2]
@@ -56,7 +58,9 @@ if fx_file and domestic_file and foreign_file:
         temp = reg_df.copy()
         temp["Future"] = temp["FX"].shift(-days)
         results = []
-        for _, row in temp.iterrows():
+        for i, row in temp.iterrows():
+            if row["Date"].weekday() != day_mapping[trade_day]:
+                continue
             action = "Hold"
             pnl = 0
             if strategy in ["Seller", "Both"] and row["FX"] > row["Predicted"]:
@@ -78,6 +82,7 @@ if fx_file and domestic_file and foreign_file:
         results_all.append(df_result)
 
         plt.plot(df_result["Date"], df_result["CumPnL_pct"], label=f"{days}-Day Hold", color=colors[days])
+        plt.scatter(df_result["Date"], df_result["CumPnL_pct"], color=colors[days], s=10, alpha=0.5, label=f"{days}-Day Entries")
 
         for year, ret in yearly_returns.items():
             mid_date = pd.Timestamp(f"{year}-07-01")
