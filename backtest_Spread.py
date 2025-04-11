@@ -118,9 +118,10 @@ if fx_file and domestic_file and foreign_file:
 
     st.subheader("📊 Yearly Revenue Summary (%) and Notional Hedged")
     st.write("Total notional hedged each year based on number of trades × trade size:")
+    yearly_df = pd.DataFrame(yearly_summary).fillna(0)
     notional_df = pd.DataFrame({
         'Total Hedged (EUR)': yearly_hedged,
-        'Revenue (%)': yearly_df.mean(axis=1)
+        'Revenue (%)': yearly_returns
     }).fillna(0)
     st.dataframe(notional_df.style.format({"Total Hedged (EUR)": "€{:.0f}", "Revenue (%)": "{:.2f}%"}))
 
