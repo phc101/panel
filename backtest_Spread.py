@@ -100,7 +100,7 @@ if fx_file and domestic_file and foreign_file:
         temp = temp[temp["PnL"] != 0]
         temp["CumPnL_pct"] = temp["PnL"].cumsum() / (trade_amount * len(temp)) * 100
 
-                yearly_trades = temp.groupby(temp["Date"].dt.year).size()
+        yearly_trades = temp.groupby(temp["Date"].dt.year).size()
         yearly_hedged = yearly_trades * trade_amount
         yearly_returns = temp.groupby(temp["Date"].dt.year)["PnL"].sum() / yearly_hedged * 100
         yearly_summary[f"{days}-Day Hold"] = yearly_returns
