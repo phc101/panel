@@ -45,6 +45,7 @@ if fx_file and domestic_file and foreign_file:
         predicted.append([df.iloc[i]["Date"], df.iloc[i]["FX"], pred])
 
     reg_df = pd.DataFrame(predicted, columns=["Date", "FX", "Predicted"])
+    reg_df["ValuationGap"] = reg_df["FX"] - reg_df["Predicted"]
 
     # Ensure only trades initiated on Mondays
     reg_df = reg_df[reg_df["Date"].dt.weekday == 0].copy()
@@ -55,6 +56,18 @@ if fx_file and domestic_file and foreign_file:
     yearly_summary = {}
 
     st.subheader("🔍 FX vs Predicted Price")
+    st.line_chart(reg_df.set_index("Date")[['FX', 'Predicted']])
+
+    st.subheader("📉 Valuation Gap (FX - Predicted)")
+    plt.figure(figsize=(14, 4))
+    plt.plot(reg_df['Date'], reg_df['ValuationGap'], label='Valuation Gap', color='purple')
+    plt.axhline(0, color='gray', linestyle='--')
+    plt.title('Valuation Gap Over Time')
+    plt.xlabel('Date')
+    plt.ylabel('FX - Predicted')
+    plt.grid(True)
+    plt.legend()
+    st.pyplot(plt)
     plt.figure(figsize=(14, 5))
     plt.plot(reg_df['Date'], reg_df['FX'], label='FX Market Price')
     plt.plot(reg_df['Date'], reg_df['Predicted'], label='Predicted Price', linestyle='--')
@@ -87,7 +100,9 @@ if fx_file and domestic_file and foreign_file:
         temp = temp[temp["PnL"] != 0]
         temp["CumPnL_pct"] = temp["PnL"].cumsum() / (trade_amount * len(temp)) * 100
 
-        yearly_returns = temp.groupby(temp["Date"].dt.year)["PnL"].sum() / trade_amount * 100
+        yearly_trades = temp.groupby(temp["Date"].dt.year).size()
+yearly_hedged = yearly_trades * trade_amount
+yearly_returns = temp.groupby(temp["Date"].dt.year)["PnL"].sum() / yearly_hedged * 100
         yearly_summary[f"{days}-Day Hold"] = yearly_returns
 
         ax.plot(temp["Date"], temp["CumPnL_pct"], label=f"{days}-Day Hold", color=colors[days])
@@ -100,6 +115,14 @@ if fx_file and domestic_file and foreign_file:
     ax.grid(True)
     ax.legend()
     st.pyplot(fig)
+
+    st.subheader("📊 Yearly Revenue Summary (%) and Notional Hedged")
+    st.write("Total notional hedged each year based on number of trades × trade size:")
+    notional_df = pd.DataFrame({
+        'Total Hedged (EUR)': yearly_hedged,
+        'Revenue (%)': yearly_df.mean(axis=1)
+    }).fillna(0)
+    st.dataframe(notional_df.style.format({"Total Hedged (EUR)": "€{:.0f}", "Revenue (%)": "{:.2f}%"}))
 
     st.subheader("📊 Yearly Revenue Summary (%)")
     yearly_df = pd.DataFrame(yearly_summary).fillna(0)
