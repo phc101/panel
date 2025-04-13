@@ -68,12 +68,13 @@ if fx_file and domestic_file and foreign_file:
     plt.grid(True)
     plt.legend()
     st.pyplot(plt)
-    plt.figure(figsize=(14, 5))
-    plt.plot(reg_df['Date'], reg_df['FX'], label='FX Market Price')
-    plt.plot(reg_df['Date'], reg_df['Predicted'], label='Predicted Price', linestyle='--')
+        plt.figure(figsize=(14, 5))
+    plt.plot(reg_df['Date'], reg_df['FX'], label='FX Market Price', color='green')
+    plt.plot(reg_df['Date'], reg_df['Predicted'], label='Predicted Price', linestyle='--', color='red')
     plt.title('Historical FX vs Predicted Valuation')
     plt.xlabel('Date')
     plt.ylabel('Price')
+    plt.ylim(min(reg_df[['FX', 'Predicted']].min()) * 0.995, max(reg_df[['FX', 'Predicted']].max()) * 1.005)
     plt.legend()
     plt.grid(True)
     st.pyplot(plt)
@@ -149,3 +150,4 @@ if fx_file and domestic_file and foreign_file:
     st.dataframe(final_results_df)
 else:
     st.info("📂 Please upload all three CSV files to begin.")
+
