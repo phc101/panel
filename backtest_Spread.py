@@ -56,7 +56,17 @@ if fx_file and domestic_file and foreign_file:
     yearly_summary = {}
 
     st.subheader("🔍 FX vs Predicted Price")
-    st.line_chart(reg_df.set_index("Date")[['FX', 'Predicted']])
+        # Enhanced FX vs Predicted Chart
+    plt.figure(figsize=(14, 5))
+    plt.plot(reg_df['Date'], reg_df['FX'], label='FX Market Price', color='green')
+    plt.plot(reg_df['Date'], reg_df['Predicted'], label='Predicted Price', linestyle='--', color='red')
+    plt.title('Historical FX vs Predicted Valuation')
+    plt.xlabel('Date')
+    plt.ylabel('Price')
+    plt.ylim(min(reg_df[['FX', 'Predicted']].min()) * 0.995, max(reg_df[['FX', 'Predicted']].max()) * 1.005)
+    plt.legend()
+    plt.grid(True)
+    st.pyplot(plt)
 
     st.subheader("📉 Valuation Gap (FX - Predicted)")
     plt.figure(figsize=(14, 4))
@@ -68,7 +78,8 @@ if fx_file and domestic_file and foreign_file:
     plt.grid(True)
     plt.legend()
     st.pyplot(plt)
-        plt.figure(figsize=(14, 5))
+        # Improved FX vs Predicted chart for better readability
+    plt.figure(figsize=(14, 5))
     plt.plot(reg_df['Date'], reg_df['FX'], label='FX Market Price', color='green')
     plt.plot(reg_df['Date'], reg_df['Predicted'], label='Predicted Price', linestyle='--', color='red')
     plt.title('Historical FX vs Predicted Valuation')
@@ -150,4 +161,3 @@ if fx_file and domestic_file and foreign_file:
     st.dataframe(final_results_df)
 else:
     st.info("📂 Please upload all three CSV files to begin.")
-
