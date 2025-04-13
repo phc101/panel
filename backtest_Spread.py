@@ -86,7 +86,8 @@ if fx_file and domestic_file and foreign_file:
 
         # Ensure exit happens exactly after X calendar days
         temp["ExitDate"] = temp["Date"] + pd.to_timedelta(days, unit="D")
-        temp = temp.merge(fx[["Date", "FX"]].rename(columns={"Date": "ExitDate", "FX": "Future"}), on="ExitDate", how="left")
+                fx_renamed = fx.rename(columns={"Date": "ExitDate", "FX": "Future"})
+        temp = pd.merge_asof(temp.sort_values("ExitDate"), fx_renamed.sort_values("ExitDate"), on="ExitDate")
         temp.dropna(subset=["Future"], inplace=True)
 
         def calc_pnl(row):
@@ -127,6 +128,12 @@ if fx_file and domestic_file and foreign_file:
     st.subheader("📊 Yearly Revenue Summary (%)")
     yearly_df = pd.DataFrame(yearly_summary).fillna(0)
     st.dataframe(yearly_df.style.format("{:.2f}%"))
+
+        st.subheader("📋 Trade Summary Info")
+    total_signals = len(reg_df)
+    executed_trades = len(final_results_df)
+    st.write(f"Total signal dates (Mondays): **{total_signals}**")
+    st.write(f"Executed trades with valid exit FX data: **{executed_trades}**")
 
     st.subheader("📊 Detailed Trade Results")
     final_results_df = pd.concat(results_all).reset_index(drop=True)
