@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt 
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
@@ -206,7 +205,43 @@ else:
 total_volume = combined_df["Volume (EUR)"].sum()
 weighted_avg = (combined_df["Volume (EUR)"] * combined_df["Rate"]).sum() / total_volume if total_volume else 0.0
 
-# --- Dashboard Metrics ---
+# Calculate required spot to achieve target (if possible)
+if total_volume > 0:
+    # Calculate how much of a change we need
+    current_weighted_sum = (combined_df["Volume (EUR)"] * combined_df["Rate"]).sum()
+    target_weighted_sum = target_rate * total_volume
+    
+    # If we need to increase the average rate
+    if target_weighted_sum > current_weighted_sum:
+        # Calculate what spot rate would be needed for future hedges
+        new_hedges_volume = new_hedges_df["Volume (EUR)"].sum()
+        if new_hedges_volume > 0:
+            required_spot = (target_weighted_sum - (existing_hedges["Volume (EUR)"] * existing_hedges["Rate"]).sum()) / new_hedges_volume
+            required_spot = required_spot / (sum(forward_points_input.values()) / len(forward_points_input) + 1)
+        else:
+            required_spot = None
+    else:
+        required_spot = None
+else:
+    required_spot = None
+
+# --- Hedge Portfolio Overview ---
+st.markdown('<p class="subheader">📊 Hedge Portfolio Overview</p>', unsafe_allow_html=True)
+
+# Display metrics
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Weighted Avg Rate", f"{weighted_avg:.4f}")
+with col2:
+    st.metric("Target Rate", f"{target_rate:.4f}")
+with col3:
+    st.metric("Total Volume (EUR)", f"{int(total_volume):,}")
+
+# Display required spot rate information
+if required_spot and required_spot > 0:
+    st.markdown(f"🔍 To achieve the target **{target_rate:.4f}**, you'd need to book new hedges at a spot of approximately **{required_spot:.4f}**.")
+
+# --- Dashboard Metrics in card format ---
 st.markdown('<p class="subheader">🔍 Portfolio Metrics</p>', unsafe_allow_html=True)
 
 metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
@@ -239,7 +274,7 @@ with metric_col4:
                 '</div>', unsafe_allow_html=True)
 
 # --- Hedge Portfolio Visualization ---
-st.markdown('<p class="subheader">📈 Hedge Portfolio Visualization</p>', unsafe_allow_html=True)
+st.markdown('<p class="subheader">📈 Hedge Structure Visualization</p>', unsafe_allow_html=True)
 
 # Modern Plotly chart 
 fig = go.Figure()
@@ -277,12 +312,12 @@ fig.add_trace(go.Scatter(
     y=[target_rate, target_rate],
     mode='lines',
     name=f'Target: {target_rate:.4f}',
-    line=dict(color='green', width=2, dash='dash'),
+    line=dict(color='green', width=2, dash='dot'),
 ))
 
 # Update layout
 fig.update_layout(
-    title='EUR/PLN Hedge Portfolio',
+    title='EUR/PLN Hedge Structure',
     xaxis_title='Maturity Date',
     yaxis_title='Rate',
     legend_title='Hedge Type',
@@ -300,20 +335,14 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
-# --- Hedge Plan Table ---
-st.markdown('<p class="subheader">📋 Complete Hedge Plan</p>', unsafe_allow_html=True)
-
-# Prepare display dataframe with formatting
-display_combined_df = combined_df.copy()
-display_combined_df['Maturity Date'] = display_combined_df['Maturity Date'].dt.strftime('%Y-%m-%d')
-display_combined_df['Volume (EUR)'] = display_combined_df['Volume (EUR)'].apply(lambda x: f"{x:,.0f}")
-display_combined_df['Rate'] = display_combined_df['Rate'].apply(lambda x: f"{x:.4f}")
+# --- Full Hedge Plan Table ---
+st.markdown('<p class="subheader">📋 Full Hedge Plan</p>', unsafe_allow_html=True)
 
 # Sort by maturity date
-display_combined_df = display_combined_df.sort_values('Maturity Date')
+sorted_combined_df = combined_df.sort_values('Maturity Date')
 
 # Display the hedge plan table
-st.dataframe(display_combined_df, use_container_width=True)
+st.dataframe(sorted_combined_df, use_container_width=True)
 
 # --- Monthly Results Analysis ---
 st.markdown('<p class="subheader">📊 Monthly Analysis</p>', unsafe_allow_html=True)
@@ -385,7 +414,7 @@ with download_col1:
     download_df['Maturity Date'] = download_df['Maturity Date'].dt.strftime('%Y-%m-%d')
     
     st.download_button(
-        "📥 Download Complete Hedge Plan (CSV)",
+        "📥 Download Hedge Plan",
         data=download_df.to_csv(index=False),
         file_name=f"hedge_plan_{datetime.now().strftime('%Y%m%d')}.csv",
         mime="text/csv"
