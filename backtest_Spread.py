@@ -173,12 +173,12 @@ if fx_file and domestic_file and foreign_file:
     st.write(f"Total signal dates (Mondays): **{total_signals}**")
     st.write(f"Executed trades with valid exit FX data: **{executed_trades}**")
 
-                st.subheader("📊 Average Return per Trade")
+                    st.subheader("📊 Average Return per Trade")
     avg_return_table = final_results_df.groupby("Holding_Period")["PnL"].mean().to_frame("Avg PnL").reset_index()
     avg_return_table["Avg Return (%)"] = avg_return_table["Avg PnL"] / trade_amount * 100
     st.dataframe(avg_return_table.style.format({"Avg PnL": "€{:.2f}", "Avg Return (%)": "{:.2f}%"}))
 
-    st.subheader("📊 Detailed Trade Results")
+        st.subheader("📊 Detailed Trade Results")
     final_results_df = pd.concat(results_all).reset_index(drop=True)
     st.dataframe(final_results_df)
 else:
