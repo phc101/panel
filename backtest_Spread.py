@@ -129,6 +129,20 @@ if fx_file and domestic_file and foreign_file:
     ax.legend()
     st.pyplot(fig)
 
+    st.subheader("📉 Strategy Drawdown Chart")
+    plt.figure(figsize=(14, 4))
+    for days, temp in zip([30, 60, 90], results_all):
+        temp_sorted = temp.sort_values("Date").copy()
+        temp_sorted["Drawdown"] = (temp_sorted["CumPnL_pct"] - temp_sorted["CumPnL_pct"].cummax())
+        plt.plot(temp_sorted["Date"], temp_sorted["Drawdown"], label=f"{days}-Day Hold", linestyle="--")
+    plt.axhline(0, color='gray', linestyle='--')
+    plt.title("Drawdown Over Time by Strategy")
+    plt.xlabel("Date")
+    plt.ylabel("Drawdown (%)")
+    plt.grid(True)
+    plt.legend()
+    st.pyplot(plt)
+
     st.subheader("📊 Yearly Revenue Summary (%) and Notional Hedged")
     st.write("Total notional hedged each year based on number of trades × trade size:")
     yearly_df = pd.DataFrame(yearly_summary).fillna(0)
