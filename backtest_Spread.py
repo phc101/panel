@@ -52,7 +52,7 @@ if fx_file and domestic_file and foreign_file:
 
     trade_amount = 250000
     results_all = []
-    colors = {30: "blue", 60: "orange", 90: "green"}
+    colors = {30: "blue", 60: "orange", 90: "green", 180: "red"}
     yearly_summary = {}
 
     st.subheader("🔍 FX vs Predicted Price")
@@ -93,7 +93,7 @@ if fx_file and domestic_file and foreign_file:
     st.subheader("📈 Cumulative PnL (% of Base Currency)")
     fig, ax = plt.subplots(figsize=(14, 6))
 
-    for days in [30, 60, 90]:
+    for days in [30, 60, 90, 180]:
         temp = reg_df.copy()
 
         # Ensure exit happens exactly after X calendar days
@@ -131,7 +131,7 @@ if fx_file and domestic_file and foreign_file:
 
     st.subheader("📉 Strategy Drawdown Chart")
     plt.figure(figsize=(14, 4))
-    for days, temp in zip([30, 60, 90], results_all):
+    for days, temp in zip([30, 60, 90, 180], results_all):
         temp_sorted = temp.sort_values("Date").copy()
         temp_sorted["Drawdown"] = (temp_sorted["CumPnL_pct"] - temp_sorted["CumPnL_pct"].cummax())
         plt.plot(temp_sorted["Date"], temp_sorted["Drawdown"], label=f"{days}-Day Hold", linestyle="--")
@@ -148,7 +148,7 @@ if fx_file and domestic_file and foreign_file:
     yearly_df = pd.DataFrame(yearly_summary).fillna(0)
     notional_data = {
         f"{days}-Day Hold": df.groupby(df["Date"].dt.year).size() * trade_amount
-        for days, df in zip([30, 60, 90], results_all)
+        for days, df in zip([30, 60, 90, 180], results_all)
     }
     notional_df = pd.DataFrame(notional_data).fillna(0)
     notional_df["Total Hedged (EUR)"] = notional_df.sum(axis=1)
