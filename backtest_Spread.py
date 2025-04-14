@@ -52,7 +52,7 @@ if fx_file and domestic_file and foreign_file:
 
     trade_amount = 250000
     results_all = []
-    colors = {30: "blue", 60: "orange", 90: "green", 180: "red"}
+    colors = {30: "blue", 60: "orange", 90: "green", 120: "purple", 180: "red"}
     yearly_summary = {}
 
     st.subheader("🔍 FX vs Predicted Price")
@@ -93,7 +93,7 @@ if fx_file and domestic_file and foreign_file:
     st.subheader("📈 Cumulative PnL (% of Base Currency)")
     fig, ax = plt.subplots(figsize=(14, 6))
 
-    for days in [30, 60, 90, 180]:
+    for days in [30, 60, 90, 120, 180]:
         temp = reg_df.copy()
 
         # Ensure exit happens exactly after X calendar days
