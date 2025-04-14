@@ -167,8 +167,7 @@ if fx_file and domestic_file and foreign_file:
     executed_trades = len(final_results_df)
     st.write(f"Total signal dates (Mondays): **{total_signals}**")
     st.write(f"Executed trades with valid exit FX data: **{executed_trades}**")
-
-        st.subheader("📊 Detailed Trade Results")
+    st.subheader("📊 Detailed Trade Results")
     final_results_df = pd.concat(results_all).reset_index(drop=True)
     st.dataframe(final_results_df)
 else:
