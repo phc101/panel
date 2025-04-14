@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt 
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
@@ -321,11 +321,21 @@ st.markdown('<p class="subheader">📊 Monthly Analysis</p>', unsafe_allow_html=
 # Extract month from maturity date for analysis
 combined_df['Month'] = combined_df['Maturity Date'].dt.strftime('%Y-%m')
 
-# Aggregated monthly data
-monthly_analysis = combined_df.groupby('Month').agg(
-    Volume=('Volume (EUR)', 'sum'),
-    Weighted_Rate=lambda x: (combined_df.loc[x.index, 'Volume (EUR)'] * combined_df.loc[x.index, 'Rate']).sum() / combined_df.loc[x.index, 'Volume (EUR)'].sum()
-).reset_index()
+# Fixed aggregation approach for monthly analysis
+monthly_volume = combined_df.groupby('Month')['Volume (EUR)'].sum().reset_index()
+monthly_volume.columns = ['Month', 'Volume']
+
+# Calculate weighted rate properly
+monthly_weighted_rates = []
+for month, group in combined_df.groupby('Month'):
+    month_volume = group['Volume (EUR)'].sum()
+    weighted_rate = (group['Volume (EUR)'] * group['Rate']).sum() / month_volume if month_volume > 0 else 0
+    monthly_weighted_rates.append({'Month': month, 'Weighted_Rate': weighted_rate})
+
+monthly_rates = pd.DataFrame(monthly_weighted_rates)
+
+# Merge the two dataframes
+monthly_analysis = pd.merge(monthly_volume, monthly_rates, on='Month')
 
 col1, col2 = st.columns([3, 2])
 
@@ -403,8 +413,8 @@ with download_col2:
             file_name=f"hedge_analysis_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.ms-excel"
         )
-    except:
-        st.warning("Excel export requires additional libraries. CSV download is always available.")
+    except Exception as e:
+        st.warning(f"Excel export requires additional libraries. CSV download is always available.")
 
 # Footer
 st.markdown("""
