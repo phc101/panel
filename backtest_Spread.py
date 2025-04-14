@@ -146,13 +146,16 @@ if fx_file and domestic_file and foreign_file:
     st.subheader("📊 Yearly Revenue Summary (%) and Notional Hedged")
     st.write("Total notional hedged each year based on number of trades × trade size:")
     yearly_df = pd.DataFrame(yearly_summary).fillna(0)
-    notional_df = pd.DataFrame(index=yearly_returns.index)
-    notional_df['Total Hedged (EUR)'] = yearly_hedged
-    notional_df['Revenue (%)'] = yearly_returns
+    notional_data = {
+        f"{days}-Day Hold": df.groupby(df["Date"].dt.year).size() * trade_amount
+        for days, df in zip([30, 60, 90], results_all)
+    }
+    notional_df = pd.DataFrame(notional_data).fillna(0)
+    notional_df["Total Hedged (EUR)"] = notional_df.sum(axis=1)
+    notional_df["Revenue (%)"] = yearly_df.mean(axis=1)
     st.dataframe(notional_df.style.format({"Total Hedged (EUR)": "€{:.0f}", "Revenue (%)": "{:.2f}%"}))
 
     st.subheader("📊 Yearly Revenue Summary (%)")
-    yearly_df = pd.DataFrame(yearly_summary).fillna(0)
     st.dataframe(yearly_df.style.format("{:.2f}%"))
 
     final_results_df = pd.concat(results_all).reset_index(drop=True)
@@ -169,6 +172,11 @@ if fx_file and domestic_file and foreign_file:
     executed_trades = len(final_results_df)
     st.write(f"Total signal dates (Mondays): **{total_signals}**")
     st.write(f"Executed trades with valid exit FX data: **{executed_trades}**")
+
+        st.subheader("📊 Average Return per Trade")
+    avg_return_table = final_results_df.groupby("Holding_Period")["PnL"].mean().to_frame("Avg PnL").reset_index()
+    avg_return_table["Avg Return (%)"] = avg_return_table["Avg PnL"] / trade_amount * 100
+    st.dataframe(avg_return_table.style.format({"Avg PnL": "€{:.2f}", "Avg Return (%)": "{:.2f}%"}))
 
     st.subheader("📊 Detailed Trade Results")
     final_results_df = pd.concat(results_all).reset_index(drop=True)
