@@ -1,97 +1,204 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.express as px
+import numpy as np
 from datetime import datetime, timedelta
-import re
 
-st.set_page_config(page_title="Forward EUR/PLN z marżą", layout="centered")
-st.title("📈 Wycena forward EUR/PLN z marżą brokera")
+# Konfiguracja strony
+st.set_page_config(
+    page_title="Symulator Kursów Walut",
+    page_icon="💱",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-st.markdown("Wgraj plik CSV z kolumnami `Unnamed: 1` (termin) i `bid` (punkty forwardowe).")
+# Tytuł
+st.title("💱 Symulator Kursów Walut - Wpływ Stóp Procentowych")
 
-# 🔧 Parametry
-spot = st.number_input("Kurs spot EUR/PLN", value=4.2860, step=0.0001)
-margin_percent = st.number_input("Marża całkowita (%)", value=0.5, step=0.1) / 100
-uploaded_file = st.file_uploader("📄 Wgraj plik CSV", type="csv")
+# Sidebar z kontrolami
+st.sidebar.header("🎛️ Panel Sterowania")
 
-# 🔁 Zamiana np. '1M', '3W', 'ON' → liczba dni
-def maturity_to_days(code):
-    code = str(code).upper()
-    if code == "ON": return 1
-    elif code == "TN": return 2
-    elif code == "SN": return 3
-    elif code == "SW": return 7
-    match = re.search(r"(\d+)([WMY])", code)
-    if match:
-        num, unit = int(match.group(1)), match.group(2)
-        if unit == "W": return num * 7
-        elif unit == "M": return num * 30
-        elif unit == "Y": return num * 365
-    return 0
+# Suwaki
+inflation_rate = st.sidebar.slider(
+    "Inflacja bazowa (%)", 
+    min_value=-3.0, 
+    max_value=15.0, 
+    value=4.0, 
+    step=0.1
+)
 
-if uploaded_file:
-    try:
-        df_raw = pd.read_csv(uploaded_file)
+nominal_rate = st.sidebar.slider(
+    "Stopa referencyjna NBP (%)", 
+    min_value=0.0, 
+    max_value=12.0, 
+    value=5.75, 
+    step=0.25
+)
 
-        if "Unnamed: 1" not in df_raw.columns or "bid" not in df_raw.columns:
-            st.error("❌ CSV musi zawierać kolumny: 'Unnamed: 1' i 'bid'")
-        else:
-            # 🧼 Przetwarzanie danych
-            df = df_raw[["Unnamed: 1", "bid"]].copy()
-            df.columns = ["MaturityRaw", "Bid"]
-            df = df[df["MaturityRaw"].str.contains("EURPLN")]
-            df["Maturity"] = df["MaturityRaw"].str.extract(r"EURPLN\s+([A-Z0-9]+)\s+FWD")
+time_horizon = st.sidebar.slider(
+    "Horyzont prognozy (miesiące)", 
+    min_value=3, 
+    max_value=24, 
+    value=12
+)
 
-            # Usuń niechciane terminy
-            df = df[~df["Maturity"].isin(["TN", "SN", "SW", "2W", "ON"])]
+# Automatyczne obliczanie realnej stopy
+real_rate = ((1 + nominal_rate/100) / (1 + inflation_rate/100) - 1) * 100
 
-            # Oblicz dni i daty zapadalności
-            spot_date = datetime.today() + timedelta(days=2)
-            df["DaysToMaturity"] = df["Maturity"].apply(maturity_to_days)
-            df["Okno od"] = df["DaysToMaturity"].apply(lambda d: (spot_date + timedelta(days=d)).date())
+# Wyświetlanie realnej stopy
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📊 Obliczona Realna Stopa")
+color = "🟢" if real_rate >= 0 else "🔴"
+st.sidebar.markdown(f"## {color} {real_rate:.2f}%")
+st.sidebar.caption(f"(1 + {nominal_rate}%) / (1 + {inflation_rate}%) - 1")
 
-            # Oblicz kurs forward i marżę
-            df["BidPts"] = df["Bid"] / 10_000
-            df["ForwardRynkowy"] = (spot + df["BidPts"]).round(4)
+# Główna sekcja
+col1, col2, col3 = st.columns(3)
 
-            total_eur = 12_000_000
-            total_margin_eur = total_eur * margin_percent
-            n = len(df)
-            weights = list(range(1, n + 1))
-            weight_sum = sum(weights)
-            margin_eur_list = [(w / weight_sum) * total_margin_eur for w in weights]
-            margin_share_list = [m / 1_000_000 for m in margin_eur_list]
+# Model predykcyjny
+def predict_exchange_rates(real_rate, nominal_rate, inflation_rate):
+    base_rates = {"EUR": 4.27, "USD": 4.08, "GBP": 5.15}
+    sensitivity = {
+        "EUR": {"real": -0.12, "volatility": 0.08},
+        "USD": {"real": -0.18, "volatility": 0.12},
+        "GBP": {"real": -0.15, "volatility": 0.10}
+    }
+    
+    results = {}
+    for currency in base_rates:
+        real_impact = (real_rate - 0.98) * sensitivity[currency]["real"]
+        central = base_rates[currency] + real_impact
+        vol = sensitivity[currency]["volatility"] * central
+        
+        results[currency] = {
+            "central": central,
+            "p10": central - 1.28 * vol,
+            "p90": central + 1.28 * vol,
+            "change": ((central - base_rates[currency]) / base_rates[currency]) * 100
+        }
+    
+    return results
 
-            df["Marża EUR"] = [round(m) for m in margin_eur_list]
-            df["Udział %"] = [round(m * 100, 4) for m in margin_share_list]
-            df["Cena terminowa"] = (df["ForwardRynkowy"] * (1 - pd.Series(margin_share_list))).round(4)
+predictions = predict_exchange_rates(real_rate, nominal_rate, inflation_rate)
 
-            # Końcowa tabela z kolumnami w odpowiedniej kolejności
-            df_result = df[[
-                "Maturity", "Okno od", "Bid", "ForwardRynkowy", "Cena terminowa", "Marża EUR", "Udział %"
-            ]]
+# Kafelki prognoz
+currencies = ["EUR", "USD", "GBP"]
+colors = ["#4f46e5", "#059669", "#dc2626"]
 
-            # 📋 Tabela wynikowa
-            st.subheader("📋 Tabela forwardów EUR/PLN")
-            st.dataframe(df_result, use_container_width=True)
+for i, (currency, color) in enumerate(zip(currencies, colors)):
+    with [col1, col2, col3][i]:
+        pred = predictions[currency]
+        
+        st.markdown(f"""
+        <div style="
+            background: linear-gradient(135deg, {color}20, {color}10);
+            padding: 20px;
+            border-radius: 15px;
+            border: 2px solid {color}40;
+            text-align: center;
+        ">
+            <h3 style="color: {color}; margin: 0;">{currency}/PLN</h3>
+            <h1 style="color: {color}; margin: 10px 0; font-size: 2.5em;">
+                {pred['central']:.4f}
+            </h1>
+            <p style="margin: 5px 0;">
+                Zmiana: <strong>{'🔴' if pred['change'] >= 0 else '🟢'} {pred['change']:+.1f}%</strong>
+            </p>
+            <div style="background: white; padding: 10px; border-radius: 8px; margin-top: 10px;">
+                <small>10%: {pred['p10']:.4f} | 90%: {pred['p90']:.4f}</small>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-            # 📈 Wykres
-            st.subheader("📊 Wykres forwardów")
-            fig, ax = plt.subplots(figsize=(10, 5))
-            ax.plot(df_result["Maturity"], df_result["ForwardRynkowy"], marker='o', label="Forward rynkowy")
-            ax.plot(df_result["Maturity"], df_result["Cena terminowa"], marker='o', label="Cena terminowa (z marżą)")
-            ax.set_ylabel("Kurs EUR/PLN")
-            ax.set_xlabel("Termin")
-            ax.set_title("Porównanie kursów forward")
-            ax.grid(True, linestyle="--", alpha=0.5)
-            ax.legend()
-            st.pyplot(fig)
+st.markdown("---")
 
-            # 📤 Eksport CSV
-            csv = df_result.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Pobierz jako CSV", data=csv, file_name="forward_z_marza.csv", mime="text/csv")
+# Wykresy
+tab1, tab2, tab3 = st.tabs(["📈 Prognoza czasowa", "📊 Analiza wrażliwości", "🔍 Dane historyczne"])
 
-    except Exception as e:
-        st.error(f"❌ Błąd: {e}")
-else:
-    st.info("⬆️ Wgraj plik CSV z kolumnami: 'Unnamed: 1' (np. 'EURPLN 4M FWD') oraz 'bid'")
+with tab1:
+    # Generowanie projekcji czasowej
+    dates = [datetime.now() + timedelta(days=30*i) for i in range(time_horizon + 1)]
+    projection_data = []
+    
+    for i, date in enumerate(dates):
+        adjustment = min(i / 6, 1)  # Pełne dostosowanie po 6 miesiącach
+        projection_data.append({
+            "Miesiąc": i,
+            "Data": date.strftime("%Y-%m"),
+            "EUR": 4.27 + (predictions["EUR"]["central"] - 4.27) * adjustment,
+            "USD": 4.08 + (predictions["USD"]["central"] - 4.08) * adjustment,
+            "GBP": 5.15 + (predictions["GBP"]["central"] - 5.15) * adjustment,
+        })
+    
+    df_projection = pd.DataFrame(projection_data)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df_projection["Miesiąc"], y=df_projection["EUR"], 
+                            name="EUR/PLN", line=dict(color="#4f46e5", width=3)))
+    fig.add_trace(go.Scatter(x=df_projection["Miesiąc"], y=df_projection["USD"], 
+                            name="USD/PLN", line=dict(color="#059669", width=3), yaxis="y2"))
+    fig.add_trace(go.Scatter(x=df_projection["Miesiąc"], y=df_projection["GBP"], 
+                            name="GBP/PLN", line=dict(color="#dc2626", width=3), yaxis="y3"))
+    
+    fig.update_layout(
+        title=f"Prognoza kursów na {time_horizon} miesięcy",
+        xaxis_title="Miesiące od dziś",
+        yaxis=dict(title="EUR/PLN, USD/PLN", side="left"),
+        yaxis2=dict(overlaying="y", side="right", title="GBP/PLN"),
+        height=500
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+with tab2:
+    currency_choice = st.selectbox("Wybierz parę walutową:", ["EUR", "USD", "GBP"])
+    
+    # Analiza wrażliwości
+    steps = np.arange(-2, 2.1, 0.5)
+    sensitivity_data = []
+    
+    for step in steps:
+        test_real = real_rate + step
+        test_predictions = predict_exchange_rates(test_real, nominal_rate, inflation_rate)
+        sensitivity_data.append({
+            "Zmiana realnej stopy": step,
+            currency_choice: test_predictions[currency_choice]["central"]
+        })
+    
+    df_sensitivity = pd.DataFrame(sensitivity_data)
+    
+    fig = px.line(df_sensitivity, x="Zmiana realnej stopy", y=currency_choice,
+                  title=f"Wrażliwość kursu {currency_choice}/PLN na zmiany realnej stopy")
+    fig.add_vline(x=0, line_dash="dash", line_color="gray")
+    fig.update_traces(line_width=3)
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+with tab3:
+    # Dane historyczne
+    historical_data = {
+        "Data": ["2014-01", "2015-01", "2020-05", "2021-12", "2022-06", "2024-06"],
+        "Realna stopa": [1.99, 3.45, -3.19, -6.31, -5.19, 3.07],
+        "EUR": [4.18, 4.25, 4.46, 4.60, 4.46, 4.32],
+        "USD": [3.07, 3.64, 4.04, 4.06, 4.26, 4.01],
+        "GBP": [5.05, 5.45, 4.95, 5.45, 5.28, 5.10]
+    }
+    
+    df_historical = pd.DataFrame(historical_data)
+    currency_hist = st.selectbox("Wybierz parę walutową:", ["EUR", "USD", "GBP"], key="hist")
+    
+    fig = px.scatter(df_historical, x="Realna stopa", y=currency_hist,
+                     title=f"Korelacja historyczna: Realna stopa vs {currency_hist}/PLN",
+                     hover_data=["Data"])
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+# Footer
+st.markdown("---")
+st.markdown("### 📋 Metodologia")
+st.info("""
+**Model predykcyjny:** Realna stopa = (1 + nominalna) / (1 + inflacja) - 1  
+**Wrażliwość:** USD (-0.18) > GBP (-0.15) > EUR (-0.12)  
+**Zastrzeżenie:** Model ma charakter edukacyjny. Rzeczywiste kursy zależą od wielu czynników.
+""")
