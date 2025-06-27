@@ -359,23 +359,38 @@ with tab2:
     
     df_sensitivity = pd.DataFrame(sensitivity_data)
     
-    # Wykres wrażliwości
+    # Wykres wrażliwości z dwoma osiami Y
     fig_sens = go.Figure()
+    
+    # EUR i USD na lewej osi
     fig_sens.add_trace(go.Scatter(x=df_sensitivity["Realna_Stopa"], y=df_sensitivity["EUR_PLN"], 
-                                 name="EUR/PLN", line=dict(color=color, width=3), mode='lines'))
+                                 name="EUR/PLN", line=dict(color="#4f46e5", width=3), mode='lines',
+                                 yaxis="y"))
     fig_sens.add_trace(go.Scatter(x=df_sensitivity["Realna_Stopa"], y=df_sensitivity["USD_PLN"], 
-                                 name="USD/PLN", line=dict(color=color, width=3, dash='dash'), mode='lines'))
+                                 name="USD/PLN", line=dict(color="#059669", width=3), mode='lines',
+                                 yaxis="y"))
+    
+    # GBP na prawej osi
     fig_sens.add_trace(go.Scatter(x=df_sensitivity["Realna_Stopa"], y=df_sensitivity["GBP_PLN"], 
-                                 name="GBP/PLN", line=dict(color=color, width=3, dash='dot'), mode='lines'))
+                                 name="GBP/PLN", line=dict(color="#dc2626", width=3), mode='lines',
+                                 yaxis="y2"))
     
     # Dodanie linii dla obecnej realnej stopy
-    fig_sens.add_vline(x=real_rate, line_dash="dash", line_color="red", 
+    fig_sens.add_vline(x=real_rate, line_dash="dash", line_color="gray", 
                       annotation_text=f"Obecna Realna Stopa: {real_rate:.1f}%")
     
     fig_sens.update_layout(
         title="Wrażliwość Kursów Walut na Realną Stopę Procentową",
         xaxis_title="Realna Stopa Procentowa (%)",
-        yaxis_title="Prognozowany Kurs (PLN)",
+        yaxis=dict(
+            title="EUR/PLN i USD/PLN",
+            side="left"
+        ),
+        yaxis2=dict(
+            title="GBP/PLN",
+            side="right",
+            overlaying="y"
+        ),
         height=500
     )
     
