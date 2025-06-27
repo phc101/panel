@@ -1,7 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
 import numpy as np
 from datetime import datetime, timedelta
 
@@ -133,23 +131,15 @@ with tab1:
     
     df_projection = pd.DataFrame(projection_data)
     
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_projection["Miesiąc"], y=df_projection["EUR"], 
-                            name="EUR/PLN", line=dict(color="#4f46e5", width=3)))
-    fig.add_trace(go.Scatter(x=df_projection["Miesiąc"], y=df_projection["USD"], 
-                            name="USD/PLN", line=dict(color="#059669", width=3), yaxis="y2"))
-    fig.add_trace(go.Scatter(x=df_projection["Miesiąc"], y=df_projection["GBP"], 
-                            name="GBP/PLN", line=dict(color="#dc2626", width=3), yaxis="y3"))
+    st.subheader(f"Prognoza kursów na {time_horizon} miesięcy")
     
-    fig.update_layout(
-        title=f"Prognoza kursów na {time_horizon} miesięcy",
-        xaxis_title="Miesiące od dziś",
-        yaxis=dict(title="EUR/PLN, USD/PLN", side="left"),
-        yaxis2=dict(overlaying="y", side="right", title="GBP/PLN"),
-        height=500
-    )
+    # Używamy native Streamlit line chart
+    chart_data = df_projection.set_index('Miesiąc')[['EUR', 'USD', 'GBP']]
+    st.line_chart(chart_data, height=400)
     
-    st.plotly_chart(fig, use_container_width=True)
+    # Tabela z danymi
+    st.subheader("Dane szczegółowe")
+    st.dataframe(df_projection[['Data', 'EUR', 'USD', 'GBP']].round(4))
 
 with tab2:
     currency_choice = st.selectbox("Wybierz parę walutową:", ["EUR", "USD", "GBP"])
@@ -168,12 +158,14 @@ with tab2:
     
     df_sensitivity = pd.DataFrame(sensitivity_data)
     
-    fig = px.line(df_sensitivity, x="Zmiana realnej stopy", y=currency_choice,
-                  title=f"Wrażliwość kursu {currency_choice}/PLN na zmiany realnej stopy")
-    fig.add_vline(x=0, line_dash="dash", line_color="gray")
-    fig.update_traces(line_width=3)
+    st.subheader(f"Wrażliwość kursu {currency_choice}/PLN na zmiany realnej stopy")
     
-    st.plotly_chart(fig, use_container_width=True)
+    # Line chart
+    chart_data = df_sensitivity.set_index('Zmiana realnej stopy')
+    st.line_chart(chart_data)
+    
+    # Tabela
+    st.dataframe(df_sensitivity.round(4))
 
 with tab3:
     # Dane historyczne
@@ -188,11 +180,15 @@ with tab3:
     df_historical = pd.DataFrame(historical_data)
     currency_hist = st.selectbox("Wybierz parę walutową:", ["EUR", "USD", "GBP"], key="hist")
     
-    fig = px.scatter(df_historical, x="Realna stopa", y=currency_hist,
-                     title=f"Korelacja historyczna: Realna stopa vs {currency_hist}/PLN",
-                     hover_data=["Data"])
+    st.subheader(f"Korelacja historyczna: Realna stopa vs {currency_hist}/PLN")
     
-    st.plotly_chart(fig, use_container_width=True)
+    # Scatter plot using native Streamlit
+    scatter_data = df_historical[['Realna stopa', currency_hist]]
+    st.scatter_chart(scatter_data.set_index('Realna stopa'))
+    
+    # Tabela historyczna
+    st.subheader("Dane historyczne")
+    st.dataframe(df_historical)
 
 # Footer
 st.markdown("---")
