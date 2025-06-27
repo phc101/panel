@@ -270,12 +270,11 @@ for i, currency in enumerate(currencies):
         
         # Zakresy percentyli
         st.markdown(f"""
-        **📊 Zakres Ufności @ {real_rate:.1f}% realnej stopy:**
-        - **25. percentyl**: {pred['p25']:.4f} (prawdopodobnie niski)
-        - **75. percentyl**: {pred['p75']:.4f} (prawdopodobnie wysoki)
-        - **90. percentyl**: {pred['p90']:.4f} (scenariusz wysoki)
+        **🎯 Zakres 50% ufności:** {pred['p25']:.4f} - {pred['p75']:.4f}
         
-        **🎯 Najbardziej Prawdopodobny**: {pred['p25']:.4f} - {pred['p75']:.4f} (50% ufności)
+        **📊 Scenariusze @ {real_rate:.1f}% realnej stopy:**
+        - Optymistyczny: {pred['p25']:.4f}
+        - Pesymistyczny: {pred['p75']:.4f}
         """)
 
 # Sekcja wykresów
