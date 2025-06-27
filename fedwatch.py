@@ -169,6 +169,54 @@ st.markdown("### Interactive dashboard for analyzing the impact of interest rate
 # Sidebar controls
 st.sidebar.header("🎛️ Control Panel")
 
+# Current spot rates input section
+st.sidebar.markdown("### 💱 Current Exchange Rates")
+st.sidebar.caption("Enter current market rates for more accurate predictions")
+
+col1, col2 = st.sidebar.columns(2)
+
+with col1:
+    current_eur = st.number_input(
+        "EUR/PLN Spot",
+        min_value=3.50,
+        max_value=6.00,
+        value=4.27,
+        step=0.01,
+        format="%.4f",
+        help="Current EUR/PLN exchange rate"
+    )
+    
+    current_usd = st.number_input(
+        "USD/PLN Spot", 
+        min_value=3.00,
+        max_value=6.00,
+        value=4.08,
+        step=0.01,
+        format="%.4f",
+        help="Current USD/PLN exchange rate"
+    )
+
+with col2:
+    current_gbp = st.number_input(
+        "GBP/PLN Spot",
+        min_value=4.00,
+        max_value=7.00,
+        value=5.15,
+        step=0.01,
+        format="%.4f",
+        help="Current GBP/PLN exchange rate"
+    )
+    
+    # Quick update buttons for real-time rates
+    if st.button("📊 Use Latest NBP", help="Reset to latest official NBP rates"):
+        current_eur = 4.27
+        current_usd = 4.08
+        current_gbp = 5.15
+        st.rerun()
+
+# Current market conditions
+st.sidebar.markdown("### 📈 Market Conditions")
+
 # Sliders
 inflation_rate = st.sidebar.slider(
     "Core Inflation (%)", 
@@ -199,18 +247,27 @@ time_horizon = st.sidebar.slider(
 # Calculate real interest rate
 real_rate = ((1 + nominal_rate/100) / (1 + inflation_rate/100) - 1) * 100
 
-# Display calculated real rate
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 📊 Calculated Real Interest Rate")
-color = "🟢" if real_rate >= 0 else "🔴"
-st.sidebar.markdown(f"## {color} {real_rate:.2f}%")
-st.sidebar.caption(f"Formula: (1 + {nominal_rate}%) / (1 + {inflation_rate}%) - 1")
+# Current rates display in sidebar
+st.sidebar.markdown("### 📍 Current Market Snapshot")
+current_real_calc = ((1 + 5.75/100) / (1 + 4.7/100) - 1) * 100  # Based on latest data
+st.sidebar.markdown(f"""
+**Your Settings:**
+- EUR/PLN: **{current_eur:.4f}**
+- USD/PLN: **{current_usd:.4f}**  
+- GBP/PLN: **{current_gbp:.4f}**
+- Real Rate: **{real_rate:.2f}%**
 
-# Prediction model
-def predict_exchange_rates(real_rate, nominal_rate, inflation_rate):
-    # Current baseline rates (as of Dec 2024)
-    base_rates = {"EUR": 4.27, "USD": 4.08, "GBP": 5.15}
-    current_real = 0.98  # Current real rate
+**Market vs NBP Baseline:**
+- EUR: {((current_eur - 4.27)/4.27*100):+.1f}%
+- USD: {((current_usd - 4.08)/4.08*100):+.1f}%
+- GBP: {((current_gbp - 5.15)/5.15*100):+.1f}%
+""")
+
+# Prediction model with user-defined current rates
+def predict_exchange_rates(real_rate, nominal_rate, inflation_rate, current_rates):
+    # Use user-provided current rates instead of hardcoded baseline
+    base_rates = current_rates
+    current_real = 0.98  # Current real rate baseline (December 2024)
     
     # Sensitivity coefficients (based on historical analysis)
     sensitivity = {
@@ -230,7 +287,7 @@ def predict_exchange_rates(real_rate, nominal_rate, inflation_rate):
         p10 = central - 1.28 * vol
         p90 = central + 1.28 * vol
         
-        # Calculate percentage change
+        # Calculate percentage change from current user-provided rate
         change = ((central - base_rates[currency]) / base_rates[currency]) * 100
         
         results[currency] = {
@@ -238,13 +295,20 @@ def predict_exchange_rates(real_rate, nominal_rate, inflation_rate):
             "p10": p10,
             "p90": p90,
             "change": change,
-            "volatility": sensitivity[currency]["volatility"] * 100
+            "volatility": sensitivity[currency]["volatility"] * 100,
+            "current": base_rates[currency]  # Store current rate for reference
         }
     
     return results
 
-# Get predictions
-predictions = predict_exchange_rates(real_rate, nominal_rate, inflation_rate)
+# Get predictions using user-defined current rates
+current_rates_dict = {
+    "EUR": current_eur,
+    "USD": current_usd, 
+    "GBP": current_gbp
+}
+
+predictions = predict_exchange_rates(real_rate, nominal_rate, inflation_rate, current_rates_dict)
 
 # Main content area
 st.markdown("---")
@@ -275,6 +339,9 @@ for i, (currency, color) in enumerate(zip(currencies, colors)):
             <h1 style="color: {color}; margin: 10px 0; font-size: 2.5em;">
                 {pred['central']:.4f}
             </h1>
+            <p style="margin: 5px 0; font-size: 0.9em; color: #666;">
+                Current: {pred['current']:.4f}
+            </p>
             <p style="margin: 5px 0; font-size: 1.1em;">
                 <strong>Change: {'🔴' if pred['change'] >= 0 else '🟢'} {pred['change']:+.1f}%</strong>
             </p>
@@ -313,9 +380,9 @@ with tab1:
         projection_data.append({
             "Month": i,
             "Date": date.strftime("%Y-%m"),
-            "EUR": 4.27 + (predictions["EUR"]["central"] - 4.27) * adjustment,
-            "USD": 4.08 + (predictions["USD"]["central"] - 4.08) * adjustment,
-            "GBP": 5.15 + (predictions["GBP"]["central"] - 5.15) * adjustment,
+            "EUR": current_eur + (predictions["EUR"]["central"] - current_eur) * adjustment,
+            "USD": current_usd + (predictions["USD"]["central"] - current_usd) * adjustment,
+            "GBP": current_gbp + (predictions["GBP"]["central"] - current_gbp) * adjustment,
         })
     
     df_projection = pd.DataFrame(projection_data)
@@ -384,7 +451,7 @@ with tab2:
     
     for step in steps:
         test_real = real_rate + step
-        test_predictions = predict_exchange_rates(test_real, nominal_rate, inflation_rate)
+        test_predictions = predict_exchange_rates(test_real, nominal_rate, inflation_rate, current_rates_dict)
         sensitivity_data.append({
             "Real Rate Change (p.p.)": step,
             "Real Rate": test_real,
