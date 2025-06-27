@@ -11,6 +11,96 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Dane historyczne - używane do kalibracji modelu
+historical_data = {
+    "Data": ["2014-01", "2015-01", "2020-05", "2021-12", "2022-06", "2024-06"],
+    "Realna stopa": [1.99, 3.45, -3.19, -6.31, -5.19, 3.07],
+    "EUR": [4.18, 4.25, 4.46, 4.60, 4.46, 4.32],
+    "USD": [3.07, 3.64, 4.04, 4.06, 4.26, 4.01],
+    "GBP": [5.05, 5.45, 4.95, 5.45, 5.28, 5.10]
+}
+
+# Funkcja do obliczania parametrów modelu z danych historycznych
+def calibrate_model(historical_data):
+    df_hist = pd.DataFrame(historical_data)
+    
+    # Obliczamy korelacje i wrażliwości z danych rzeczywistych
+    results = {}
+    currencies = ["EUR", "USD", "GBP"]
+    
+    for currency in currencies:
+        # Obliczanie współczynnika regresji (wrażliwość na realną stopę)
+        x = df_hist["Realna stopa"].values
+        y = df_hist[currency].values
+        
+        # Prosta regresja liniowa: y = a + b*x
+        n = len(x)
+        sum_x = np.sum(x)
+        sum_y = np.sum(y)
+        sum_xy = np.sum(x * y)
+        sum_x2 = np.sum(x * x)
+        
+        # Współczynnik regresji (slope)
+        slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x)
+        
+        # Intercept
+        intercept = (sum_y - slope * sum_x) / n
+        
+        # Obliczanie volatility (standard deviation of residuals)
+        y_pred = intercept + slope * x
+        residuals = y - y_pred
+        volatility = np.std(residuals) / np.mean(y)  # Relative volatility
+        
+        # Korelacja
+        correlation = np.corrcoef(x, y)[0, 1]
+        
+        # Current base rate (ostatnia wartość historyczna)
+        base_rate = df_hist[currency].iloc[-1]
+        
+        results[currency] = {
+            "slope": slope,
+            "intercept": intercept,
+            "volatility": volatility,
+            "correlation": correlation,
+            "base_rate": base_rate
+        }
+    
+    return results
+
+# Kalibracja modelu na danych historycznych
+model_params = calibrate_model(historical_data)
+
+# Model predykcyjny używający rzeczywistych parametrów z 10 lat danych
+def predict_exchange_rates(real_rate, nominal_rate, inflation_rate):
+    results = {}
+    
+    # Średnia historyczna realnej stopy (punkt odniesienia)
+    df_hist = pd.DataFrame(historical_data)
+    mean_historical_real_rate = df_hist["Realna stopa"].mean()
+    
+    for currency in ["EUR", "USD", "GBP"]:
+        params = model_params[currency]
+        
+        # Predykcja na podstawie regresji liniowej z danych historycznych
+        predicted_rate = params["intercept"] + params["slope"] * real_rate
+        
+        # Obliczenie zmiany względem obecnej bazy
+        change = ((predicted_rate - params["base_rate"]) / params["base_rate"]) * 100
+        
+        # Przedziały ufności na podstawie volatility historycznej
+        vol = params["volatility"] * predicted_rate
+        
+        results[currency] = {
+            "central": predicted_rate,
+            "p10": predicted_rate - 1.28 * vol,
+            "p90": predicted_rate + 1.28 * vol,
+            "change": change,
+            "correlation": params["correlation"],
+            "slope": params["slope"]
+        }
+    
+    return results
+
 # Tytuł
 st.title("💱 Symulator Kursów Walut - Wpływ Stóp Procentowych")
 
