@@ -320,7 +320,7 @@ with tab1:
     
     df_projection = pd.DataFrame(projection_data)
     
-    # Create plotly chart
+    # Create plotly chart with proper scaling
     fig = go.Figure()
     
     # Add traces for each currency
@@ -348,10 +348,16 @@ with tab1:
         mode='lines+markers'
     ))
     
+    # Calculate min-max range for Y-axis scaling
+    all_values = list(df_projection["EUR"]) + list(df_projection["USD"]) + list(df_projection["GBP"])
+    y_min = min(all_values) * 0.99  # 1% padding
+    y_max = max(all_values) * 1.01  # 1% padding
+    
     fig.update_layout(
         title=f"Exchange Rate Forecast - {time_horizon} Months",
         xaxis_title="Months from Now",
         yaxis_title="Exchange Rate (PLN)",
+        yaxis=dict(range=[y_min, y_max], tickformat='.2f'),
         height=500,
         hovermode='x unified'
     )
@@ -387,7 +393,7 @@ with tab2:
     
     df_sensitivity = pd.DataFrame(sensitivity_data)
     
-    # Create sensitivity chart
+    # Create sensitivity chart with proper scaling
     fig = px.line(
         df_sensitivity, 
         x="Real Rate Change (p.p.)", 
@@ -398,7 +404,17 @@ with tab2:
     
     fig.add_vline(x=0, line_dash="dash", line_color="gray", annotation_text="Current Level")
     fig.update_traces(line_width=3)
-    fig.update_layout(height=500)
+    
+    # Scale Y-axis to min-max range
+    y_values = df_sensitivity[selected_currency]
+    y_min = y_values.min() * 0.99
+    y_max = y_values.max() * 1.01
+    
+    fig.update_layout(
+        height=500,
+        yaxis=dict(range=[y_min, y_max], tickformat='.2f'),
+        xaxis=dict(tickformat='+.1f')
+    )
     
     st.plotly_chart(fig, use_container_width=True)
     
@@ -421,7 +437,7 @@ with tab3:
         key="hist_currency"
     )
     
-    # Create scatter plot of historical data
+    # Create scatter plot of historical data with proper scaling
     fig = px.scatter(
         df, 
         x="real_interest_rate", 
@@ -450,7 +466,20 @@ with tab3:
         line=dict(color='red', dash='dash', width=2)
     ))
     
-    fig.update_layout(height=500)
+    # Scale both axes to min-max range
+    x_values = df['real_interest_rate']
+    y_values = df[f'{hist_currency.lower()}_pln']
+    
+    x_min = x_values.min() * 1.05  # 5% padding for negatives
+    x_max = x_values.max() * 1.05
+    y_min = y_values.min() * 0.98  # 2% padding
+    y_max = y_values.max() * 1.02
+    
+    fig.update_layout(
+        height=500,
+        xaxis=dict(range=[x_min, x_max], tickformat='.1f'),
+        yaxis=dict(range=[y_min, y_max], tickformat='.2f')
+    )
     
     st.plotly_chart(fig, use_container_width=True)
     
