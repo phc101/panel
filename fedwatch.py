@@ -17,7 +17,6 @@ st.set_page_config(
 # Load data
 @st.cache_data
 def load_data():
-    # Complete financial dataset
     data = """date,year,month,inflation_rate,nbp_reference_rate,real_interest_rate,eur_pln,usd_pln,gbp_pln
 2014-01,2014,1,0.5,2.50,1.99,4.1776,3.0650,5.0507
 2014-02,2014,2,0.7,2.50,1.78,4.1786,3.0613,5.0658
@@ -351,8 +350,8 @@ for i, (currency, color) in enumerate(zip(currencies, colors)):
             <p style="margin: 5px 0; font-size: 1.1em;">
                 <strong>Change: {'🔴' if pred['change'] >= 0 else '🟢'} {pred['change']:+.1f}%</strong>
             </p>
-            <p style="margin: 5px 0; font-size: 0.9em;">
-                Volatility: {pred['volatility']:.1f}%
+            <p style="margin: 5px 0; font-size: 0.9em; color: #666;">
+                Model Uncertainty: ±{pred['model_uncertainty']:.1f}%
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -403,14 +402,6 @@ with tab1:
     # Add traces for each currency
     fig.add_trace(go.Scatter(
         x=df_projection["Month"], 
-        y=df_projection["EUR"], 
-        name="EUR/PLN", 
-        line=dict(color="#4f46e5", width=3),
-        mode='lines+markers'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=df_projection["Month"], 
         y=df_projection["USD"], 
         name="USD/PLN", 
         line=dict(color="#059669", width=3),
@@ -441,9 +432,6 @@ with tab1:
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Show forecast table with percentiles
-    st.markdown("#### Forecast Data with Confidence Intervals")
-    
     # Add percentile bands to projection data
     projection_with_bands = df_projection.copy()
     
@@ -463,6 +451,9 @@ with tab1:
             
             projection_with_bands.loc[i, f"{currency}_P25"] = adjusted_central - 0.67 * model_uncertainty
             projection_with_bands.loc[i, f"{currency}_P75"] = adjusted_central + 0.67 * model_uncertainty
+    
+    # Show forecast table with percentiles
+    st.markdown("#### Forecast Data with Confidence Intervals")
     
     # Display enhanced forecast table
     display_cols = ["Month", "Date", "EUR", "EUR_P25", "EUR_P75", "USD", "USD_P25", "USD_P75", "GBP", "GBP_P25", "GBP_P75"]
@@ -655,7 +646,7 @@ with col1:
     ### 📊 **Calculation Methods**
     - **Real Interest Rate**: (1 + nominal) / (1 + inflation) - 1
     - **Sensitivity Coefficients**: USD (-0.18) > GBP (-0.15) > EUR (-0.12)
-    - **Percentiles**: Normal distribution with historical volatility
+    - **Percentiles**: Model uncertainty around specific real rate scenarios
     - **Adjustment Period**: 6 months for full market response
     """)
 
@@ -697,7 +688,9 @@ with col2:
             help="Projected rates with 25th/75th percentile confidence bands"
         )
 
-        st.markdown("### ⚠️ Important Disclaimers")
+# Footer with disclaimers
+st.markdown("---")
+st.markdown("### ⚠️ Important Disclaimers")
 
 st.warning("""
 **Educational Purpose Only**: This tool is designed for educational and analytical purposes. 
@@ -760,4 +753,12 @@ streamlit run app.py
 2. Go to [share.streamlit.io](https://share.streamlit.io)
 3. Connect your GitHub repo
 4. Deploy automatically!
-""")
+""")Scatter(
+        x=df_projection["Month"], 
+        y=df_projection["EUR"], 
+        name="EUR/PLN", 
+        line=dict(color="#4f46e5", width=3),
+        mode='lines+markers'
+    ))
+    
+    fig.add_trace(go.
