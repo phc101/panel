@@ -520,9 +520,9 @@ with tab2:
     
     # Sensitivity coefficient info
     sensitivity_info = {
-        "EUR": "EUR is least sensitive to real rate changes (-0.12 coefficient)",
-        "USD": "USD is most sensitive to real rate changes (-0.18 coefficient)", 
-        "GBP": "GBP has medium sensitivity to real rate changes (-0.15 coefficient)"
+        "EUR": "EUR is least sensitive to real rate changes (-0.12 coefficient), ±3% model uncertainty",
+        "USD": "USD is most sensitive to real rate changes (-0.18 coefficient), ±5% model uncertainty", 
+        "GBP": "GBP has medium sensitivity to real rate changes (-0.15 coefficient), ±4% model uncertainty"
     }
     
     st.info(f"**Interpretation:** {sensitivity_info[selected_currency]}")
@@ -740,6 +740,7 @@ st.sidebar.markdown(f"""
 - **Data Points**: {len(df)} monthly observations
 - **Time Span**: 2014-2025 ({len(df)//12:.1f} years)
 - **Last Update**: May 2025
+- **Model Type**: Real rate sensitivity with uncertainty bands
 """)
 
 # Run instructions at the bottom
