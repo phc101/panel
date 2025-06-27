@@ -282,10 +282,12 @@ def predict_exchange_rates(real_rate, nominal_rate, inflation_rate, current_rate
         real_impact = (real_rate - current_real) * sensitivity[currency]["real"]
         central = base_rates[currency] + real_impact
         
-        # Calculate percentiles (10th and 90th)
+        # Calculate percentiles (10th, 25th, 75th, and 90th)
         vol = sensitivity[currency]["volatility"] * central
-        p10 = central - 1.28 * vol
-        p90 = central + 1.28 * vol
+        p10 = central - 1.28 * vol    # 10th percentile
+        p25 = central - 0.67 * vol    # 25th percentile (Q1)
+        p75 = central + 0.67 * vol    # 75th percentile (Q3)
+        p90 = central + 1.28 * vol    # 90th percentile
         
         # Calculate percentage change from current user-provided rate
         change = ((central - base_rates[currency]) / base_rates[currency]) * 100
@@ -293,6 +295,8 @@ def predict_exchange_rates(real_rate, nominal_rate, inflation_rate, current_rate
         results[currency] = {
             "central": central,
             "p10": p10,
+            "p25": p25,
+            "p75": p75,
             "p90": p90,
             "change": change,
             "volatility": sensitivity[currency]["volatility"] * 100,
@@ -351,11 +355,15 @@ for i, (currency, color) in enumerate(zip(currencies, colors)):
         </div>
         """, unsafe_allow_html=True)
         
-        # Percentile information
+        # Percentile information with enhanced ranges
         st.markdown(f"""
-        **Risk Range:**
-        - 10th percentile: **{pred['p10']:.4f}** (optimistic)
-        - 90th percentile: **{pred['p90']:.4f}** (pessimistic)
+        **📊 Risk Analysis:**
+        - **10th percentile**: {pred['p10']:.4f} (pessimistic - 10% chance lower)
+        - **25th percentile**: {pred['p25']:.4f} (likely low end)
+        - **75th percentile**: {pred['p75']:.4f} (likely high end)  
+        - **90th percentile**: {pred['p90']:.4f} (optimistic - 10% chance higher)
+        
+        **🎯 Most Likely Range**: {pred['p25']:.4f} - {pred['p75']:.4f} (50% probability)
         """)
 
 st.markdown("---")
@@ -431,9 +439,29 @@ with tab1:
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Show forecast table
-    st.markdown("#### Forecast Data")
-    st.dataframe(df_projection.round(4), use_container_width=True)
+    # Show forecast table with percentiles
+    st.markdown("#### Forecast Data with Confidence Intervals")
+    
+    # Add percentile bands to projection data
+    projection_with_bands = df_projection.copy()
+    
+    for i, row in projection_with_bands.iterrows():
+        adjustment = min(i / 6, 1)
+        
+        # Calculate percentile bands for each currency
+        for currency in ["EUR", "USD", "GBP"]:
+            current_rate = current_rates_dict[currency]
+            target_rate = predictions[currency]["central"]
+            
+            # Calculate adjusted percentiles
+            vol_adjustment = predictions[currency]["volatility"] / 100 * (current_rate + (target_rate - current_rate) * adjustment)
+            
+            projection_with_bands.loc[i, f"{currency}_P25"] = row[currency] - 0.67 * vol_adjustment
+            projection_with_bands.loc[i, f"{currency}_P75"] = row[currency] + 0.67 * vol_adjustment
+    
+    # Display enhanced forecast table
+    display_cols = ["Month", "Date", "EUR", "EUR_P25", "EUR_P75", "USD", "USD_P25", "USD_P75", "GBP", "GBP_P25", "GBP_P75"]
+    st.dataframe(projection_with_bands[display_cols].round(4), use_container_width=True)
 
 with tab2:
     st.markdown("### Sensitivity Analysis")
@@ -653,20 +681,18 @@ with col1:
     )
 
 with col2:
-    # Download forecast data
-    if 'df_projection' in locals():
-        forecast_csv = df_projection.to_csv(index=False)
+    # Download forecast data with percentiles
+    if 'projection_with_bands' in locals():
+        forecast_csv = projection_with_bands.to_csv(index=False)
         st.download_button(
-            label="📥 Download Forecast Data (CSV)",
+            label="📥 Download Forecast with Bands (CSV)",
             data=forecast_csv,
-            file_name=f"exchange_rate_forecast_{time_horizon}m.csv",
+            file_name=f"exchange_rate_forecast_with_bands_{time_horizon}m.csv",
             mime="text/csv",
-            help="Projected exchange rates based on current settings"
+            help="Projected rates with 25th/75th percentile confidence bands"
         )
 
-# Footer with disclaimers
-st.markdown("---")
-st.markdown("### ⚠️ Important Disclaimers")
+        st.markdown("### ⚠️ Important Disclaimers")
 
 st.warning("""
 **Educational Purpose Only**: This tool is designed for educational and analytical purposes. 
@@ -681,6 +707,12 @@ that may not hold in future market conditions.
 """)
 
 st.info("""
+**📊 Percentile Interpretation:**
+- **25th-75th percentile**: Most realistic range (50% probability)
+- **10th-90th percentile**: Wide range covering 80% of possible outcomes
+- **Central prediction**: Most likely single outcome
+- **Volatility**: Expected annual price swings based on historical data
+
 **About the Model**: Based on 10+ years of historical NBP data (2014-2025) and established 
 economic relationships between real interest rates and exchange rates. 
 Sensitivity coefficients derived from regression analysis of historical data.
