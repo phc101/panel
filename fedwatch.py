@@ -637,11 +637,11 @@ with col3:
     )
 
 with col4:
-    current_vol = np.std([pred['volatility'] for pred in predictions.values()])
+    current_uncertainty = np.mean([pred['model_uncertainty'] for pred in predictions.values()])
     st.metric(
-        "Average Volatility",
-        f"{current_vol:.1f}%",
-        help="Expected annual volatility across currencies"
+        "Average Model Uncertainty",
+        f"±{current_uncertainty:.1f}%",
+        help="Model prediction uncertainty across currencies"
     )
 
 # Model methodology
