@@ -271,9 +271,9 @@ def predict_exchange_rates(real_rate, nominal_rate, inflation_rate, current_rate
     
     # Sensitivity coefficients (based on historical analysis)
     sensitivity = {
-        "EUR": {"real": -0.12, "volatility": 0.08},
-        "USD": {"real": -0.18, "volatility": 0.12},
-        "GBP": {"real": -0.15, "volatility": 0.10}
+        "EUR": {"real": -0.12, "model_uncertainty": 0.03},  # ±3% model uncertainty
+        "USD": {"real": -0.18, "model_uncertainty": 0.05},  # ±5% model uncertainty 
+        "GBP": {"real": -0.15, "model_uncertainty": 0.04}   # ±4% model uncertainty
     }
     
     results = {}
@@ -282,12 +282,14 @@ def predict_exchange_rates(real_rate, nominal_rate, inflation_rate, current_rate
         real_impact = (real_rate - current_real) * sensitivity[currency]["real"]
         central = base_rates[currency] + real_impact
         
-        # Calculate percentiles (10th, 25th, 75th, and 90th)
-        vol = sensitivity[currency]["volatility"] * central
-        p10 = central - 1.28 * vol    # 10th percentile
-        p25 = central - 0.67 * vol    # 25th percentile (Q1)
-        p75 = central + 0.67 * vol    # 75th percentile (Q3)
-        p90 = central + 1.28 * vol    # 90th percentile
+        # Calculate percentiles based on MODEL UNCERTAINTY at this specific real rate
+        # This represents uncertainty in the model's prediction, not general market volatility
+        model_std = sensitivity[currency]["model_uncertainty"] * central
+        
+        p10 = central - 1.28 * model_std    # 10th percentile (model uncertainty)
+        p25 = central - 0.67 * model_std    # 25th percentile (model uncertainty)
+        p75 = central + 0.67 * model_std    # 75th percentile (model uncertainty)
+        p90 = central + 1.28 * model_std    # 90th percentile (model uncertainty)
         
         # Calculate percentage change from current user-provided rate
         change = ((central - base_rates[currency]) / base_rates[currency]) * 100
@@ -299,7 +301,7 @@ def predict_exchange_rates(real_rate, nominal_rate, inflation_rate, current_rate
             "p75": p75,
             "p90": p90,
             "change": change,
-            "volatility": sensitivity[currency]["volatility"] * 100,
+            "model_uncertainty": sensitivity[currency]["model_uncertainty"] * 100,
             "current": base_rates[currency]  # Store current rate for reference
         }
     
@@ -357,13 +359,13 @@ for i, (currency, color) in enumerate(zip(currencies, colors)):
         
         # Percentile information with enhanced ranges
         st.markdown(f"""
-        **📊 Risk Analysis:**
-        - **10th percentile**: {pred['p10']:.4f} (pessimistic - 10% chance lower)
-        - **25th percentile**: {pred['p25']:.4f} (likely low end)
-        - **75th percentile**: {pred['p75']:.4f} (likely high end)  
-        - **90th percentile**: {pred['p90']:.4f} (optimistic - 10% chance higher)
+        **📊 Prediction Confidence (at {real_rate:.1f}% real rate):**
+        - **10th percentile**: {pred['p10']:.4f} (model low estimate)
+        - **25th percentile**: {pred['p25']:.4f} (likely low outcome)
+        - **75th percentile**: {pred['p75']:.4f} (likely high outcome)  
+        - **90th percentile**: {pred['p90']:.4f} (model high estimate)
         
-        **🎯 Most Likely Range**: {pred['p25']:.4f} - {pred['p75']:.4f} (50% probability)
+        **🎯 Most Likely Range**: {pred['p25']:.4f} - {pred['p75']:.4f} (50% confidence)
         """)
 
 st.markdown("---")
@@ -448,16 +450,19 @@ with tab1:
     for i, row in projection_with_bands.iterrows():
         adjustment = min(i / 6, 1)
         
-        # Calculate percentile bands for each currency
+        # Calculate percentile bands for each currency based on MODEL UNCERTAINTY
         for currency in ["EUR", "USD", "GBP"]:
             current_rate = current_rates_dict[currency]
             target_rate = predictions[currency]["central"]
             
-            # Calculate adjusted percentiles
-            vol_adjustment = predictions[currency]["volatility"] / 100 * (current_rate + (target_rate - current_rate) * adjustment)
+            # Progressive adjustment of the central prediction
+            adjusted_central = current_rate + (target_rate - current_rate) * adjustment
             
-            projection_with_bands.loc[i, f"{currency}_P25"] = row[currency] - 0.67 * vol_adjustment
-            projection_with_bands.loc[i, f"{currency}_P75"] = row[currency] + 0.67 * vol_adjustment
+            # Model uncertainty bands around the adjusted central prediction
+            model_uncertainty = predictions[currency]["model_uncertainty"] / 100 * adjusted_central
+            
+            projection_with_bands.loc[i, f"{currency}_P25"] = adjusted_central - 0.67 * model_uncertainty
+            projection_with_bands.loc[i, f"{currency}_P75"] = adjusted_central + 0.67 * model_uncertainty
     
     # Display enhanced forecast table
     display_cols = ["Month", "Date", "EUR", "EUR_P25", "EUR_P75", "USD", "USD_P25", "USD_P75", "GBP", "GBP_P25", "GBP_P75"]
@@ -708,10 +713,13 @@ that may not hold in future market conditions.
 
 st.info("""
 **📊 Percentile Interpretation:**
-- **25th-75th percentile**: Most realistic range (50% probability)
-- **10th-90th percentile**: Wide range covering 80% of possible outcomes
-- **Central prediction**: Most likely single outcome
-- **Volatility**: Expected annual price swings based on historical data
+- **25th-75th percentile**: Model confidence range at your specific real rate (50% confidence)
+- **10th-90th percentile**: Full model uncertainty range (80% confidence) 
+- **Central prediction**: Best estimate given your real rate settings
+- **Model uncertainty**: Inherent imprecision in the economic relationship
+
+**Key Insight**: These ranges show uncertainty in the model's prediction at your chosen real rate,
+not general market volatility. Tighter ranges = higher model confidence.
 
 **About the Model**: Based on 10+ years of historical NBP data (2014-2025) and established 
 economic relationships between real interest rates and exchange rates. 
