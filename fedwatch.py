@@ -6,15 +6,15 @@ import numpy as np
 from datetime import datetime, timedelta
 import io
 
-# Page configuration
+# Konfiguracja strony
 st.set_page_config(
-    page_title="Exchange Rate Simulator",
+    page_title="Symulator Kursów Walut",
     page_icon="💱",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Load data
+# Ładowanie danych
 @st.cache_data
 def load_data():
     data = """date,year,month,inflation_rate,nbp_reference_rate,real_interest_rate,eur_pln,usd_pln,gbp_pln
@@ -157,44 +157,48 @@ def load_data():
 2025-05,2025,5,4.0,5.25,1.20,4.2600,4.0300,5.1000"""
     return pd.read_csv(io.StringIO(data))
 
-# Load data
+# Ładowanie danych
 df = load_data()
 
-# Title
-st.title("💱 Exchange Rate Simulator - Poland")
-st.markdown("### Interactive dashboard for analyzing the impact of interest rates and inflation on PLN exchange rates")
+# Tytuł
+st.title("💱 Symulator Kursów Walut - Polska")
+st.markdown("### Interaktywny panel do analizy wpływu stóp procentowych i inflacji na kursy PLN")
 
-# Sidebar controls
-st.sidebar.header("🎛️ Control Panel")
+# Panel boczny
+st.sidebar.header("🎛️ Panel Sterowania")
 
-# Current spot rates
-st.sidebar.markdown("### 💱 Current Exchange Rates")
+# Obecne kursy spot
+st.sidebar.markdown("### 💱 Obecne Kursy Walut")
 col1, col2 = st.sidebar.columns(2)
 
 with col1:
-    current_eur = st.number_input("EUR/PLN", min_value=3.50, max_value=6.00, value=4.27, step=0.01, format="%.4f")
-    current_usd = st.number_input("USD/PLN", min_value=3.00, max_value=6.00, value=4.08, step=0.01, format="%.4f")
+    current_eur = st.number_input("EUR/PLN", min_value=3.50, max_value=6.00, value=4.27, step=0.01, format="%.4f", help="Obecny kurs EUR/PLN")
+    current_usd = st.number_input("USD/PLN", min_value=3.00, max_value=6.00, value=4.08, step=0.01, format="%.4f", help="Obecny kurs USD/PLN")
 
 with col2:
-    current_gbp = st.number_input("GBP/PLN", min_value=4.00, max_value=7.00, value=5.15, step=0.01, format="%.4f")
-    if st.button("📊 Use NBP Rates"):
+    current_gbp = st.number_input("GBP/PLN", min_value=4.00, max_value=7.00, value=5.15, step=0.01, format="%.4f", help="Obecny kurs GBP/PLN")
+    if st.button("📊 Użyj Kursów NBP"):
         st.rerun()
 
-# Market conditions
-st.sidebar.markdown("### 📈 Market Conditions")
-inflation_rate = st.sidebar.slider("Core Inflation (%)", -3.0, 15.0, 4.0, 0.1)
-nominal_rate = st.sidebar.slider("NBP Reference Rate (%)", 0.0, 12.0, 5.75, 0.25)
-time_horizon = st.sidebar.slider("Forecast Horizon (months)", 3, 24, 12)
+# Warunki rynkowe
+st.sidebar.markdown("### 📈 Warunki Rynkowe")
+inflation_rate = st.sidebar.slider("Inflacja Bazowa (%)", -3.0, 15.0, 4.0, 0.1, help="Roczna inflacja bazowa")
+nominal_rate = st.sidebar.slider("Stopa Referencyjna NBP (%)", 0.0, 12.0, 5.75, 0.25, help="Stopa referencyjna Narodowego Banku Polskiego")
+time_horizon = st.sidebar.slider("Horyzont Prognozy (miesiące)", 3, 24, 12, help="Długość prognozy kursów walut")
 
-# Calculate real rate
+# Obliczanie realnej stopy procentowej
 real_rate = ((1 + nominal_rate/100) / (1 + inflation_rate/100) - 1) * 100
 
-# Sidebar display
-st.sidebar.markdown(f"**Real Rate: {real_rate:.2f}%**")
+# Wyświetlanie w panelu bocznym
+st.sidebar.markdown(f"**Realna Stopa: {real_rate:.2f}%**")
 
-# Prediction function
+# Funkcja predykcyjna
 def predict_exchange_rates(real_rate, current_rates):
-    sensitivity = {"EUR": {"real": -0.12, "uncertainty": 0.03}, "USD": {"real": -0.18, "uncertainty": 0.05}, "GBP": {"real": -0.15, "uncertainty": 0.04}}
+    sensitivity = {
+        "EUR": {"real": -0.12, "uncertainty": 0.03}, 
+        "USD": {"real": -0.18, "uncertainty": 0.05}, 
+        "GBP": {"real": -0.15, "uncertainty": 0.04}
+    }
     
     results = {}
     for currency in current_rates:
@@ -222,13 +226,13 @@ def predict_exchange_rates(real_rate, current_rates):
     
     return results
 
-# Get predictions
+# Pobranie predykcji
 current_rates = {"EUR": current_eur, "USD": current_usd, "GBP": current_gbp}
 predictions = predict_exchange_rates(real_rate, current_rates)
 
-# Beautiful prediction cards
+# Piękne karty predykcji
 st.markdown("---")
-st.markdown("## 💱 Predicted Exchange Rates")
+st.markdown("## 💱 Prognozowane Kursy Walut")
 
 col1, col2, col3 = st.columns(3)
 currencies = ["EUR", "USD", "GBP"]
@@ -252,46 +256,46 @@ for i, (currency, color) in enumerate(zip(currencies, colors)):
                 {pred['central']:.4f}
             </h1>
             <p style="margin: 5px 0; font-size: 0.9em; color: #666;">
-                Current: {pred['current']:.4f}
+                Obecny: {pred['current']:.4f}
             </p>
             <p style="margin: 5px 0; font-size: 1.1em;">
-                <strong>Change: {'🔴' if pred['change'] >= 0 else '🟢'} {pred['change']:+.1f}%</strong>
+                <strong>Zmiana: {'🔴' if pred['change'] >= 0 else '🟢'} {pred['change']:+.1f}%</strong>
             </p>
             <p style="margin: 5px 0; font-size: 0.9em; color: #666;">
-                Model Uncertainty: ±{pred['uncertainty']:.1f}%
+                Niepewność Modelu: ±{pred['uncertainty']:.1f}%
             </p>
         </div>
         """
         st.markdown(card_html, unsafe_allow_html=True)
         
-        # Percentile ranges
+        # Zakresy percentyli
         st.markdown(f"""
-        **📊 Confidence Range @ {real_rate:.1f}% real rate:**
-        - **25th percentile**: {pred['p25']:.4f} (likely low)
-        - **75th percentile**: {pred['p75']:.4f} (likely high)
-        - **90th percentile**: {pred['p90']:.4f} (model high)
+        **📊 Zakres Ufności @ {real_rate:.1f}% realnej stopy:**
+        - **25. percentyl**: {pred['p25']:.4f} (prawdopodobnie niski)
+        - **75. percentyl**: {pred['p75']:.4f} (prawdopodobnie wysoki)
+        - **90. percentyl**: {pred['p90']:.4f} (model wysoki)
         
-        **🎯 Most Likely**: {pred['p25']:.4f} - {pred['p75']:.4f} (50% confidence)
+        **🎯 Najbardziej Prawdopodobny**: {pred['p25']:.4f} - {pred['p75']:.4f} (50% ufności)
         """)
 
-# Charts section
+# Sekcja wykresów
 st.markdown("---")
-st.markdown("## 📊 Analysis Charts")
+st.markdown("## 📊 Wykresy Analityczne")
 
-tab1, tab2, tab3 = st.tabs(["📈 Time Forecast", "📊 Sensitivity", "🔍 Historical"])
+tab1, tab2, tab3 = st.tabs(["📈 Prognoza Czasowa", "📊 Analiza Wrażliwości", "🔍 Dane Historyczne"])
 
 with tab1:
-    st.markdown("### Exchange Rate Forecast Over Time")
+    st.markdown("### Prognoza Kursów Walut w Czasie")
     
-    # Generate projection
+    # Generowanie projekcji
     dates = [datetime.now() + timedelta(days=30*i) for i in range(time_horizon + 1)]
     projection_data = []
     
     for i, date in enumerate(dates):
         adjustment = min(i / 6, 1)
         projection_data.append({
-            "Month": i,
-            "Date": date.strftime("%Y-%m"),
+            "Miesiąc": i,
+            "Data": date.strftime("%Y-%m"),
             "EUR": current_eur + (predictions["EUR"]["central"] - current_eur) * adjustment,
             "USD": current_usd + (predictions["USD"]["central"] - current_usd) * adjustment,
             "GBP": current_gbp + (predictions["GBP"]["central"] - current_gbp) * adjustment
@@ -299,28 +303,28 @@ with tab1:
     
     df_proj = pd.DataFrame(projection_data)
     
-    # Create chart
+    # Tworzenie wykresu
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_proj["Month"], y=df_proj["EUR"], name="EUR/PLN", line=dict(color="#4f46e5", width=3), mode='lines+markers'))
-    fig.add_trace(go.Scatter(x=df_proj["Month"], y=df_proj["USD"], name="USD/PLN", line=dict(color="#059669", width=3), mode='lines+markers'))
-    fig.add_trace(go.Scatter(x=df_proj["Month"], y=df_proj["GBP"], name="GBP/PLN", line=dict(color="#dc2626", width=3), mode='lines+markers'))
+    fig.add_trace(go.Scatter(x=df_proj["Miesiąc"], y=df_proj["EUR"], name="EUR/PLN", line=dict(color="#4f46e5", width=3), mode='lines+markers'))
+    fig.add_trace(go.Scatter(x=df_proj["Miesiąc"], y=df_proj["USD"], name="USD/PLN", line=dict(color="#059669", width=3), mode='lines+markers'))
+    fig.add_trace(go.Scatter(x=df_proj["Miesiąc"], y=df_proj["GBP"], name="GBP/PLN", line=dict(color="#dc2626", width=3), mode='lines+markers'))
     
-    # Scale axes
+    # Skalowanie osi
     all_values = list(df_proj["EUR"]) + list(df_proj["USD"]) + list(df_proj["GBP"])
     y_min = min(all_values) * 0.99
     y_max = max(all_values) * 1.01
     
     fig.update_layout(
-        title=f"Exchange Rate Forecast - {time_horizon} Months",
-        xaxis_title="Months from Now",
-        yaxis_title="Exchange Rate (PLN)",
+        title=f"Prognoza Kursów Walut - {time_horizon} Miesięcy",
+        xaxis_title="Miesiące od Teraz",
+        yaxis_title="Kurs Walutowy (PLN)",
         yaxis=dict(range=[y_min, y_max], tickformat='.2f'),
         height=500
     )
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Add percentile bands
+    # Dodawanie pasm percentyli
     projection_with_bands = df_proj.copy()
     
     for i, row in projection_with_bands.iterrows():
@@ -334,173 +338,5 @@ with tab1:
             projection_with_bands.loc[i, f"{currency}_P25"] = adjusted_central - 0.67 * model_uncertainty
             projection_with_bands.loc[i, f"{currency}_P75"] = adjusted_central + 0.67 * model_uncertainty
     
-    st.markdown("#### Forecast Data with Confidence Bands")
-    display_cols = ["Month", "Date", "EUR", "EUR_P25", "EUR_P75", "USD", "USD_P25", "USD_P75", "GBP", "GBP_P25", "GBP_P75"]
-    st.dataframe(projection_with_bands[display_cols].round(4), use_container_width=True)
-
-with tab2:
-    st.markdown("### Sensitivity Analysis")
-    
-    selected_currency = st.selectbox("Select Currency:", ["EUR", "USD", "GBP"])
-    
-    steps = np.arange(-3, 3.1, 0.5)
-    sensitivity_data = []
-    
-    for step in steps:
-        test_real = real_rate + step
-        test_pred = predict_exchange_rates(test_real, current_rates)
-        sensitivity_data.append({
-            "Real Rate Change": step,
-            selected_currency: test_pred[selected_currency]["central"]
-        })
-    
-    df_sens = pd.DataFrame(sensitivity_data)
-    
-    fig = px.line(df_sens, x="Real Rate Change", y=selected_currency, title=f"Sensitivity of {selected_currency}/PLN", markers=True)
-    fig.add_vline(x=0, line_dash="dash", annotation_text="Current")
-    fig.update_traces(line_width=3)
-    
-    y_values = df_sens[selected_currency]
-    y_min = y_values.min() * 0.99
-    y_max = y_values.max() * 1.01
-    
-    fig.update_layout(
-        height=500,
-        yaxis=dict(range=[y_min, y_max], tickformat='.2f'),
-        xaxis=dict(tickformat='+.1f')
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-with tab3:
-    st.markdown("### Historical Correlation Analysis")
-    
-    hist_currency = st.selectbox("Select Currency for Analysis:", ["EUR", "USD", "GBP"], key="hist")
-    
-    fig = px.scatter(
-        df, 
-        x="real_interest_rate", 
-        y=f"{hist_currency.lower()}_pln",
-        color="year",
-        title=f"Historical: Real Rate vs {hist_currency}/PLN",
-        hover_data=["date", "inflation_rate", "nbp_reference_rate"]
-    )
-    
-    # Add trend line
-    z = np.polyfit(df['real_interest_rate'], df[f'{hist_currency.lower()}_pln'], 1)
-    p = np.poly1d(z)
-    x_trend = np.linspace(df['real_interest_rate'].min(), df['real_interest_rate'].max(), 100)
-    y_trend = p(x_trend)
-    
-    fig.add_trace(go.Scatter(x=x_trend, y=y_trend, mode='lines', name='Trend', line=dict(color='red', dash='dash', width=2)))
-    
-    # Scale axes
-    x_values = df['real_interest_rate']
-    y_values = df[f'{hist_currency.lower()}_pln']
-    x_min = x_values.min() * 1.05
-    x_max = x_values.max() * 1.05
-    y_min = y_values.min() * 0.98
-    y_max = y_values.max() * 1.02
-    
-    fig.update_layout(
-        height=500,
-        xaxis=dict(range=[x_min, x_max], tickformat='.1f'),
-        yaxis=dict(range=[y_min, y_max], tickformat='.2f')
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Correlation
-    correlation = df['real_interest_rate'].corr(df[f'{hist_currency.lower()}_pln'])
-    st.metric(f"Correlation ({hist_currency}/PLN vs Real Rate)", f"{correlation:.3f}")
-
-# Statistics
-st.markdown("---")
-st.markdown("## 📈 Key Statistics")
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.metric("Current Real Rate", f"{real_rate:.2f}%", f"{real_rate - 0.98:.2f} p.p.")
-
-with col2:
-    avg_real = df['real_interest_rate'].mean()
-    st.metric("Historical Average", f"{avg_real:.2f}%")
-
-with col3:
-    max_real = df['real_interest_rate'].max()
-    min_real = df['real_interest_rate'].min()
-    st.metric("Historical Range", f"{min_real:.1f}% to {max_real:.1f}%")
-
-with col4:
-    avg_uncertainty = np.mean([pred['uncertainty'] for pred in predictions.values()])
-    st.metric("Avg Model Uncertainty", f"±{avg_uncertainty:.1f}%")
-
-# Model methodology
-st.markdown("---")
-st.markdown("## 🔬 Model Methodology")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown("""
-    ### 📊 **Calculation Methods**
-    - **Real Interest Rate**: (1 + nominal) / (1 + inflation) - 1
-    - **Sensitivity**: USD (-0.18) > GBP (-0.15) > EUR (-0.12)
-    - **Percentiles**: Model uncertainty at specific real rate
-    - **Adjustment**: 6 months for full market response
-    """)
-
-with col2:
-    st.markdown("""
-    ### 📋 **Data Sources**
-    - **Exchange Rates**: NBP Table A (monthly averages)
-    - **Reference Rate**: NBP official policy rates
-    - **Core Inflation**: Year-over-year base inflation
-    - **Period**: Jan 2014 - May 2025 (137 observations)
-    """)
-
-# Download section
-st.markdown("---")
-st.markdown("## 💾 Download Data")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    csv_data = df.to_csv(index=False)
-    st.download_button(
-        "📥 Download Historical Data",
-        csv_data,
-        "nbp_exchange_rate_data.csv",
-        "text/csv"
-    )
-
-with col2:
-    if 'projection_with_bands' in locals():
-        forecast_csv = projection_with_bands.to_csv(index=False)
-        st.download_button(
-            "📥 Download Forecast with Bands",
-            forecast_csv,
-            f"forecast_with_bands_{time_horizon}m.csv",
-            "text/csv"
-        )
-
-# Disclaimers
-st.markdown("---")
-st.warning("""
-**Educational Purpose Only**: Not investment advice. Real rates influenced by many factors beyond this model.
-""")
-
-st.info("""
-**Percentile Interpretation**: 25th-75th shows model confidence range at your real rate (50% confidence).
-Model uncertainty represents prediction precision, not market volatility.
-""")
-
-# Sidebar footer
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 📊 Model Info")
-st.sidebar.markdown(f"""
-- **Data Points**: {len(df)} observations
-- **Time Span**: 2014-2025
-- **Model**: Real rate sensitivity
-""")
+    st.markdown("#### Dane Prognozy z Pasmami Ufności")
+    display_cols = ["Miesiąc", "Data", "EUR", "EUR_P25", "EUR_P75", "USD", "USD_P25", "USD_P75", "GBP
