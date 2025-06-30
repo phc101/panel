@@ -397,7 +397,16 @@ with tab1:
             side="right"
         ),
         height=600,
-        hovermode='x unified'
+        hovermode='x unified',
+        legend=dict(
+            x=0.02,
+            y=0.98,
+            xanchor="left",
+            yanchor="top",
+            bgcolor="rgba(255,255,255,0.8)",
+            bordercolor="rgba(0,0,0,0.2)",
+            borderwidth=1
+        )
     )
     
     st.plotly_chart(fig, use_container_width=True)
@@ -413,11 +422,11 @@ with tab1:
     display_df = display_df.rename(columns={
         "Miesiąc": "Miesiąc",
         "Data": "Data",
-        "Central": "Prognoza Centralna",
-        "P10": "10. percentyl",
-        "P25": "25. percentyl", 
-        "P75": "75. percentyl",
-        "P90": "90. percentyl"
+        "Central": "Scenariusz Średni",
+        "P10": "Scenariusz Możliwy (dolny)",
+        "P25": "Scenariusz Prawdopodobny (dolny)", 
+        "P75": "Scenariusz Prawdopodobny (górny)",
+        "P90": "Scenariusz Skrajny (górny)"
     })
     
     st.dataframe(display_df, use_container_width=True, hide_index=True)
