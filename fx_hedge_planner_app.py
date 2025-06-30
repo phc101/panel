@@ -691,7 +691,7 @@ with tab2:
             y=df['actual_eur_pln'],
             mode='lines',
             name='EUR/PLN (Actual)',
-            line=dict(color='#2E86AB', width=4),
+            line=dict(color='#2E86AB', width=2),
             hovertemplate='Actual: %{y:.4f}<br>%{x}<extra></extra>'
         ), secondary_y=False)
         
@@ -701,7 +701,7 @@ with tab2:
             y=df['predicted_eur_pln'],
             mode='lines',
             name='EUR/PLN (Predicted)',
-            line=dict(color='#F24236', width=4, dash='dash'),
+            line=dict(color='#F24236', width=2),
             hovertemplate='Predicted: %{y:.4f}<br>%{x}<extra></extra>'
         ), secondary_y=True)
         
@@ -744,7 +744,7 @@ with tab2:
             y=df['yield_spread'],
             mode='lines',
             name='PL-DE Spread',
-            line=dict(color='#A8E6CF', width=4),
+            line=dict(color='#A8E6CF', width=2),
             fill='tozeroy',
             fillcolor='rgba(168, 230, 207, 0.3)',
             hovertemplate='Spread: %{y:.2f}pp<br>%{x}<extra></extra>'
@@ -755,10 +755,19 @@ with tab2:
                        annotation_text=f"Current: {current_spread:.2f}pp",
                        annotation_position="top right")
         
+        # Auto-scale y-axis to data range with some padding
+        spread_min = df['yield_spread'].min()
+        spread_max = df['yield_spread'].max()
+        spread_range = spread_max - spread_min
+        padding = spread_range * 0.1  # 10% padding
+        
         fig2.update_layout(
             height=450,
             xaxis_title="Date",
             yaxis_title="Yield Spread (pp)",
+            yaxis=dict(
+                range=[spread_min - padding, spread_max + padding]
+            ),
             hovermode='x',
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)'
@@ -985,41 +994,55 @@ with tab2:
     with col1:
         st.markdown("**USD/PLN: Historical vs Predicted**")
         
-        fig_usd1 = go.Figure()
+        # Create dual-axis subplot
+        fig_usd1 = make_subplots(specs=[[{"secondary_y": True}]])
         
-        # Actual USD/PLN
+        # Actual USD/PLN (left axis)
         fig_usd1.add_trace(go.Scatter(
             x=df_usd.index,
             y=df_usd['actual_usd_pln'],
             mode='lines',
             name='USD/PLN (Actual)',
-            line=dict(color='#FF6B35', width=3),
+            line=dict(color='#FF6B35', width=2),
             hovertemplate='Actual: %{y:.4f}<br>%{x}<extra></extra>'
-        ))
+        ), secondary_y=False)
         
-        # Predicted USD/PLN
+        # Predicted USD/PLN (right axis)
         fig_usd1.add_trace(go.Scatter(
             x=df_usd.index,
             y=df_usd['predicted_usd_pln'],
             mode='lines',
             name='USD/PLN (Predicted)',
-            line=dict(color='#004E89', width=3, dash='dash'),
+            line=dict(color='#004E89', width=2),
             hovertemplate='Predicted: %{y:.4f}<br>%{x}<extra></extra>'
-        ))
+        ), secondary_y=True)
+        
+        # Update axes
+        fig_usd1.update_yaxes(
+            title_text="Actual USD/PLN Rate",
+            title_font_color="#FF6B35",
+            tickfont_color="#FF6B35", 
+            secondary_y=False
+        )
+        fig_usd1.update_yaxes(
+            title_text="Predicted USD/PLN Rate",
+            title_font_color="#004E89",
+            tickfont_color="#004E89",
+            secondary_y=True
+        )
         
         fig_usd1.update_layout(
             height=450,
             showlegend=True,
             legend=dict(x=0.02, y=0.98, bgcolor='rgba(255,255,255,0.8)'),
             xaxis_title="Date",
-            yaxis_title="USD/PLN Rate",
             hovermode='x unified',
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)'
         )
         
+        # Add grid
         fig_usd1.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
-        fig_usd1.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
         
         st.plotly_chart(fig_usd1, use_container_width=True)
     
@@ -1033,7 +1056,7 @@ with tab2:
             y=df_usd['yield_spread'],
             mode='lines',
             name='PL-US Spread',
-            line=dict(color='#FFB3BA', width=4),
+            line=dict(color='#FFB3BA', width=2),
             fill='tozeroy',
             fillcolor='rgba(255, 179, 186, 0.3)',
             hovertemplate='Spread: %{y:.2f}pp<br>%{x}<extra></extra>'
@@ -1044,15 +1067,25 @@ with tab2:
                            annotation_text=f"Current: {current_spread_usd:.2f}pp",
                            annotation_position="top right")
         
+        # Auto-scale y-axis to data range with some padding
+        usd_spread_min = df_usd['yield_spread'].min()
+        usd_spread_max = df_usd['yield_spread'].max()
+        usd_spread_range = usd_spread_max - usd_spread_min
+        usd_padding = usd_spread_range * 0.1  # 10% padding
+        
         fig_usd2.update_layout(
             height=450,
             xaxis_title="Date",
             yaxis_title="Yield Spread (pp)",
+            yaxis=dict(
+                range=[usd_spread_min - usd_padding, usd_spread_max + usd_padding]
+            ),
             hovermode='x',
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)'
         )
         
+        # Add grid
         fig_usd2.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
         fig_usd2.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
         
