@@ -229,45 +229,6 @@ st.markdown(
     """, 
     unsafe_allow_html=True
 )
-    
-    def get_multiple_series(self, series_dict):
-        """Get data for multiple FRED series"""
-        results = {}
-        for name, series_id in series_dict.items():
-            data = self.get_series_data(series_id)
-            if data:
-                results[name] = data
-        return results
-    
-    def get_historical_data(self, series_id, start_date, end_date):
-        """Get historical data from FRED API"""
-        params = {
-            'series_id': series_id,
-            'api_key': self.api_key,
-            'file_type': 'json',
-            'start_date': start_date,
-            'end_date': end_date,
-            'frequency': 'd',
-            'aggregation_method': 'avg'
-        }
-        
-        try:
-            response = requests.get(self.base_url, params=params, timeout=15)
-            data = response.json()
-            
-            if 'observations' in data:
-                df_data = []
-                for obs in data['observations']:
-                    if obs['value'] != '.':
-                        df_data.append({
-                            'date': pd.to_datetime(obs['date']),
-                            'value': float(obs['value'])
-                        })
-                return pd.DataFrame(df_data).set_index('date')
-            return pd.DataFrame()
-        except Exception as e:
-            st.warning(f"FRED historical data error for {series_id}: {e}")
-            return pd.DataFrame()
 
 # ============================================================================
 # FX BOND SPREAD DASHBOARD CLASS
