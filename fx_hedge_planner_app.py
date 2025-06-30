@@ -5,7 +5,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
 from datetime import datetime, timedelta
-import yfinance as yf
 
 # Page config
 st.set_page_config(
