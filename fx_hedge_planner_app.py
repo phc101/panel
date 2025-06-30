@@ -66,6 +66,22 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================================
+# HELPER FUNCTIONS - SAFE FORMATTING
+# ============================================================================
+
+def safe_format_days(value, default="N/A"):
+    """Safely format convergence days with None check"""
+    if value is not None and not np.isnan(value):
+        return f"{value:.1f}"
+    return default
+
+def safe_format_percentage(value, default="N/A"):
+    """Safely format percentage with None check"""
+    if value is not None and not np.isnan(value):
+        return f"{value:.1f}%"
+    return default
+
+# ============================================================================
 # FRED API CLIENT CLASS
 # ============================================================================
 
@@ -200,79 +216,6 @@ class FXBondSpreadDashboard:
         return pd.DataFrame({'value': values}, index=dates)
 
 # ============================================================================
-# MAIN APPLICATION
-# ============================================================================
-
-@st.cache_data(ttl=3600)
-def get_fred_bond_data():
-    """Get government bond yields from FRED"""
-    fred_client = FREDAPIClient()
-    bond_series = {
-        'Poland_10Y': 'IRLTLT01PLM156N',
-        'Germany_10Y': 'IRLTLT01DEM156N',
-        'US_10Y': 'DGS10',
-        'US_2Y': 'DGS2',
-        'Euro_Area_10Y': 'IRLTLT01EZM156N'
-    }
-    
-    data = fred_client.get_multiple_series(bond_series)
-    
-    # Interpolate German short-term rates
-    if 'Germany_10Y' in data:
-        de_10y = data['Germany_10Y']['value']
-        data['Germany_9M'] = {
-            'value': max(de_10y - 0.25, 0.1),
-            'date': data['Germany_10Y']['date'],
-            'series_id': 'Interpolated',
-            'source': 'FRED + Interpolation'
-        }
-    
-    return data
-
-@st.cache_data(ttl=3600)
-def get_fred_rates_data():
-    """Get interest rate benchmarks from FRED"""
-    fred_client = FREDAPIClient()
-    rates_series = {
-        'EURIBOR_3M': 'EUR3MTD156N',
-        'Fed_Funds': 'FEDFUNDS',
-        'ECB_Rate': 'IRSTCB01EZM156N'
-    }
-    return fred_client.get_multiple_series(rates_series)
-
-@st.cache_data(ttl=300)
-def get_eur_pln_rate():
-    """Get current EUR/PLN from NBP API"""
-    try:
-        url = "https://api.nbp.pl/api/exchangerates/rates/a/eur/"
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        return {
-            'rate': data['rates'][0]['mid'],
-            'date': data['rates'][0]['effectiveDate'],
-            'source': 'NBP'
-        }
-    except Exception as e:
-        st.warning(f"NBP API error: {e}")
-        return {'rate': 4.25, 'date': 'Fallback', 'source': 'Estimated'}
-
-@st.cache_data(ttl=300)
-def get_usd_pln_rate():
-    """Get current USD/PLN from NBP API"""
-    try:
-        url = "https://api.nbp.pl/api/exchangerates/rates/a/usd/"
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        return {
-            'rate': data['rates'][0]['mid'],
-            'date': data['rates'][0]['effectiveDate'],
-            'source': 'NBP'
-        }
-    except Exception as e:
-        st.warning(f"NBP API error for USD: {e}")
-        return {'rate': 3.85, 'date': 'Fallback', 'source': 'Estimated'}
-
-# ============================================================================
 # CALCULATION FUNCTIONS
 # ============================================================================
 
@@ -345,6 +288,83 @@ def calculate_convergence_days(df, actual_col, predicted_col, tolerance=0.001):
 def calculate_forward_points(spot_rate, forward_rate):
     """Calculate forward points in pips"""
     return (forward_rate - spot_rate) * 10000
+
+# ============================================================================
+# CACHED DATA FUNCTIONS
+# ============================================================================
+
+@st.cache_data(ttl=3600)
+def get_fred_bond_data():
+    """Get government bond yields from FRED"""
+    fred_client = FREDAPIClient()
+    bond_series = {
+        'Poland_10Y': 'IRLTLT01PLM156N',
+        'Germany_10Y': 'IRLTLT01DEM156N',
+        'US_10Y': 'DGS10',
+        'US_2Y': 'DGS2',
+        'Euro_Area_10Y': 'IRLTLT01EZM156N'
+    }
+    
+    data = fred_client.get_multiple_series(bond_series)
+    
+    # Interpolate German short-term rates
+    if 'Germany_10Y' in data:
+        de_10y = data['Germany_10Y']['value']
+        data['Germany_9M'] = {
+            'value': max(de_10y - 0.25, 0.1),
+            'date': data['Germany_10Y']['date'],
+            'series_id': 'Interpolated',
+            'source': 'FRED + Interpolation'
+        }
+    
+    return data
+
+@st.cache_data(ttl=3600)
+def get_fred_rates_data():
+    """Get interest rate benchmarks from FRED"""
+    fred_client = FREDAPIClient()
+    rates_series = {
+        'EURIBOR_3M': 'EUR3MTD156N',
+        'Fed_Funds': 'FEDFUNDS',
+        'ECB_Rate': 'IRSTCB01EZM156N'
+    }
+    return fred_client.get_multiple_series(rates_series)
+
+@st.cache_data(ttl=300)
+def get_eur_pln_rate():
+    """Get current EUR/PLN from NBP API"""
+    try:
+        url = "https://api.nbp.pl/api/exchangerates/rates/a/eur/"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        return {
+            'rate': data['rates'][0]['mid'],
+            'date': data['rates'][0]['effectiveDate'],
+            'source': 'NBP'
+        }
+    except Exception as e:
+        st.warning(f"NBP API error: {e}")
+        return {'rate': 4.25, 'date': 'Fallback', 'source': 'Estimated'}
+
+@st.cache_data(ttl=300)
+def get_usd_pln_rate():
+    """Get current USD/PLN from NBP API"""
+    try:
+        url = "https://api.nbp.pl/api/exchangerates/rates/a/usd/"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        return {
+            'rate': data['rates'][0]['mid'],
+            'date': data['rates'][0]['effectiveDate'],
+            'source': 'NBP'
+        }
+    except Exception as e:
+        st.warning(f"NBP API error for USD: {e}")
+        return {'rate': 3.85, 'date': 'Fallback', 'source': 'Estimated'}
+
+# ============================================================================
+# MAIN APPLICATION
+# ============================================================================
 
 # Header
 st.markdown("""
@@ -607,7 +627,7 @@ with tab1:
     st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================================
-# TAB 2: BOND SPREAD DASHBOARD (EUR/PLN + USD/PLN)
+# TAB 2: BOND SPREAD DASHBOARD (COMPLETE FIXED VERSION)
 # ============================================================================
 
 with tab2:
@@ -621,7 +641,7 @@ with tab2:
     start_date = end_date - timedelta(days=180)
     
     # ============================================================================
-    # EUR/PLN SECTION (Original)
+    # EUR/PLN SECTION
     # ============================================================================
     
     st.subheader("🇪🇺 EUR/PLN Bond Spread Analytics")
@@ -890,7 +910,7 @@ with tab2:
         
         st.plotly_chart(fig3, use_container_width=True)
     
-    # EUR Convergence Analysis
+    # EUR Convergence Analysis - FIXED VERSION
     st.subheader("⏱️ EUR/PLN Prediction Convergence Analysis")
     
     # Calculate convergence for EUR
@@ -899,24 +919,18 @@ with tab2:
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if eur_convergence['avg_convergence_days']:
-            st.metric(
-                "Avg Days to Target",
-                f"{eur_convergence['avg_convergence_days']:.1f}",
-                help="Average days for actual price to reach predicted price"
-            )
-        else:
-            st.metric("Avg Days to Target", "N/A")
+        st.metric(
+            "Avg Days to Target",
+            safe_format_days(eur_convergence['avg_convergence_days']),
+            help="Average days for actual price to reach predicted price"
+        )
     
     with col2:
-        if eur_convergence['median_convergence_days']:
-            st.metric(
-                "Median Days to Target", 
-                f"{eur_convergence['median_convergence_days']:.1f}",
-                help="Median time for price convergence"
-            )
-        else:
-            st.metric("Median Days to Target", "N/A")
+        st.metric(
+            "Median Days to Target", 
+            safe_format_days(eur_convergence['median_convergence_days']),
+            help="Median time for price convergence"
+        )
     
     with col3:
         st.metric(
@@ -926,29 +940,29 @@ with tab2:
         )
     
     with col4:
-        if eur_convergence['avg_accuracy']:
-            st.metric(
-                "Avg Accuracy",
-                f"{eur_convergence['avg_accuracy']:.1f}%",
-                help="Average accuracy when convergence occurs"
-            )
-        else:
-            st.metric("Avg Accuracy", "N/A")
+        st.metric(
+            "Avg Accuracy",
+            safe_format_percentage(eur_convergence['avg_accuracy']),
+            help="Average accuracy when convergence occurs"
+        )
     
     # EUR convergence insights
     if eur_convergence['total_events'] > 0:
+        avg_days_str = safe_format_days(eur_convergence['avg_convergence_days'])
+        accuracy_str = safe_format_percentage(eur_convergence['avg_accuracy'])
+        
         st.markdown(f"""
         **💡 EUR/PLN Prediction Insights:**
-        - Model predictions converge to actual prices in **{eur_convergence['avg_convergence_days']:.1f} days** on average
+        - Model predictions converge to actual prices in **{avg_days_str} days** on average
         - **{eur_convergence['convergence_rate']:.1f}%** of predictions eventually reach target accuracy (within 0.1%)
-        - When convergence occurs, average accuracy is **{eur_convergence['avg_accuracy']:.1f}%**
+        - When convergence occurs, average accuracy is **{accuracy_str}**
         - Total convergence events detected: **{eur_convergence['total_events']}** out of {len(df)} data points
         """)
     else:
         st.info("📊 No clear convergence patterns detected in the current dataset. This may indicate high market volatility or model adjustment needs.")
 
     # ============================================================================
-    # USD/PLN SECTION ADDED TO TAB 2
+    # USD/PLN SECTION
     # ============================================================================
     
     st.markdown("---")
@@ -1259,7 +1273,7 @@ with tab2:
         
         st.plotly_chart(fig_usd3, use_container_width=True)
     
-    # USD Convergence Analysis
+    # USD Convergence Analysis - FIXED VERSION
     st.subheader("⏱️ USD/PLN Prediction Convergence Analysis")
     
     # Calculate convergence for USD
@@ -1268,24 +1282,18 @@ with tab2:
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if usd_convergence['avg_convergence_days']:
-            st.metric(
-                "Avg Days to Target",
-                f"{usd_convergence['avg_convergence_days']:.1f}",
-                help="Average days for actual USD/PLN to reach predicted price"
-            )
-        else:
-            st.metric("Avg Days to Target", "N/A")
+        st.metric(
+            "Avg Days to Target",
+            safe_format_days(usd_convergence['avg_convergence_days']),
+            help="Average days for actual USD/PLN to reach predicted price"
+        )
     
     with col2:
-        if usd_convergence['median_convergence_days']:
-            st.metric(
-                "Median Days to Target",
-                f"{usd_convergence['median_convergence_days']:.1f}",
-                help="Median time for USD price convergence"
-            )
-        else:
-            st.metric("Median Days to Target", "N/A")
+        st.metric(
+            "Median Days to Target",
+            safe_format_days(usd_convergence['median_convergence_days']),
+            help="Median time for USD price convergence"
+        )
     
     with col3:
         st.metric(
@@ -1295,28 +1303,28 @@ with tab2:
         )
     
     with col4:
-        if usd_convergence['avg_accuracy']:
-            st.metric(
-                "Avg Accuracy",
-                f"{usd_convergence['avg_accuracy']:.1f}%",
-                help="Average accuracy when USD convergence occurs"
-            )
-        else:
-            st.metric("Avg Accuracy", "N/A")
+        st.metric(
+            "Avg Accuracy",
+            safe_format_percentage(usd_convergence['avg_accuracy']),
+            help="Average accuracy when USD convergence occurs"
+        )
     
-    # USD convergence insights  
+    # USD convergence insights - FIXED VERSION
     if usd_convergence['total_events'] > 0:
+        usd_avg_days_str = safe_format_days(usd_convergence['avg_convergence_days'])
+        usd_accuracy_str = safe_format_percentage(usd_convergence['avg_accuracy'])
+        
         st.markdown(f"""
         **💡 USD/PLN Prediction Insights:**
-        - USD Model predictions converge to actual prices in **{usd_convergence['avg_convergence_days']:.1f} days** on average
+        - USD Model predictions converge to actual prices in **{usd_avg_days_str} days** on average
         - **{usd_convergence['convergence_rate']:.1f}%** of USD predictions eventually reach target accuracy (within 0.1%)
-        - When USD convergence occurs, average accuracy is **{usd_convergence['avg_accuracy']:.1f}%**
+        - When USD convergence occurs, average accuracy is **{usd_accuracy_str}**
         - Total USD convergence events detected: **{usd_convergence['total_events']}** out of {len(df_usd)} data points
         """)
     else:
         st.info("📊 No clear USD convergence patterns detected in the current dataset. USD/PLN may be more volatile than EUR/PLN.")
     
-    # EUR vs USD Comparison Section
+    # EUR vs USD Comparison Section - FIXED VERSION
     st.markdown("---")
     st.subheader("⚖️ EUR/PLN vs USD/PLN Side-by-Side Comparison")
     
@@ -1324,57 +1332,69 @@ with tab2:
     
     with col1:
         st.markdown("**📊 EUR/PLN Performance Summary**")
+        eur_avg_conv = safe_format_days(eur_convergence['avg_convergence_days'])
         st.markdown(f"""
         - **Current Actual**: {current_actual:.4f}
         - **Current Predicted**: {current_predicted:.4f}
         - **Model Error**: {difference_pct:.2f}%
         - **Current Spread**: {current_spread:.2f}pp (PL-DE)
         - **Model Correlation**: {correlation:.3f}
-        - **Avg Convergence**: {eur_convergence['avg_convergence_days']:.1f} days
+        - **Avg Convergence**: {eur_avg_conv} days
         """)
     
     with col2:
         st.markdown("**🇺🇸 USD/PLN Performance Summary**")
+        usd_avg_conv = safe_format_days(usd_convergence['avg_convergence_days'])
         st.markdown(f"""
         - **Current Actual**: {current_actual_usd:.4f}
         - **Current Predicted**: {current_predicted_usd:.4f}
         - **Model Error**: {difference_pct_usd:.2f}%
         - **Current Spread**: {current_spread_usd:.2f}pp (PL-US)
         - **Model Correlation**: {usd_correlation:.3f}
-        - **Avg Convergence**: {usd_convergence['avg_convergence_days']:.1f} days
+        - **Avg Convergence**: {usd_avg_conv} days
         """)
     
-    # Convergence Comparison
+    # Convergence Comparison - FIXED VERSION
     st.subheader("⚖️ EUR vs USD Convergence Comparison")
     
     col1, col2 = st.columns(2)
     
     with col1:
         # EUR vs USD convergence metrics
-        if eur_convergence['avg_convergence_days'] and usd_convergence['avg_convergence_days']:
+        if eur_convergence['avg_convergence_days'] is not None and usd_convergence['avg_convergence_days'] is not None:
             faster_currency = "EUR" if eur_convergence['avg_convergence_days'] < usd_convergence['avg_convergence_days'] else "USD"
             speed_diff = abs(eur_convergence['avg_convergence_days'] - usd_convergence['avg_convergence_days'])
             
             st.markdown(f"""
             **🏃‍♂️ Convergence Speed Comparison:**
-            - **EUR/PLN**: {eur_convergence['avg_convergence_days']:.1f} days average
-            - **USD/PLN**: {usd_convergence['avg_convergence_days']:.1f} days average
+            - **EUR/PLN**: {safe_format_days(eur_convergence['avg_convergence_days'])} days average
+            - **USD/PLN**: {safe_format_days(usd_convergence['avg_convergence_days'])} days average
             - **Faster Model**: {faster_currency} by {speed_diff:.1f} days
             - **EUR Convergence Rate**: {eur_convergence['convergence_rate']:.1f}%
             - **USD Convergence Rate**: {usd_convergence['convergence_rate']:.1f}%
             """)
+        else:
+            st.markdown("""
+            **🏃‍♂️ Convergence Speed Comparison:**
+            - **EUR/PLN**: N/A days average  
+            - **USD/PLN**: N/A days average
+            - **Faster Model**: Cannot determine
+            - **EUR Convergence Rate**: {:.1f}%
+            - **USD Convergence Rate**: {:.1f}%
+            """.format(eur_convergence['convergence_rate'], usd_convergence['convergence_rate']))
         
     with col2:
         # Convergence rate comparison chart
         if eur_convergence['total_events'] > 0 or usd_convergence['total_events'] > 0:
+            eur_avg = eur_convergence.get('avg_convergence_days', 0) or 0
+            usd_avg = usd_convergence.get('avg_convergence_days', 0) or 0
+            
             fig_conv = go.Figure(data=[
                 go.Bar(
                     x=['EUR/PLN', 'USD/PLN'],
-                    y=[eur_convergence.get('avg_convergence_days', 0), 
-                       usd_convergence.get('avg_convergence_days', 0)],
+                    y=[eur_avg, usd_avg],
                     marker_color=['#2E86AB', '#FF6B35'],
-                    text=[f"{eur_convergence.get('avg_convergence_days', 0):.1f}d", 
-                          f"{usd_convergence.get('avg_convergence_days', 0):.1f}d"],
+                    text=[safe_format_days(eur_avg) + "d", safe_format_days(usd_avg) + "d"],
                     textposition='auto'
                 )
             ])
@@ -1389,6 +1409,8 @@ with tab2:
             st.plotly_chart(fig_conv, use_container_width=True)
     
     # Combined comparison chart
+    st.subheader("📊 Complete EUR/PLN vs USD/PLN Analysis")
+    
     fig_comparison = make_subplots(
         rows=2, cols=2,
         subplot_titles=("EUR/PLN vs USD/PLN Rates", "Bond Spreads Comparison", 
@@ -1448,11 +1470,18 @@ with tab2:
                 row=2, col=2
             )
     
+    # Update layout for comparison chart
     fig_comparison.update_layout(height=600, title_text="Complete EUR/PLN vs USD/PLN Analysis")
+    fig_comparison.update_yaxes(title_text="EUR/PLN Rate", row=1, col=1, secondary_y=False)
+    fig_comparison.update_yaxes(title_text="USD/PLN Rate", row=1, col=1, secondary_y=True)
+    fig_comparison.update_yaxes(title_text="Yield Spread (pp)", row=1, col=2)
+    fig_comparison.update_yaxes(title_text="Absolute Error", row=2, col=1)
+    fig_comparison.update_yaxes(title_text="Correlation", row=2, col=2)
+    
     st.plotly_chart(fig_comparison, use_container_width=True)
 
 # ============================================================================
-# SHARED CONTROLS
+# SHARED CONTROLS AND FOOTER
 # ============================================================================
 
 st.markdown("---")
@@ -1514,6 +1543,11 @@ with col3:
             - Bond data: 1 hour cache
             - FX data: 5 minute cache
             - Historical: Daily
+            
+            **Convergence Analysis:**
+            - Tracks when actual FX rates reach predicted levels
+            - Uses 0.1% tolerance for convergence detection
+            - Analyzes up to 30-day prediction windows
             """)
 
 # Performance note
