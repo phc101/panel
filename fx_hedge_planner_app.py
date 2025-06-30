@@ -200,7 +200,7 @@ class FXBondSpreadDashboard:
         return pd.DataFrame({'value': values}, index=dates)
 
 # ============================================================================
-# CACHED DATA FUNCTIONS
+# MAIN APPLICATION
 # ============================================================================
 
 @st.cache_data(ttl=3600)
@@ -282,13 +282,69 @@ def calculate_forward_rate(spot_rate, domestic_yield, foreign_yield, days):
     forward_rate = spot_rate * (1 + domestic_yield/100 * T) / (1 + foreign_yield/100 * T)
     return forward_rate
 
+def calculate_convergence_days(df, actual_col, predicted_col, tolerance=0.001):
+    """
+    Calculate how many days it takes for actual price to reach predicted price
+    
+    Parameters:
+    - df: DataFrame with actual and predicted prices
+    - actual_col: column name for actual prices
+    - predicted_col: column name for predicted prices  
+    - tolerance: acceptable difference (default 0.1%)
+    
+    Returns:
+    - dict with convergence statistics
+    """
+    convergence_events = []
+    
+    for i in range(1, len(df)):
+        current_actual = df[actual_col].iloc[i]
+        current_predicted = df[predicted_col].iloc[i]
+        
+        # Look back to find when prediction was made
+        for lookback in range(1, min(i+1, 30)):  # Max 30 days lookback
+            past_predicted = df[predicted_col].iloc[i-lookback]
+            
+            # Check if current actual price is within tolerance of past prediction
+            price_diff = abs(current_actual - past_predicted) / past_predicted
+            
+            if price_diff <= tolerance:
+                convergence_events.append({
+                    'date': df.index[i],
+                    'days_to_convergence': lookback,
+                    'predicted_price': past_predicted,
+                    'actual_price': current_actual,
+                    'accuracy': (1 - price_diff) * 100
+                })
+                break
+    
+    if convergence_events:
+        avg_days = np.mean([event['days_to_convergence'] for event in convergence_events])
+        median_days = np.median([event['days_to_convergence'] for event in convergence_events])
+        avg_accuracy = np.mean([event['accuracy'] for event in convergence_events])
+        convergence_rate = len(convergence_events) / len(df) * 100
+        
+        return {
+            'avg_convergence_days': avg_days,
+            'median_convergence_days': median_days,
+            'avg_accuracy': avg_accuracy,
+            'convergence_rate': convergence_rate,
+            'total_events': len(convergence_events),
+            'events': convergence_events
+        }
+    else:
+        return {
+            'avg_convergence_days': None,
+            'median_convergence_days': None,
+            'avg_accuracy': None,
+            'convergence_rate': 0,
+            'total_events': 0,
+            'events': []
+        }
+
 def calculate_forward_points(spot_rate, forward_rate):
     """Calculate forward points in pips"""
     return (forward_rate - spot_rate) * 10000
-
-# ============================================================================
-# MAIN APPLICATION
-# ============================================================================
 
 # Header
 st.markdown("""
@@ -833,6 +889,63 @@ with tab2:
         )
         
         st.plotly_chart(fig3, use_container_width=True)
+    
+    # EUR Convergence Analysis
+    st.subheader("⏱️ EUR/PLN Prediction Convergence Analysis")
+    
+    # Calculate convergence for EUR
+    eur_convergence = calculate_convergence_days(df, 'actual_eur_pln', 'predicted_eur_pln')
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if eur_convergence['avg_convergence_days']:
+            st.metric(
+                "Avg Days to Target",
+                f"{eur_convergence['avg_convergence_days']:.1f}",
+                help="Average days for actual price to reach predicted price"
+            )
+        else:
+            st.metric("Avg Days to Target", "N/A")
+    
+    with col2:
+        if eur_convergence['median_convergence_days']:
+            st.metric(
+                "Median Days to Target", 
+                f"{eur_convergence['median_convergence_days']:.1f}",
+                help="Median time for price convergence"
+            )
+        else:
+            st.metric("Median Days to Target", "N/A")
+    
+    with col3:
+        st.metric(
+            "Convergence Rate",
+            f"{eur_convergence['convergence_rate']:.1f}%",
+            help="% of predictions that eventually converged"
+        )
+    
+    with col4:
+        if eur_convergence['avg_accuracy']:
+            st.metric(
+                "Avg Accuracy",
+                f"{eur_convergence['avg_accuracy']:.1f}%",
+                help="Average accuracy when convergence occurs"
+            )
+        else:
+            st.metric("Avg Accuracy", "N/A")
+    
+    # EUR convergence insights
+    if eur_convergence['total_events'] > 0:
+        st.markdown(f"""
+        **💡 EUR/PLN Prediction Insights:**
+        - Model predictions converge to actual prices in **{eur_convergence['avg_convergence_days']:.1f} days** on average
+        - **{eur_convergence['convergence_rate']:.1f}%** of predictions eventually reach target accuracy (within 0.1%)
+        - When convergence occurs, average accuracy is **{eur_convergence['avg_accuracy']:.1f}%**
+        - Total convergence events detected: **{eur_convergence['total_events']}** out of {len(df)} data points
+        """)
+    else:
+        st.info("📊 No clear convergence patterns detected in the current dataset. This may indicate high market volatility or model adjustment needs.")
 
     # ============================================================================
     # USD/PLN SECTION ADDED TO TAB 2
@@ -1146,6 +1259,63 @@ with tab2:
         
         st.plotly_chart(fig_usd3, use_container_width=True)
     
+    # USD Convergence Analysis
+    st.subheader("⏱️ USD/PLN Prediction Convergence Analysis")
+    
+    # Calculate convergence for USD
+    usd_convergence = calculate_convergence_days(df_usd, 'actual_usd_pln', 'predicted_usd_pln')
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if usd_convergence['avg_convergence_days']:
+            st.metric(
+                "Avg Days to Target",
+                f"{usd_convergence['avg_convergence_days']:.1f}",
+                help="Average days for actual USD/PLN to reach predicted price"
+            )
+        else:
+            st.metric("Avg Days to Target", "N/A")
+    
+    with col2:
+        if usd_convergence['median_convergence_days']:
+            st.metric(
+                "Median Days to Target",
+                f"{usd_convergence['median_convergence_days']:.1f}",
+                help="Median time for USD price convergence"
+            )
+        else:
+            st.metric("Median Days to Target", "N/A")
+    
+    with col3:
+        st.metric(
+            "Convergence Rate",
+            f"{usd_convergence['convergence_rate']:.1f}%",
+            help="% of USD predictions that eventually converged"
+        )
+    
+    with col4:
+        if usd_convergence['avg_accuracy']:
+            st.metric(
+                "Avg Accuracy",
+                f"{usd_convergence['avg_accuracy']:.1f}%",
+                help="Average accuracy when USD convergence occurs"
+            )
+        else:
+            st.metric("Avg Accuracy", "N/A")
+    
+    # USD convergence insights  
+    if usd_convergence['total_events'] > 0:
+        st.markdown(f"""
+        **💡 USD/PLN Prediction Insights:**
+        - USD Model predictions converge to actual prices in **{usd_convergence['avg_convergence_days']:.1f} days** on average
+        - **{usd_convergence['convergence_rate']:.1f}%** of USD predictions eventually reach target accuracy (within 0.1%)
+        - When USD convergence occurs, average accuracy is **{usd_convergence['avg_accuracy']:.1f}%**
+        - Total USD convergence events detected: **{usd_convergence['total_events']}** out of {len(df_usd)} data points
+        """)
+    else:
+        st.info("📊 No clear USD convergence patterns detected in the current dataset. USD/PLN may be more volatile than EUR/PLN.")
+    
     # EUR vs USD Comparison Section
     st.markdown("---")
     st.subheader("⚖️ EUR/PLN vs USD/PLN Side-by-Side Comparison")
@@ -1160,6 +1330,7 @@ with tab2:
         - **Model Error**: {difference_pct:.2f}%
         - **Current Spread**: {current_spread:.2f}pp (PL-DE)
         - **Model Correlation**: {correlation:.3f}
+        - **Avg Convergence**: {eur_convergence['avg_convergence_days']:.1f} days
         """)
     
     with col2:
@@ -1170,7 +1341,52 @@ with tab2:
         - **Model Error**: {difference_pct_usd:.2f}%
         - **Current Spread**: {current_spread_usd:.2f}pp (PL-US)
         - **Model Correlation**: {usd_correlation:.3f}
+        - **Avg Convergence**: {usd_convergence['avg_convergence_days']:.1f} days
         """)
+    
+    # Convergence Comparison
+    st.subheader("⚖️ EUR vs USD Convergence Comparison")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # EUR vs USD convergence metrics
+        if eur_convergence['avg_convergence_days'] and usd_convergence['avg_convergence_days']:
+            faster_currency = "EUR" if eur_convergence['avg_convergence_days'] < usd_convergence['avg_convergence_days'] else "USD"
+            speed_diff = abs(eur_convergence['avg_convergence_days'] - usd_convergence['avg_convergence_days'])
+            
+            st.markdown(f"""
+            **🏃‍♂️ Convergence Speed Comparison:**
+            - **EUR/PLN**: {eur_convergence['avg_convergence_days']:.1f} days average
+            - **USD/PLN**: {usd_convergence['avg_convergence_days']:.1f} days average
+            - **Faster Model**: {faster_currency} by {speed_diff:.1f} days
+            - **EUR Convergence Rate**: {eur_convergence['convergence_rate']:.1f}%
+            - **USD Convergence Rate**: {usd_convergence['convergence_rate']:.1f}%
+            """)
+        
+    with col2:
+        # Convergence rate comparison chart
+        if eur_convergence['total_events'] > 0 or usd_convergence['total_events'] > 0:
+            fig_conv = go.Figure(data=[
+                go.Bar(
+                    x=['EUR/PLN', 'USD/PLN'],
+                    y=[eur_convergence.get('avg_convergence_days', 0), 
+                       usd_convergence.get('avg_convergence_days', 0)],
+                    marker_color=['#2E86AB', '#FF6B35'],
+                    text=[f"{eur_convergence.get('avg_convergence_days', 0):.1f}d", 
+                          f"{usd_convergence.get('avg_convergence_days', 0):.1f}d"],
+                    textposition='auto'
+                )
+            ])
+            
+            fig_conv.update_layout(
+                title="Average Days to Price Convergence",
+                yaxis_title="Days",
+                height=300,
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig_conv, use_container_width=True)
     
     # Combined comparison chart
     fig_comparison = make_subplots(
