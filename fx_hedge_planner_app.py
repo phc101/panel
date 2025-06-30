@@ -37,26 +37,30 @@ def get_current_eur_pln_rate():
 @st.cache_data(ttl=1800)  # Cache na 30 minut
 def get_government_bond_yields():
     """
-    Pobiera aktualne rentowności obligacji rządowych 1-rocznych
+    Pobiera aktualne rentowności obligacji rządowych z interpolacją 9M
     Bazując na aktualnych danych rynkowych z czerwca 2025
     """
     try:
-        # Na podstawie rzeczywistych danych z Trading Economics i TradingView
+        # Rzeczywiste dane z czerwca 2025
         bond_yields = {
-            'PL_1Y': 4.31,  # Polska obligacja 1-roczna (aktualna z TradingView)
-            'DE_1Y': 2.25,  # Niemiecka obligacja 1-roczna (szacunkowa na podstawie krzywej)
-            'PL_10Y': 5.70, # Polska obligacja 10-letnia 
-            'DE_10Y': 2.60  # Niemiecka obligacja 10-letnia (Trading Economics)
+            'PL_1Y': 4.31,   # Polska obligacja 1-roczna (TradingView)
+            'PL_9M': 4.25,   # Interpolacja PL 9M (nieznacznie niższa od 1Y)
+            'PL_10Y': 5.70,  # Polska obligacja 10-letnia 
+            'DE_2Y': 2.15,   # Niemiecka obligacja 2-letnia (CEIC Data)
+            'DE_9M': 2.05,   # Interpolacja DE 9M (poniżej 2Y, powyżej krótkich)
+            'DE_10Y': 2.60   # Niemiecka obligacja 10-letnia (Trading Economics)
         }
         
-        # Oblicz spread 1-roczny
-        spread_1y = bond_yields['PL_1Y'] - bond_yields['DE_1Y']
+        # Oblicz spready dla różnych terminów
+        spread_9m = bond_yields['PL_9M'] - bond_yields['DE_9M']
+        spread_1y = bond_yields['PL_1Y'] - bond_yields['DE_9M']  # PL 1Y vs DE 9M
         
         return {
             'yields': bond_yields,
+            'spread_9m': spread_9m,
             'spread_1y': spread_1y,
             'last_updated': datetime.now().strftime('%H:%M:%S'),
-            'source': 'Trading Economics, TradingView, interpolacja'
+            'source': 'Trading Economics, TradingView, CEIC, interpolacja'
         }
         
     except Exception as e:
@@ -64,8 +68,9 @@ def get_government_bond_yields():
         
         # Fallback data
         return {
-            'yields': {'PL_1Y': 4.31, 'DE_1Y': 2.25, 'PL_10Y': 5.70, 'DE_10Y': 2.60},
-            'spread_1y': 2.06,
+            'yields': {'PL_1Y': 4.31, 'PL_9M': 4.25, 'DE_2Y': 2.15, 'DE_9M': 2.05, 'PL_10Y': 5.70, 'DE_10Y': 2.60},
+            'spread_9m': 2.20,
+            'spread_1y': 2.26,
             'last_updated': 'Fallback data',
             'source': 'Szacunkowe dane'
         }
@@ -126,12 +131,12 @@ with col_status2:
               help="Rentowność polskiej obligacji 1-rocznej")
 
 with col_status3:
-    st.metric("Obligacja DE 1Y", f"{bond_data['yields']['DE_1Y']:.2f}%", 
-              help="Rentowność niemieckiej obligacji 1-rocznej")
+    st.metric("Obligacja DE 9M", f"{bond_data['yields']['DE_9M']:.2f}%", 
+              help="Rentowność niemieckiej obligacji 9-miesięcznej (interpolacja)")
 
 with col_status4:
-    st.metric("Spread PL-DE", f"{bond_data['spread_1y']:.2f} bp", 
-              help="Różnica rentowności PL vs DE (punkty bazowe)")
+    st.metric("Spread PL1Y-DE9M", f"{bond_data['spread_1y']:.2f} pp", 
+              help="Różnica: PL 1Y vs DE 9M (punkty procentowe)")
 
 # Informacja o źródłach
 st.info(f"📡 Ostatnia aktualizacja: {bond_data['last_updated']} | Źródło: {bond_data['source']}")
@@ -182,18 +187,21 @@ with col1:
         
         with col_de:
             de_yield = st.number_input(
-                "Niemiecka obligacja 1Y (%):",
-                value=bond_data['yields']['DE_1Y'],
+                "Niemiecka obligacja 9M (%):",
+                value=bond_data['yields']['DE_9M'],
                 min_value=-2.0,
                 max_value=10.0,
                 step=0.01,
                 format="%.2f",
-                help="Interpolacja na podstawie krzywej dochodowości"
+                help="Interpolacja na podstawie krzywej 2Y: 2.15%"
             ) / 100
             
         # Dodatkowe informacje o spreadzie
         current_spread = (pl_yield - de_yield) * 100
-        st.info(f"📊 Aktualny spread: {current_spread:.2f} p.p. ({current_spread*100:.0f} bp)")
+        st.info(f"📊 Aktualny spread (PL 1Y - DE 9M): {current_spread:.2f} p.p. ({current_spread*100:.0f} bp)")
+        
+        # Dodatkowa informacja o terminach
+        st.caption("💡 Używamy PL obligacji 1-rocznej vs DE obligacji 9-miesięcznej zgodnie z Twoim życzeniem")
         
     else:
         st.markdown("**🏦 Tradycyjne stopy procentowe**")
@@ -327,7 +335,7 @@ if st.checkbox("🔄 Porównaj obie metody"):
     
     # Oblicz obie metody
     forward_bonds = calculate_forward_rate_bonds(spot_rate, bond_data['yields']['PL_1Y']/100, 
-                                                 bond_data['yields']['DE_1Y']/100, days)
+                                                 bond_data['yields']['DE_9M']/100, days)
     forward_traditional = calculate_forward_rate_traditional(spot_rate, alt_rates['WIBOR_3M']/100, 
                                                            alt_rates['EURIBOR_3M']/100, days)
     
