@@ -380,7 +380,7 @@ for i, period_days in enumerate(periods):
         "Forward Rate": f"{fw_rate:.4f}",
         "Forward Points": f"{fw_points:.2f}",
         "Annual Premium": f"{annual_premium:.2f}%",
-        "Spread vs Spot": f"{(fw_rate - spot_rate)*10000:.1f} pips"
+        "Spread vs Spot": f"{(fw_rate - spot_rate):.4f}"
     })
 
 df = pd.DataFrame(forward_table_data)
