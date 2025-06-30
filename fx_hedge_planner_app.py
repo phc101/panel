@@ -1,4 +1,544 @@
-import streamlit as st
+st.plotly_chart(fig3, use_container_width=True)
+
+# ============================================================================
+# TAB 3: USD/PLN ANALYTICS
+# ============================================================================
+
+with tab3:
+    st.header("🇺🇸 USD/PLN Bond Spread Analytics")
+    
+    # Current market data for USD
+    st.subheader("📊 Current USD/PLN Market Data")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "USD/PLN Spot", 
+            f"{usd_forex_data['rate']:.4f}",
+            help=f"Source: {usd_forex_data['source']} | Date: {usd_forex_data['date']}"
+        )
+    
+    with col2:
+        if 'Poland_10Y' in bond_data:
+            pl_yield = bond_data['Poland_10Y']['value']
+            st.metric(
+                "Poland 10Y Bond", 
+                f"{pl_yield:.2f}%",
+                help="Polish government bond yield from FRED"
+            )
+        else:
+            st.metric("Poland 10Y Bond", "N/A")
+    
+    with col3:
+        if 'US_10Y' in bond_data:
+            us_yield = bond_data['US_10Y']['value']
+            st.metric(
+                "US 10Y Treasury", 
+                f"{us_yield:.2f}%",
+                help="US Treasury yield from FRED"
+            )
+        else:
+            st.metric("US 10Y Treasury", "N/A")
+    
+    with col4:
+        if 'Poland_10Y' in bond_data and 'US_10Y' in bond_data:
+            usd_spread = bond_data['Poland_10Y']['value'] - bond_data['US_10Y']['value']
+            st.metric(
+                "PL-US Spread", 
+                f"{usd_spread:.2f} pp",
+                help="Poland 10Y minus US 10Y"
+            )
+    
+    # USD/PLN Forward Calculator
+    st.markdown("---")
+    st.subheader("🧮 USD/PLN Forward Calculator")
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.write("**USD/PLN Parameters:**")
+        
+        # USD spot rate
+        usd_spot_rate = st.number_input(
+            "USD/PLN Spot Rate:",
+            value=usd_forex_data['rate'],
+            min_value=2.0,
+            max_value=6.0,
+            step=0.01,
+            format="%.4f"
+        )
+        
+        # Bond yields for USD
+        col_pl_usd, col_us = st.columns(2)
+        
+        with col_pl_usd:
+            default_pl_usd = bond_data['Poland_10Y']['value'] if 'Poland_10Y' in bond_data else 5.70
+            pl_yield_usd = st.number_input(
+                "Poland Yield (%):",
+                value=default_pl_usd,
+                min_value=0.0,
+                max_value=20.0,
+                step=0.01,
+                format="%.2f",
+                key="pl_yield_usd"
+            )
+        
+        with col_us:
+            default_us = bond_data['US_10Y']['value'] if 'US_10Y' in bond_data else 4.50
+            us_yield = st.number_input(
+                "US Yield (%):",
+                value=default_us,
+                min_value=0.0,
+                max_value=15.0,
+                step=0.01,
+                format="%.2f"
+            )
+        
+        # Time period for USD
+        usd_period_choice = st.selectbox(
+            "Select Period:",
+            ["1M", "3M", "6M", "9M", "1Y", "2Y", "Custom Days"],
+            key="usd_period"
+        )
+        
+        if usd_period_choice == "Custom Days":
+            usd_days = st.number_input("Days:", value=365, min_value=1, max_value=730, key="usd_days")
+        else:
+            period_days = {"1M": 30, "3M": 90, "6M": 180, "9M": 270, "1Y": 365, "2Y": 730}
+            usd_days = period_days[usd_period_choice]
+    
+    with col2:
+        st.write("**USD/PLN Results:**")
+        
+        # Calculate USD forward rate
+        usd_forward_rate = calculate_forward_rate(usd_spot_rate, pl_yield_usd, us_yield, usd_days)
+        usd_forward_points = calculate_forward_points(usd_spot_rate, usd_forward_rate)
+        
+        # Display USD results
+        result_col1, result_col2 = st.columns(2)
+        
+        with result_col1:
+            st.metric(
+                "USD Forward Rate",
+                f"{usd_forward_rate:.4f}",
+                delta=f"{usd_forward_rate - usd_spot_rate:.4f}"
+            )
+        
+        with result_col2:
+            st.metric(
+                "USD Forward Points",
+                f"{usd_forward_points:.2f} pips"
+            )
+        
+        # USD Analysis
+        usd_annualized_premium = ((usd_forward_rate / usd_spot_rate) - 1) * (365 / usd_days) * 100
+        
+        if usd_forward_rate > usd_spot_rate:
+            st.success(f"🔺 USD trades at **{usd_annualized_premium:.2f}% premium** annually")
+        else:
+            st.error(f"🔻 USD trades at **{abs(usd_annualized_premium):.2f}% discount** annually")
+        
+        # USD detailed metrics
+        with st.expander("📈 USD Detailed Analysis"):
+            st.write(f"**USD Calculation Details:**")
+            st.write(f"- USD Spot Rate: {usd_spot_rate:.4f}")
+            st.write(f"- USD Forward Rate: {usd_forward_rate:.4f}")
+            st.write(f"- Time to Maturity: {usd_days} days ({usd_days/365:.2f} years)")
+            st.write(f"- Poland Yield: {pl_yield_usd:.2f}%")
+            st.write(f"- US Yield: {us_yield:.2f}%")
+            st.write(f"- Yield Spread: {pl_yield_usd - us_yield:.2f} pp")
+    
+    # USD/PLN Forward Table
+    st.markdown("---")
+    st.header("📅 USD/PLN Forward Rate Table")
+    
+    usd_periods = [30, 90, 180, 270, 365, 730]
+    usd_period_names = ["1M", "3M", "6M", "9M", "1Y", "2Y"]
+    
+    usd_forward_table_data = []
+    for i, period_days in enumerate(usd_periods):
+        usd_fw_rate = calculate_forward_rate(usd_spot_rate, pl_yield_usd, us_yield, period_days)
+        usd_fw_points = calculate_forward_points(usd_spot_rate, usd_fw_rate)
+        usd_annual_premium = ((usd_fw_rate / usd_spot_rate - 1) * (365 / period_days) * 100)
+        
+        usd_forward_table_data.append({
+            "Period": usd_period_names[i],
+            "Days": period_days,
+            "Forward Rate": f"{usd_fw_rate:.4f}",
+            "Forward Points": f"{usd_fw_points:.2f}",
+            "Annual Premium": f"{usd_annual_premium:.2f}%",
+            "Spread vs Spot": f"{(usd_fw_rate - usd_spot_rate):.4f}"
+        })
+    
+    df_usd_forward = pd.DataFrame(usd_forward_table_data)
+    st.dataframe(df_usd_forward, use_container_width=True)
+    
+    # USD Historical Analysis
+    st.markdown("---")
+    st.subheader("📈 USD/PLN Historical vs Predicted (6 Months)")
+    
+    # Generate USD historical data
+    dashboard_usd = FXBondSpreadDashboard()
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=180)
+    
+    with st.spinner("📊 Loading USD historical data..."):
+        try:
+            # Get historical USD/PLN
+            usd_pln_data = dashboard_usd.get_nbp_historical_data(start_date, end_date, 'usd')
+            
+            # Get bond yields (reuse from previous calls)
+            pl_bonds_usd = dashboard_usd.fred_client.get_historical_data('IRLTLT01PLM156N', 
+                                                                       start_date.strftime('%Y-%m-%d'), 
+                                                                       end_date.strftime('%Y-%m-%d'))
+            us_bonds = dashboard_usd.fred_client.get_historical_data('DGS10', 
+                                                                   start_date.strftime('%Y-%m-%d'), 
+                                                                   end_date.strftime('%Y-%m-%d'))
+            
+            if not usd_pln_data.empty and not pl_bonds_usd.empty and not us_bonds.empty:
+                # Combine real data
+                df_usd = usd_pln_data.copy()
+                df_usd.columns = ['actual_usd_pln']
+                df_usd = df_usd.join(pl_bonds_usd.rename(columns={'value': 'pl_yield'}), how='left')
+                df_usd = df_usd.join(us_bonds.rename(columns={'value': 'us_yield'}), how='left')
+                df_usd = df_usd.fillna(method='ffill').fillna(method='bfill')
+                
+                # Calculate predicted USD rates
+                df_usd['predicted_usd_pln'] = df_usd.apply(
+                    lambda row: dashboard_usd.calculate_predicted_fx_rate(
+                        row['pl_yield'], row['us_yield'], df_usd['actual_usd_pln'].iloc[0], 'USD'
+                    ), axis=1
+                )
+                df_usd['yield_spread'] = df_usd['pl_yield'] - df_usd['us_yield']
+                st.success("✅ Using real USD market data")
+            else:
+                raise Exception("Insufficient USD data")
+                
+        except Exception as e:
+            st.info("📊 Using sample USD data for demonstration")
+            # Generate sample USD data
+            dates = pd.date_range(start=start_date, end=end_date, freq='D')
+            np.random.seed(43)  # Different seed for USD
+            
+            # Sample USD/PLN
+            base_rate = 3.85
+            trend = np.linspace(0, 0.015, len(dates))
+            noise = np.cumsum(np.random.randn(len(dates)) * 0.004)
+            actual_usd_pln = base_rate + trend + noise
+            
+            # Sample yields
+            pl_yields_usd = 5.7 + np.cumsum(np.random.randn(len(dates)) * 0.01)
+            us_yields = 4.5 + np.cumsum(np.random.randn(len(dates)) * 0.012)
+            
+            predicted_usd_pln = []
+            for i in range(len(dates)):
+                pred_rate = dashboard_usd.calculate_predicted_fx_rate(pl_yields_usd[i], us_yields[i], base_rate, 'USD')
+                predicted_usd_pln.append(pred_rate)
+            
+            df_usd = pd.DataFrame({
+                'actual_usd_pln': actual_usd_pln,
+                'predicted_usd_pln': predicted_usd_pln,
+                'pl_yield': pl_yields_usd,
+                'us_yield': us_yields,
+                'yield_spread': pl_yields_usd - us_yields
+            }, index=dates)
+    
+    # USD Current values
+    current_actual_usd = df_usd['actual_usd_pln'].iloc[-1]
+    current_predicted_usd = df_usd['predicted_usd_pln'].iloc[-1]
+    difference_pct_usd = ((current_predicted_usd - current_actual_usd) / current_actual_usd) * 100
+    current_spread_usd = df_usd['yield_spread'].iloc[-1]
+    
+    # USD metrics display
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="rate-label">Actual USD/PLN</div>
+            <div class="actual-rate">{current_actual_usd:.4f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="rate-label">Predicted USD/PLN</div>
+            <div class="predicted-rate">{current_predicted_usd:.4f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        difference_color_usd = "#28a745" if abs(difference_pct_usd) < 1 else "#dc3545"
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="rate-label">% Difference USD</div>
+            <div class="difference" style="color: {difference_color_usd}">{difference_pct_usd:.2f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="rate-label">PL-US Spread</div>
+            <div class="difference">{current_spread_usd:.2f}pp</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # USD Charts
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**USD/PLN: Historical vs Predicted**")
+        
+        fig_usd1 = go.Figure()
+        
+        # Actual USD/PLN
+        fig_usd1.add_trace(go.Scatter(
+            x=df_usd.index,
+            y=df_usd['actual_usd_pln'],
+            mode='lines',
+            name='USD/PLN (Actual)',
+            line=dict(color='#2E86AB', width=3),
+            hovertemplate='Actual: %{y:.4f}<br>%{x}<extra></extra>'
+        ))
+        
+        # Predicted USD/PLN
+        fig_usd1.add_trace(go.Scatter(
+            x=df_usd.index,
+            y=df_usd['predicted_usd_pln'],
+            mode='lines',
+            name='USD/PLN (Predicted)',
+            line=dict(color='#F24236', width=3, dash='dash'),
+            hovertemplate='Predicted: %{y:.4f}<br>%{x}<extra></extra>'
+        ))
+        
+        fig_usd1.update_layout(
+            height=450,
+            showlegend=True,
+            legend=dict(x=0.02, y=0.98, bgcolor='rgba(255,255,255,0.8)'),
+            xaxis_title="Date",
+            yaxis_title="USD/PLN Rate",
+            hovermode='x unified',
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)'
+        )
+        
+        fig_usd1.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+        fig_usd1.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+        
+        st.plotly_chart(fig_usd1, use_container_width=True)
+    
+    with col2:
+        st.markdown("**Bond Yield Spread (PL 10Y - US 10Y)**")
+        
+        fig_usd2 = go.Figure()
+        
+        fig_usd2.add_trace(go.Scatter(
+            x=df_usd.index,
+            y=df_usd['yield_spread'],
+            mode='lines',
+            name='PL-US Spread',
+            line=dict(color='#FFB6C1', width=4),
+            fill='tozeroy',
+            fillcolor='rgba(255, 182, 193, 0.3)',
+            hovertemplate='Spread: %{y:.2f}pp<br>%{x}<extra></extra>'
+        ))
+        
+        # Current spread line
+        fig_usd2.add_hline(y=current_spread_usd, line_dash="dot", line_color="red", line_width=2,
+                           annotation_text=f"Current: {current_spread_usd:.2f}pp",
+                           annotation_position="top right")
+        
+        fig_usd2.update_layout(
+            height=450,
+            xaxis_title="Date",
+            yaxis_title="Yield Spread (pp)",
+            hovermode='x',
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)'
+        )
+        
+        fig_usd2.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+        fig_usd2.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+        
+        st.plotly_chart(fig_usd2, use_container_width=True)
+    
+    # USD Model Performance
+    st.markdown("---")
+    st.subheader("📊 USD Model Performance")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # USD Calculate metrics
+        usd_correlation = df_usd['actual_usd_pln'].corr(df_usd['predicted_usd_pln'])
+        usd_rmse = np.sqrt(np.mean((df_usd['actual_usd_pln'] - df_usd['predicted_usd_pln'])**2))
+        usd_mae = np.mean(np.abs(df_usd['actual_usd_pln'] - df_usd['predicted_usd_pln']))
+        
+        st.markdown(f"""
+        **USD Model Accuracy:**
+        - **Correlation**: {usd_correlation:.3f}
+        - **RMSE**: {usd_rmse:.4f}
+        - **MAE**: {usd_mae:.4f}
+        - **Current Error**: {abs(current_actual_usd - current_predicted_usd):.4f}
+        """)
+    
+    with col2:
+        # USD Recent trends
+        recent_df_usd = df_usd.tail(30)
+        recent_actual_change_usd = recent_df_usd['actual_usd_pln'].iloc[-1] - recent_df_usd['actual_usd_pln'].iloc[0]
+        recent_spread_change_usd = recent_df_usd['yield_spread'].iloc[-1] - recent_df_usd['yield_spread'].iloc[0]
+        
+        st.markdown(f"""
+        **USD 30-Day Trends:**
+        - **USD/PLN Change**: {recent_actual_change_usd:.4f}
+        - **Spread Change**: {recent_spread_change_usd:.2f}pp
+        - **Avg Error**: {np.mean(np.abs(recent_df_usd['actual_usd_pln'] - recent_df_usd['predicted_usd_pln'])):.4f}
+        """)
+    
+    with col3:
+        # USD Error distribution chart
+        errors_usd = df_usd['actual_usd_pln'] - df_usd['predicted_usd_pln']
+        
+        fig_usd3 = go.Figure()
+        fig_usd3.add_trace(go.Histogram(
+            x=errors_usd,
+            nbinsx=15,
+            name='USD Prediction Errors',
+            marker_color='lightcoral',
+            opacity=0.7
+        ))
+        
+        fig_usd3.update_layout(
+            title="USD Error Distribution",
+            xaxis_title="Error (Actual - Predicted)",
+            yaxis_title="Frequency",
+            height=250,
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
+        
+        st.plotly_chart(fig_usd3, use_container_width=True)
+    
+    # EUR vs USD Comparison
+    st.markdown("---")
+    st.subheader("⚖️ EUR/PLN vs USD/PLN Comparison")
+    
+    # Load EUR data for comparison
+    try:
+        # Get EUR data from Tab 2 or generate it
+        dashboard_eur = FXBondSpreadDashboard()
+        eur_pln_data = dashboard_eur.get_nbp_historical_data(start_date, end_date, 'eur')
+        
+        if not eur_pln_data.empty:
+            # Simple comparison chart
+            fig_comparison = go.Figure()
+            
+            # EUR/PLN actual
+            fig_comparison.add_trace(go.Scatter(
+                x=eur_pln_data.index,
+                y=eur_pln_data['value'],
+                mode='lines',
+                name='EUR/PLN (Actual)',
+                line=dict(color='#1f77b4', width=2),
+                yaxis='y1'
+            ))
+            
+            # USD/PLN actual
+            fig_comparison.add_trace(go.Scatter(
+                x=df_usd.index,
+                y=df_usd['actual_usd_pln'],
+                mode='lines',
+                name='USD/PLN (Actual)',
+                line=dict(color='#ff7f0e', width=2),
+                yaxis='y2'
+            ))
+            
+            # Create subplot with dual y-axes
+            fig_comparison.update_layout(
+                title="EUR/PLN vs USD/PLN - 6 Month Comparison",
+                xaxis_title="Date",
+                yaxis=dict(
+                    title="EUR/PLN Rate",
+                    side="left",
+                    color='#1f77b4'
+                ),
+                yaxis2=dict(
+                    title="USD/PLN Rate",
+                    side="right",
+                    overlaying="y",
+                    color='#ff7f0e'
+                ),
+                height=400,
+                hovermode='x unified'
+            )
+            
+            st.plotly_chart(fig_comparison, use_container_width=True)
+            
+            # Correlation analysis
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                # Calculate correlation between EUR and USD vs PLN
+                common_dates = eur_pln_data.index.intersection(df_usd.index)
+                if len(common_dates) > 10:
+                    eur_common = eur_pln_data.loc[common_dates, 'value']
+                    usd_common = df_usd.loc[common_dates, 'actual_usd_pln']
+                    cross_correlation = eur_common.corr(usd_common)
+                    
+                    st.metric(
+                        "EUR vs USD Correlation",
+                        f"{cross_correlation:.3f}",
+                        help="Correlation between EUR/PLN and USD/PLN movements"
+                    )
+            
+            with col2:
+                # EUR recent performance
+                eur_recent_change = (eur_pln_data['value'].iloc[-1] - eur_pln_data['value'].iloc[-30]) / eur_pln_data['value'].iloc[-30] * 100
+                st.metric(
+                    "EUR/PLN (30d %)",
+                    f"{eur_recent_change:.2f}%"
+                )
+            
+            with col3:
+                # USD recent performance
+                usd_recent_change = (df_usd['actual_usd_pln'].iloc[-1] - df_usd['actual_usd_pln'].iloc[-30]) / df_usd['actual_usd_pln'].iloc[-30] * 100
+                st.metric(
+                    "USD/PLN (30d %)",
+                    f"{usd_recent_change:.2f}%"
+                )
+                
+    except Exception as e:
+        st.info("📊 EUR comparison data not available")
+    
+    # Currency strength analysis
+    with st.expander("💪 Currency Strength Analysis"):
+        st.markdown("""
+        **Key Insights:**
+        
+        **EUR/PLN vs USD/PLN Dynamics:**
+        - **Interest Rate Sensitivity**: USD/PLN typically more sensitive to rate differentials
+        - **Economic Cycles**: EUR/PLN influenced by ECB policy, USD/PLN by Fed policy
+        - **Risk Sentiment**: USD often strengthens during risk-off periods
+        - **Trade Relations**: EUR/PLN affected by EU-Poland trade, USD/PLN by global trade
+        
+        **Bond Spread Interpretation:**
+        - **Higher PL-DE spread**: Favors EUR strength (lower EUR/PLN)
+        - **Higher PL-US spread**: Favors USD strength (lower USD/PLN)
+        - **Convergence**: Spreads narrowing suggests PLN strengthening
+        - **Divergence**: Spreads widening suggests PLN weakening
+        
+        **Trading Considerations:**
+        - **Carry Trade**: Higher Polish yields attract foreign investment
+        - **Central Bank Policy**: NBP vs ECB/Fed policy divergence
+        - **Economic Data**: Polish GDP, inflation vs foreign counterparts
+        - **Political Risk**: Polish domestic policies vs EU/US relations
+        """)
+
+# ============================================================================
+# SHARED CONTROLS (Updated)
+# ============================================================================import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -7,7 +547,7 @@ import requests
 from datetime import datetime, timedelta
 
 # FRED API Configuration
-FRED_API_KEY = "50813725c0bfaadbc44a16ef28b0e894"  # Replace with your API key
+FRED_API_KEY = "demo"  # Replace with your API key
 
 # Page config
 st.set_page_config(
@@ -152,13 +692,13 @@ class FXBondSpreadDashboard:
     def __init__(self):
         self.fred_client = FREDAPIClient()
     
-    def get_nbp_historical_data(self, start_date, end_date):
-        """Get historical EUR/PLN from NBP API"""
+    def get_nbp_historical_data(self, start_date, end_date, currency='eur'):
+        """Get historical currency/PLN from NBP API"""
         try:
             start_str = start_date.strftime('%Y-%m-%d')
             end_str = end_date.strftime('%Y-%m-%d')
             
-            url = f"https://api.nbp.pl/api/exchangerates/rates/a/eur/{start_str}/{end_str}/"
+            url = f"https://api.nbp.pl/api/exchangerates/rates/a/{currency.lower()}/{start_str}/{end_str}/"
             response = requests.get(url, timeout=15)
             data = response.json()
             
@@ -171,23 +711,31 @@ class FXBondSpreadDashboard:
             
             return pd.DataFrame(df_data).set_index('date')
         except Exception as e:
-            st.warning(f"NBP historical data error: {e}")
-            return self.generate_sample_fx_data(start_date, end_date)
+            st.warning(f"NBP historical data error for {currency.upper()}: {e}")
+            return self.generate_sample_fx_data(start_date, end_date, currency)
     
-    def calculate_predicted_fx_rate(self, pl_yield, de_yield, base_rate=4.24):
+    def calculate_predicted_fx_rate(self, pl_yield, foreign_yield, base_rate, currency='EUR'):
         """Calculate predicted FX rate based on bond yield spread"""
-        yield_spread = pl_yield - de_yield
-        spread_sensitivity = 0.15
+        yield_spread = pl_yield - foreign_yield
+        # Different sensitivity for EUR vs USD
+        spread_sensitivity = 0.15 if currency == 'EUR' else 0.18  # USD is slightly more sensitive
         predicted_rate = base_rate * (1 + yield_spread * spread_sensitivity / 100)
         return predicted_rate
     
-    def generate_sample_fx_data(self, start_date, end_date):
-        """Generate sample EUR/PLN data"""
+    def generate_sample_fx_data(self, start_date, end_date, currency='eur'):
+        """Generate sample currency/PLN data"""
         dates = pd.date_range(start=start_date, end=end_date, freq='D')
         np.random.seed(42)
-        base_rate = 4.24
+        
+        if currency.lower() == 'eur':
+            base_rate = 4.24
+            volatility = 0.003
+        else:  # USD
+            base_rate = 3.85
+            volatility = 0.004  # USD typically more volatile vs PLN
+        
         trend = np.linspace(0, 0.02, len(dates))
-        noise = np.cumsum(np.random.randn(len(dates)) * 0.003)
+        noise = np.cumsum(np.random.randn(len(dates)) * volatility)
         values = base_rate + trend + noise
         return pd.DataFrame({'value': values}, index=dates)
 
@@ -248,6 +796,22 @@ def get_eur_pln_rate():
         st.warning(f"NBP API error: {e}")
         return {'rate': 4.25, 'date': 'Fallback', 'source': 'Estimated'}
 
+@st.cache_data(ttl=300)
+def get_usd_pln_rate():
+    """Get current USD/PLN from NBP API"""
+    try:
+        url = "https://api.nbp.pl/api/exchangerates/rates/a/usd/"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        return {
+            'rate': data['rates'][0]['mid'],
+            'date': data['rates'][0]['effectiveDate'],
+            'source': 'NBP'
+        }
+    except Exception as e:
+        st.warning(f"NBP API error for USD: {e}")
+        return {'rate': 3.85, 'date': 'Fallback', 'source': 'Estimated'}
+
 # ============================================================================
 # CALCULATION FUNCTIONS
 # ============================================================================
@@ -283,9 +847,10 @@ with st.spinner("📡 Loading market data..."):
     bond_data = get_fred_bond_data()
     rates_data = get_fred_rates_data()
     forex_data = get_eur_pln_rate()
+    usd_forex_data = get_usd_pln_rate()
 
 # Main tabs
-tab1, tab2 = st.tabs(["🧮 Forward Rate Calculator", "📊 Bond Spread Dashboard"])
+tab1, tab2, tab3 = st.tabs(["🧮 Forward Rate Calculator", "📊 Bond Spread Dashboard", "🇺🇸 USD/PLN Analytics"])
 
 # ============================================================================
 # TAB 1: FORWARD RATE CALCULATOR
@@ -810,26 +1375,36 @@ with col2:
             - EURIBOR 3M: `EUR3MTD156N`
             - Fed Funds: `FEDFUNDS`
             - ECB Rate: `IRSTCB01EZM156N`
+            
+            **FX Rates:**
+            - EUR/PLN: NBP API
+            - USD/PLN: NBP API
             """)
 
 with col3:
     if st.button("ℹ️ Methodology", use_container_width=True):
         with st.expander("🔬 Calculation Methods", expanded=True):
             st.markdown("""
-            **Forward Rate Formula:**
+            **Forward Rate Formula (Both Currencies):**
             ```
-            Forward = Spot × (1 + r_PL × T) / (1 + r_DE × T)
+            Forward = Spot × (1 + r_PL × T) / (1 + r_Foreign × T)
             ```
             
-            **Bond Spread Model:**
+            **Bond Spread Models:**
             ```
-            Predicted_FX = Base_Rate × (1 + Spread × 0.15)
+            EUR: Predicted_FX = Base_Rate × (1 + Spread × 0.15)
+            USD: Predicted_FX = Base_Rate × (1 + Spread × 0.18)
             ```
             
             **Data Sources:**
-            - **EUR/PLN**: NBP API (Polish Central Bank)
-            - **Bond Yields**: FRED API (Federal Reserve)
+            - **EUR/PLN & USD/PLN**: NBP API (Polish Central Bank)
+            - **Bond Yields**: FRED API (Federal Reserve Economic Data)
             - **Interpolation**: German 9M = German 10Y - 25bp
+            
+            **Model Differences:**
+            - **EUR Model**: 15% sensitivity (more stable)
+            - **USD Model**: 18% sensitivity (more volatile)
+            - **Base Rates**: EUR ~4.24, USD ~3.85
             
             **Update Frequency:**
             - Bond data: 1 hour cache
@@ -843,7 +1418,7 @@ st.markdown(
     f"""
     <div style='text-align: center; color: gray; font-size: 0.8em; padding: 1rem; border-top: 1px solid #eee;'>
     💱 <strong>Professional FX Trading Dashboard</strong><br>
-    📊 Real-time data: NBP API, FRED API | 🧮 Forward Calculator | 📈 Bond Spread Analytics<br>
+    📊 Real-time data: NBP API, FRED API | 🧮 Forward Calculator | 📈 Bond Spread Analytics | 🇺🇸 USD/PLN Analytics<br>
     ⏰ Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 
     🔗 <a href="https://fred.stlouisfed.org/docs/api/" target="_blank">FRED API Docs</a><br>
     ⚠️ <em>For educational and analytical purposes - not financial advice</em>
