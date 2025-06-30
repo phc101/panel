@@ -850,7 +850,7 @@ with st.spinner("📡 Loading market data..."):
     usd_forex_data = get_usd_pln_rate()
 
 # Main tabs
-tab1, tab2, tab3 = st.tabs(["🧮 Forward Rate Calculator", "📊 Bond Spread Dashboard", "🇺🇸 USD/PLN Analytics"])
+tab1, tab2 = st.tabs(["🧮 Forward Rate Calculator", "📊 Bond Spread Dashboard (EUR/PLN + USD/PLN)"])
 
 # ============================================================================
 # TAB 1: FORWARD RATE CALCULATOR
