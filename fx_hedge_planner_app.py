@@ -102,133 +102,47 @@ class FREDAPIClient:
                     }
             return None
         except Exception as e:
-            st.plotly_chart(fig2, use_container_width=True)
+            st.warning(f"FRED API error for {series_id}: {e}")
+            return None
     
-    # Statistical Analysis
-    st.markdown("---")
-    st.subheader("📊 Model Performance Analytics")
+    def get_multiple_series(self, series_dict):
+        """Get data for multiple FRED series"""
+        results = {}
+        for name, series_id in series_dict.items():
+            data = self.get_series_data(series_id)
+            if data:
+                results[name] = data
+        return results
     
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        # Calculate metrics
-        correlation = df['actual_eur_pln'].corr(df['predicted_eur_pln'])
-        rmse = np.sqrt(np.mean((df['actual_eur_pln'] - df['predicted_eur_pln'])**2))
-        mae = np.mean(np.abs(df['actual_eur_pln'] - df['predicted_eur_pln']))
+    def get_historical_data(self, series_id, start_date, end_date):
+        """Get historical data from FRED API"""
+        params = {
+            'series_id': series_id,
+            'api_key': self.api_key,
+            'file_type': 'json',
+            'start_date': start_date,
+            'end_date': end_date,
+            'frequency': 'd',
+            'aggregation_method': 'avg'
+        }
         
-        st.markdown(f"""
-        **Model Accuracy:**
-        - **Correlation**: {correlation:.3f}
-        - **RMSE**: {rmse:.4f}
-        - **MAE**: {mae:.4f}
-        - **Current Error**: {abs(current_actual - current_predicted):.4f}
-        """)
-    
-    with col2:
-        # Recent trends
-        recent_df = df.tail(30)
-        recent_actual_change = recent_df['actual_eur_pln'].iloc[-1] - recent_df['actual_eur_pln'].iloc[0]
-        recent_spread_change = recent_df['yield_spread'].iloc[-1] - recent_df['yield_spread'].iloc[0]
-        
-        st.markdown(f"""
-        **30-Day Trends:**
-        - **EUR/PLN Change**: {recent_actual_change:.4f}
-        - **Spread Change**: {recent_spread_change:.2f}pp
-        - **Avg Error**: {np.mean(np.abs(recent_df['actual_eur_pln'] - recent_df['predicted_eur_pln'])):.4f}
-        """)
-    
-    with col3:
-        # Error distribution chart
-        errors = df['actual_eur_pln'] - df['predicted_eur_pln']
-        
-        fig3 = go.Figure()
-        fig3.add_trace(go.Histogram(
-            x=errors,
-            nbinsx=15,
-            name='Prediction Errors',
-            marker_color='lightblue',
-            opacity=0.7
-        ))
-        
-        fig3.update_layout(
-            title="Error Distribution",
-            xaxis_title="Error (Actual - Predicted)",
-            yaxis_title="Frequency",
-            height=250,
-            margin=dict(l=20, r=20, t=40, b=20)
-        )
-        
-        st.plotly_chart(fig3, use_container_width=True)
-
-# ============================================================================
-# SHARED CONTROLS
-# ============================================================================
-
-st.markdown("---")
-
-# Refresh and info controls
-col1, col2, col3 = st.columns([1, 1, 1])
-
-with col1:
-    if st.button("🔄 Refresh All Data", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-with col2:
-    if st.button("📊 FRED Series Info", use_container_width=True):
-        with st.expander("📋 FRED Series Used", expanded=True):
-            st.markdown("""
-            **Bond Yields:**
-            - Poland 10Y: `IRLTLT01PLM156N`
-            - Germany 10Y: `IRLTLT01DEM156N`
-            - US 10Y: `DGS10`
-            - US 2Y: `DGS2`
+        try:
+            response = requests.get(self.base_url, params=params, timeout=15)
+            data = response.json()
             
-            **Interest Rates:**
-            - EURIBOR 3M: `EUR3MTD156N`
-            - Fed Funds: `FEDFUNDS`
-            - ECB Rate: `IRSTCB01EZM156N`
-            """)
-
-with col3:
-    if st.button("ℹ️ Methodology", use_container_width=True):
-        with st.expander("🔬 Calculation Methods", expanded=True):
-            st.markdown("""
-            **Forward Rate Formula:**
-            ```
-            Forward = Spot × (1 + r_PL × T) / (1 + r_DE × T)
-            ```
-            
-            **Bond Spread Model:**
-            ```
-            Predicted_FX = Base_Rate × (1 + Spread × 0.15)
-            ```
-            
-            **Data Sources:**
-            - **EUR/PLN**: NBP API (Polish Central Bank)
-            - **Bond Yields**: FRED API (Federal Reserve)
-            - **Interpolation**: German 9M = German 10Y - 25bp
-            
-            **Update Frequency:**
-            - Bond data: 1 hour cache
-            - FX data: 5 minute cache
-            - Historical: Daily
-            """)
-
-# Performance note
-st.markdown("---")
-st.markdown(
-    f"""
-    <div style='text-align: center; color: gray; font-size: 0.8em; padding: 1rem; border-top: 1px solid #eee;'>
-    💱 <strong>Professional FX Trading Dashboard</strong><br>
-    📊 Real-time data: NBP API, FRED API | 🧮 Forward Calculator | 📈 Bond Spread Analytics<br>
-    ⏰ Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 
-    🔗 <a href="https://fred.stlouisfed.org/docs/api/" target="_blank">FRED API Docs</a><br>
-    ⚠️ <em>For educational and analytical purposes - not financial advice</em>
-    </div>
-    """, 
-    unsafe_allow_html=True
-)
+            if 'observations' in data:
+                df_data = []
+                for obs in data['observations']:
+                    if obs['value'] != '.':
+                        df_data.append({
+                            'date': pd.to_datetime(obs['date']),
+                            'value': float(obs['value'])
+                        })
+                return pd.DataFrame(df_data).set_index('date')
+            return pd.DataFrame()
+        except Exception as e:
+            st.warning(f"FRED historical data error for {series_id}: {e}")
+            return pd.DataFrame()
 
 # ============================================================================
 # FX BOND SPREAD DASHBOARD CLASS
@@ -278,7 +192,7 @@ class FXBondSpreadDashboard:
         return pd.DataFrame({'value': values}, index=dates)
 
 # ============================================================================
-# MAIN APP FUNCTIONS
+# CACHED DATA FUNCTIONS
 # ============================================================================
 
 @st.cache_data(ttl=3600)
@@ -333,6 +247,10 @@ def get_eur_pln_rate():
     except Exception as e:
         st.warning(f"NBP API error: {e}")
         return {'rate': 4.25, 'date': 'Fallback', 'source': 'Estimated'}
+
+# ============================================================================
+# CALCULATION FUNCTIONS
+# ============================================================================
 
 def calculate_forward_rate(spot_rate, domestic_yield, foreign_yield, days):
     """Calculate forward rate using bond yields"""
@@ -538,8 +456,8 @@ with tab1:
             "Spread vs Spot": f"{(fw_rate - spot_rate):.4f}"
         })
     
-    df = pd.DataFrame(forward_table_data)
-    st.dataframe(df, use_container_width=True)
+    df_forward = pd.DataFrame(forward_table_data)
+    st.dataframe(df_forward, use_container_width=True)
     
     # Forward curve chart
     st.markdown("---")
@@ -807,4 +725,129 @@ with tab2:
         fig2.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
         fig2.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
         
-        st.
+        st.plotly_chart(fig2, use_container_width=True)
+    
+    # Statistical Analysis
+    st.markdown("---")
+    st.subheader("📊 Model Performance Analytics")
+    
+    
+    with col1:
+        # Calculate metrics
+        correlation = df['actual_eur_pln'].corr(df['predicted_eur_pln'])
+        rmse = np.sqrt(np.mean((df['actual_eur_pln'] - df['predicted_eur_pln'])**2))
+        mae = np.mean(np.abs(df['actual_eur_pln'] - df['predicted_eur_pln']))
+        
+        st.markdown(f"""
+        **Model Accuracy:**
+        - **Correlation**: {correlation:.3f}
+        - **RMSE**: {rmse:.4f}
+        - **MAE**: {mae:.4f}
+        - **Current Error**: {abs(current_actual - current_predicted):.4f}
+        """)
+    
+    with col2:
+        # Recent trends
+        recent_df = df.tail(30)
+        recent_actual_change = recent_df['actual_eur_pln'].iloc[-1] - recent_df['actual_eur_pln'].iloc[0]
+        recent_spread_change = recent_df['yield_spread'].iloc[-1] - recent_df['yield_spread'].iloc[0]
+        
+        st.markdown(f"""
+        **30-Day Trends:**
+        - **EUR/PLN Change**: {recent_actual_change:.4f}
+        - **Spread Change**: {recent_spread_change:.2f}pp
+        - **Avg Error**: {np.mean(np.abs(recent_df['actual_eur_pln'] - recent_df['predicted_eur_pln'])):.4f}
+        """)
+    
+    with col3:
+        # Error distribution chart
+        errors = df['actual_eur_pln'] - df['predicted_eur_pln']
+        
+        fig3 = go.Figure()
+        fig3.add_trace(go.Histogram(
+            x=errors,
+            nbinsx=15,
+            name='Prediction Errors',
+            marker_color='lightblue',
+            opacity=0.7
+        ))
+        
+        fig3.update_layout(
+            title="Error Distribution",
+            xaxis_title="Error (Actual - Predicted)",
+            yaxis_title="Frequency",
+            height=250,
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
+        
+        st.plotly_chart(fig3, use_container_width=True)
+
+# ============================================================================
+# SHARED CONTROLS
+# ============================================================================
+
+st.markdown("---")
+
+# Refresh and info controls
+col1, col2, col3 = st.columns([1, 1, 1])
+
+with col1:
+    if st.button("🔄 Refresh All Data", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+with col2:
+    if st.button("📊 FRED Series Info", use_container_width=True):
+        with st.expander("📋 FRED Series Used", expanded=True):
+            st.markdown("""
+            **Bond Yields:**
+            - Poland 10Y: `IRLTLT01PLM156N`
+            - Germany 10Y: `IRLTLT01DEM156N`
+            - US 10Y: `DGS10`
+            - US 2Y: `DGS2`
+            
+            **Interest Rates:**
+            - EURIBOR 3M: `EUR3MTD156N`
+            - Fed Funds: `FEDFUNDS`
+            - ECB Rate: `IRSTCB01EZM156N`
+            """)
+
+with col3:
+    if st.button("ℹ️ Methodology", use_container_width=True):
+        with st.expander("🔬 Calculation Methods", expanded=True):
+            st.markdown("""
+            **Forward Rate Formula:**
+            ```
+            Forward = Spot × (1 + r_PL × T) / (1 + r_DE × T)
+            ```
+            
+            **Bond Spread Model:**
+            ```
+            Predicted_FX = Base_Rate × (1 + Spread × 0.15)
+            ```
+            
+            **Data Sources:**
+            - **EUR/PLN**: NBP API (Polish Central Bank)
+            - **Bond Yields**: FRED API (Federal Reserve)
+            - **Interpolation**: German 9M = German 10Y - 25bp
+            
+            **Update Frequency:**
+            - Bond data: 1 hour cache
+            - FX data: 5 minute cache
+            - Historical: Daily
+            """)
+
+# Performance note
+st.markdown("---")
+st.markdown(
+    f"""
+    <div style='text-align: center; color: gray; font-size: 0.8em; padding: 1rem; border-top: 1px solid #eee;'>
+    💱 <strong>Professional FX Trading Dashboard</strong><br>
+    📊 Real-time data: NBP API, FRED API | 🧮 Forward Calculator | 📈 Bond Spread Analytics<br>
+    ⏰ Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 
+    🔗 <a href="https://fred.stlouisfed.org/docs/api/" target="_blank">FRED API Docs</a><br>
+    ⚠️ <em>For educational and analytical purposes - not financial advice</em>
+    </div>
+    """, 
+    unsafe_allow_html=True
+)
