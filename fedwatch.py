@@ -342,7 +342,7 @@ with tab1:
         line=dict(color='rgba(255,255,255,0)'),
         name='Scenariusz Możliwy - Skrajny',
         showlegend=True,
-        hovertemplate='%{y:.2f}<extra></extra>'
+        hoverinfo='skip'
     ))
     
     fig.add_trace(go.Scatter(
@@ -353,7 +353,7 @@ with tab1:
         line=dict(color='rgba(255,255,255,0)'),
         name='Scenariusz Prawdopodobny',
         showlegend=True,
-        hovertemplate='%{y:.2f}<extra></extra>'
+        hoverinfo='skip'
     ))
     
     # Linia centralna
@@ -363,7 +363,7 @@ with tab1:
         name=f'{selected_currency} - Scenariusz Średni',
         line=dict(color=color, width=4),
         mode='lines+markers',
-        hovertemplate='%{y:.2f}<extra></extra>'
+        hoverinfo='skip'
     ))
     
     # Linie percentyli
@@ -373,7 +373,7 @@ with tab1:
         name='Scenariusz Możliwy (dolny)',
         line=dict(color=color, width=2, dash='dash'),
         mode='lines',
-        hovertemplate='%{y:.2f}<extra></extra>'
+        hoverinfo='skip'
     ))
     
     fig.add_trace(go.Scatter(
@@ -382,7 +382,7 @@ with tab1:
         name='Scenariusz Skrajny (górny)',
         line=dict(color=color, width=2, dash='dash'),
         mode='lines',
-        hovertemplate='%{y:.2f}<extra></extra>'
+        hoverinfo='skip'
     ))
     
     # Obecny kurs (punkt startowy)
@@ -392,7 +392,7 @@ with tab1:
         name=f'Obecny Kurs {selected_currency}',
         mode='markers',
         marker=dict(color='red', size=10, symbol='star'),
-        hovertemplate='%{y:.2f}<extra></extra>'
+        hoverinfo='skip'
     ))
     
     fig.update_layout(
@@ -403,7 +403,7 @@ with tab1:
             side="right"
         ),
         height=600,
-        hovermode='x unified',
+        hovermode='x',
         legend=dict(
             x=0.02,
             y=0.98,
@@ -414,6 +414,24 @@ with tab1:
             borderwidth=1
         )
     )
+    
+    # Dodanie niewidocznej linii do hover z zakresami
+    hover_text = []
+    for i, row in df_proj.iterrows():
+        min_val = min(row["P10"], row["P25"])
+        max_val = max(row["P75"], row["P90"])
+        hover_text.append(f"Zakres: {min_val:.2f} - {max_val:.2f}<br>Średni: {row['Central']:.2f}")
+    
+    fig.add_trace(go.Scatter(
+        x=df_proj["Miesiąc"],
+        y=df_proj["Central"],
+        mode='markers',
+        marker=dict(size=0.1, opacity=0),
+        showlegend=False,
+        hovertemplate='%{text}<extra></extra>',
+        text=hover_text,
+        name='hover_helper'
+    ))
     
     st.plotly_chart(fig, use_container_width=True)
     
