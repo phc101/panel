@@ -286,60 +286,138 @@ tab1, tab2, tab3 = st.tabs(["📈 Prognoza", "📊 Analiza Wrażliwości", "🔍
 with tab1:
     st.markdown("### Prognoza Kursów Walut w Czasie")
     
-    # Generowanie projekcji
+    # Wybór pary walutowej
+    selected_currency = st.selectbox(
+        "Wybierz parę walutową:",
+        options=["EUR/PLN", "USD/PLN", "GBP/PLN"],
+        index=0
+    )
+    
+    currency_code = selected_currency.split("/")[0]
+    
+    # Generowanie projekcji z percentylami
     dates = [datetime.now() + timedelta(days=30*i) for i in range(time_horizon + 1)]
     projection_data = []
     
     for i, date in enumerate(dates):
         adjustment = min(i / 6, 1)
+        
+        # Obliczanie prognoz dla wybranej waluty
+        current_rate = current_rates[currency_code]
+        target_central = predictions[currency_code]["central"]
+        target_p10 = predictions[currency_code]["p10"]
+        target_p25 = predictions[currency_code]["p25"]
+        target_p75 = predictions[currency_code]["p75"]
+        target_p90 = predictions[currency_code]["p90"]
+        
         projection_data.append({
             "Miesiąc": i,
             "Data": date.strftime("%Y-%m"),
-            "EUR": current_eur + (predictions["EUR"]["central"] - current_eur) * adjustment,
-            "USD": current_usd + (predictions["USD"]["central"] - current_usd) * adjustment,
-            "GBP": current_gbp + (predictions["GBP"]["central"] - current_gbp) * adjustment
+            "Central": current_rate + (target_central - current_rate) * adjustment,
+            "P10": current_rate + (target_p10 - current_rate) * adjustment,
+            "P25": current_rate + (target_p25 - current_rate) * adjustment,
+            "P75": current_rate + (target_p75 - current_rate) * adjustment,
+            "P90": current_rate + (target_p90 - current_rate) * adjustment
         })
     
     df_proj = pd.DataFrame(projection_data)
     
-    # Tworzenie wykresu z nowym kolorem
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_proj["Miesiąc"], y=df_proj["EUR"], name="EUR/PLN", line=dict(color=color, width=3), mode='lines+markers'))
-    fig.add_trace(go.Scatter(x=df_proj["Miesiąc"], y=df_proj["USD"], name="USD/PLN", line=dict(color=color, width=3, dash='dash'), mode='lines+markers'))
-    fig.add_trace(go.Scatter(x=df_proj["Miesiąc"], y=df_proj["GBP"], name="GBP/PLN", line=dict(color=color, width=3, dash='dot'), mode='lines+markers'))
+    # Kolory dla różnych walut
+    currency_colors = {
+        "EUR": "#4f46e5",
+        "USD": "#059669", 
+        "GBP": "#dc2626"
+    }
+    color = currency_colors[currency_code]
     
-    # Skalowanie osi
-    all_values = list(df_proj["EUR"]) + list(df_proj["USD"]) + list(df_proj["GBP"])
-    y_min = min(all_values) * 0.99
-    y_max = max(all_values) * 1.01
+    # Tworzenie wykresu z pasmami percentyli
+    fig = go.Figure()
+    
+    # Pasma percentyli (obszary wypełnione)
+    fig.add_trace(go.Scatter(
+        x=list(df_proj["Miesiąc"]) + list(df_proj["Miesiąc"][::-1]),
+        y=list(df_proj["P10"]) + list(df_proj["P90"][::-1]),
+        fill='toself',
+        fillcolor=f'rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.1)',
+        line=dict(color='rgba(255,255,255,0)'),
+        name='80% Ufności (P10-P90)',
+        showlegend=True
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=list(df_proj["Miesiąc"]) + list(df_proj["Miesiąc"][::-1]),
+        y=list(df_proj["P25"]) + list(df_proj["P75"][::-1]),
+        fill='toself',
+        fillcolor=f'rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.2)',
+        line=dict(color='rgba(255,255,255,0)'),
+        name='50% Ufności (P25-P75)',
+        showlegend=True
+    ))
+    
+    # Linia centralna
+    fig.add_trace(go.Scatter(
+        x=df_proj["Miesiąc"], 
+        y=df_proj["Central"], 
+        name=f'{selected_currency} - Prognoza Centralna',
+        line=dict(color=color, width=4),
+        mode='lines+markers'
+    ))
+    
+    # Linie percentyli
+    fig.add_trace(go.Scatter(
+        x=df_proj["Miesiąc"], 
+        y=df_proj["P10"], 
+        name='10. percentyl',
+        line=dict(color=color, width=2, dash='dash'),
+        mode='lines'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=df_proj["Miesiąc"], 
+        y=df_proj["P90"], 
+        name='90. percentyl',
+        line=dict(color=color, width=2, dash='dash'),
+        mode='lines'
+    ))
+    
+    # Obecny kurs (punkt startowy)
+    fig.add_trace(go.Scatter(
+        x=[0], 
+        y=[current_rates[currency_code]], 
+        name=f'Obecny Kurs {selected_currency}',
+        mode='markers',
+        marker=dict(color='red', size=10, symbol='star')
+    ))
     
     fig.update_layout(
-        title=f"Prognoza Kursów Walut - {time_horizon} Miesięcy",
+        title=f"Prognoza {selected_currency} z Pasmami Ufności - {time_horizon} Miesięcy",
         xaxis_title="Miesiące od Teraz",
-        yaxis_title="Kurs Walutowy (PLN)",
-        yaxis=dict(range=[y_min, y_max], tickformat='.2f'),
-        height=500
+        yaxis_title=f"Kurs {selected_currency}",
+        height=600,
+        hovermode='x unified'
     )
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Dodawanie pasm percentyli
-    projection_with_bands = df_proj.copy()
+    # Tabela z danymi prognozy
+    st.markdown(f"#### Szczegółowe Dane Prognozy dla {selected_currency}")
     
-    for i, row in projection_with_bands.iterrows():
-        adjustment = min(i / 6, 1)
-        for currency in ["EUR", "USD", "GBP"]:
-            current_rate = current_rates[currency]
-            target_rate = predictions[currency]["central"]
-            adjusted_central = current_rate + (target_rate - current_rate) * adjustment
-            model_uncertainty = predictions[currency]["uncertainty"] / 100 * adjusted_central
-            
-            projection_with_bands.loc[i, f"{currency}_P25"] = adjusted_central - 0.67 * model_uncertainty
-            projection_with_bands.loc[i, f"{currency}_P75"] = adjusted_central + 0.67 * model_uncertainty
+    # Formatowanie tabeli
+    display_df = df_proj.copy()
+    for col in ["Central", "P10", "P25", "P75", "P90"]:
+        display_df[col] = display_df[col].round(4)
     
-    st.markdown("#### Dane Prognozy z Pasmami Ufności")
-    display_cols = ["Miesiąc", "Data", "EUR", "EUR_P25", "EUR_P75", "USD", "USD_P25", "USD_P75", "GBP", "GBP_P25", "GBP_P75"]
-    st.dataframe(projection_with_bands[display_cols].round(4), use_container_width=True)
+    display_df = display_df.rename(columns={
+        "Miesiąc": "Miesiąc",
+        "Data": "Data",
+        "Central": "Prognoza Centralna",
+        "P10": "10. percentyl",
+        "P25": "25. percentyl", 
+        "P75": "75. percentyl",
+        "P90": "90. percentyl"
+    })
+    
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 with tab2:
     st.markdown("### Analiza Wrażliwości - Wpływ Realnej Stopy Procentowej")
