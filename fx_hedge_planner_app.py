@@ -682,34 +682,48 @@ with tab2:
     with col1:
         st.markdown("**EUR/PLN: Historical vs Predicted**")
         
-        fig1 = go.Figure()
+        # Create dual-axis subplot
+        fig1 = make_subplots(specs=[[{"secondary_y": True}]])
         
-        # Actual EUR/PLN
+        # Actual EUR/PLN (left axis)
         fig1.add_trace(go.Scatter(
             x=df.index,
             y=df['actual_eur_pln'],
             mode='lines',
             name='EUR/PLN (Actual)',
-            line=dict(color='#2E86AB', width=3),
+            line=dict(color='#2E86AB', width=4),
             hovertemplate='Actual: %{y:.4f}<br>%{x}<extra></extra>'
-        ))
+        ), secondary_y=False)
         
-        # Predicted EUR/PLN
+        # Predicted EUR/PLN (right axis) 
         fig1.add_trace(go.Scatter(
             x=df.index,
             y=df['predicted_eur_pln'],
             mode='lines',
             name='EUR/PLN (Predicted)',
-            line=dict(color='#F24236', width=3, dash='dash'),
+            line=dict(color='#F24236', width=4, dash='dash'),
             hovertemplate='Predicted: %{y:.4f}<br>%{x}<extra></extra>'
-        ))
+        ), secondary_y=True)
+        
+        # Update axes
+        fig1.update_yaxes(
+            title_text="Actual EUR/PLN Rate", 
+            title_font_color="#2E86AB",
+            tickfont_color="#2E86AB",
+            secondary_y=False
+        )
+        fig1.update_yaxes(
+            title_text="Predicted EUR/PLN Rate",
+            title_font_color="#F24236", 
+            tickfont_color="#F24236",
+            secondary_y=True
+        )
         
         fig1.update_layout(
             height=450,
             showlegend=True,
             legend=dict(x=0.02, y=0.98, bgcolor='rgba(255,255,255,0.8)'),
             xaxis_title="Date",
-            yaxis_title="Exchange Rate",
             hovermode='x unified',
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)'
@@ -717,7 +731,6 @@ with tab2:
         
         # Add grid
         fig1.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
-        fig1.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
         
         st.plotly_chart(fig1, use_container_width=True)
     
