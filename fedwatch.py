@@ -340,7 +340,7 @@ with tab1:
         fill='toself',
         fillcolor=f'rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.1)',
         line=dict(color='rgba(255,255,255,0)'),
-        name='80% Ufności (P10-P90)',
+        name='Scenariusz Możliwy - Skrajny',
         showlegend=True
     ))
     
@@ -350,7 +350,7 @@ with tab1:
         fill='toself',
         fillcolor=f'rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.2)',
         line=dict(color='rgba(255,255,255,0)'),
-        name='50% Ufności (P25-P75)',
+        name='Scenariusz Prawdopodobny',
         showlegend=True
     ))
     
@@ -358,7 +358,7 @@ with tab1:
     fig.add_trace(go.Scatter(
         x=df_proj["Miesiąc"], 
         y=df_proj["Central"], 
-        name=f'{selected_currency} - Prognoza Centralna',
+        name=f'{selected_currency} - Scenariusz Średni',
         line=dict(color=color, width=4),
         mode='lines+markers'
     ))
@@ -367,7 +367,7 @@ with tab1:
     fig.add_trace(go.Scatter(
         x=df_proj["Miesiąc"], 
         y=df_proj["P10"], 
-        name='10. percentyl',
+        name='Scenariusz Możliwy (dolny)',
         line=dict(color=color, width=2, dash='dash'),
         mode='lines'
     ))
@@ -375,7 +375,7 @@ with tab1:
     fig.add_trace(go.Scatter(
         x=df_proj["Miesiąc"], 
         y=df_proj["P90"], 
-        name='90. percentyl',
+        name='Scenariusz Skrajny (górny)',
         line=dict(color=color, width=2, dash='dash'),
         mode='lines'
     ))
@@ -392,7 +392,10 @@ with tab1:
     fig.update_layout(
         title=f"Prognoza {selected_currency} z Pasmami Ufności - {time_horizon} Miesięcy",
         xaxis_title="Miesiące od Teraz",
-        yaxis_title=f"Kurs {selected_currency}",
+        yaxis=dict(
+            title=f"Kurs {selected_currency}",
+            side="right"
+        ),
         height=600,
         hovermode='x unified'
     )
