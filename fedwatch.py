@@ -341,7 +341,8 @@ with tab1:
         fillcolor=f'rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.1)',
         line=dict(color='rgba(255,255,255,0)'),
         name='Scenariusz Możliwy - Skrajny',
-        showlegend=True
+        showlegend=True,
+        hovertemplate='%{y:.2f}<extra></extra>'
     ))
     
     fig.add_trace(go.Scatter(
@@ -351,7 +352,8 @@ with tab1:
         fillcolor=f'rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.2)',
         line=dict(color='rgba(255,255,255,0)'),
         name='Scenariusz Prawdopodobny',
-        showlegend=True
+        showlegend=True,
+        hovertemplate='%{y:.2f}<extra></extra>'
     ))
     
     # Linia centralna
@@ -360,7 +362,8 @@ with tab1:
         y=df_proj["Central"], 
         name=f'{selected_currency} - Scenariusz Średni',
         line=dict(color=color, width=4),
-        mode='lines+markers'
+        mode='lines+markers',
+        hovertemplate='%{y:.2f}<extra></extra>'
     ))
     
     # Linie percentyli
@@ -369,7 +372,8 @@ with tab1:
         y=df_proj["P10"], 
         name='Scenariusz Możliwy (dolny)',
         line=dict(color=color, width=2, dash='dash'),
-        mode='lines'
+        mode='lines',
+        hovertemplate='%{y:.2f}<extra></extra>'
     ))
     
     fig.add_trace(go.Scatter(
@@ -377,7 +381,8 @@ with tab1:
         y=df_proj["P90"], 
         name='Scenariusz Skrajny (górny)',
         line=dict(color=color, width=2, dash='dash'),
-        mode='lines'
+        mode='lines',
+        hovertemplate='%{y:.2f}<extra></extra>'
     ))
     
     # Obecny kurs (punkt startowy)
@@ -386,7 +391,8 @@ with tab1:
         y=[current_rates[currency_code]], 
         name=f'Obecny Kurs {selected_currency}',
         mode='markers',
-        marker=dict(color='red', size=10, symbol='star')
+        marker=dict(color='red', size=10, symbol='star'),
+        hovertemplate='%{y:.2f}<extra></extra>'
     ))
     
     fig.update_layout(
