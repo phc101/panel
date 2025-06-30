@@ -228,8 +228,7 @@ st.markdown(
     </div>
     """, 
     unsafe_allow_html=True
-)warning(f"FRED API error for {series_id}: {e}")
-            return None
+)
     
     def get_multiple_series(self, series_dict):
         """Get data for multiple FRED series"""
