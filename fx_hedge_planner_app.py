@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # FRED API Configuration
-FRED_API_KEY = "50813725c0bfaadbc44a16ef28b0e894"  # You can use "demo" or get free API key from https://fred.stlouisfed.org/docs/api/api_key.html
+FRED_API_KEY = "demo"  # You can use "demo" or get free API key from https://fred.stlouisfed.org/docs/api/api_key.html
 
 # FRED Series IDs for bonds and rates
 FRED_SERIES = {
@@ -313,7 +313,7 @@ with col1:
     )
     
     if period_choice == "Custom Days":
-        days = st.number_input("Days:", value=365, min_value=1, max_value=1825)
+        days = st.number_input("Days:", value=365, min_value=1, max_value=730, help="Maximum 2 years (730 days)")
     else:
         period_days = {"1M": 30, "3M": 90, "6M": 180, "9M": 270, "1Y": 365, "2Y": 730}
         days = period_days[period_choice]
@@ -364,9 +364,9 @@ with col2:
 st.markdown("---")
 st.header("📅 Forward Rate Table")
 
-# Generate forward rates for different periods
-periods = [30, 90, 180, 270, 365, 730, 1095]
-period_names = ["1M", "3M", "6M", "9M", "1Y", "2Y", "3Y"]
+# Generate forward rates for different periods (max 2 years)
+periods = [30, 90, 180, 270, 365, 730]
+period_names = ["1M", "3M", "6M", "9M", "1Y", "2Y"]
 
 forward_table_data = []
 for i, period_days in enumerate(periods):
@@ -390,8 +390,8 @@ st.dataframe(df, use_container_width=True)
 st.markdown("---")
 st.header("📊 Forward Curve Visualization")
 
-# Generate smooth curve data
-curve_days = np.linspace(30, 1095, 100)
+# Generate smooth curve data (max 2 years = 730 days)
+curve_days = np.linspace(30, 730, 100)
 curve_forwards = [calculate_forward_rate(spot_rate, pl_yield, de_yield, d) for d in curve_days]
 curve_points = [calculate_forward_points(spot_rate, fw) for fw in curve_forwards]
 
@@ -444,12 +444,12 @@ fig.add_trace(go.Scatter(
 fig.add_hline(y=0, line_dash="dot", line_color="gray", row=2)
 
 fig.update_layout(
-    title="EUR/PLN Forward Analysis (Based on FRED Bond Data)",
+    title="EUR/PLN Forward Analysis - 2 Year Maximum (Based on FRED Bond Data)",
     height=700,
     hovermode='closest'
 )
 
-fig.update_xaxes(title_text="Days to Maturity", row=2, col=1)
+fig.update_xaxes(title_text="Days to Maturity (Max 2Y)", row=2, col=1)
 fig.update_yaxes(title_text="EUR/PLN Rate", row=1, col=1)
 fig.update_yaxes(title_text="Forward Points (pips)", row=2, col=1)
 
