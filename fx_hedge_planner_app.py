@@ -1411,11 +1411,15 @@ with tab4:
         
         cumulative_returns = (1 + returns).cumprod()
         
-        # Performance metrics
+        # Performance metrics - Fixed max drawdown calculation
         total_return = (cumulative_returns[-1] - 1) * 100
         volatility = returns.std() * np.sqrt(252) * 100
-        sharpe = (returns.mean() * 252) / (returns.std() * np.sqrt(252))
-        max_dd = ((cumulative_returns / cumulative_returns.expanding().max()) - 1).min() * 100
+        sharpe = (returns.mean() * 252) / (returns.std() * np.sqrt(252)) if returns.std() > 0 else 0
+        
+        # Calculate max drawdown properly using numpy
+        running_max = np.maximum.accumulate(cumulative_returns)
+        drawdowns = (cumulative_returns / running_max) - 1
+        max_dd = drawdowns.min() * 100
         
         st.write(f"**{strategy_type} Metrics (2024):**")
         st.write(f"• Total Return: **{total_return:.1f}%**")
