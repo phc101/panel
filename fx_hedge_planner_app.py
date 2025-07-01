@@ -356,24 +356,84 @@ class APIIntegratedForwardCalculator:
             'effective_spread': profit_per_eur
         }
     
-    def calculate_pnl_analysis(self, profit_per_eur, nominal_amount_eur, leverage=1.0):
-        """Calculate comprehensive P&L analysis"""
+    def calculate_window_pnl_analysis(self, spot_rate, points_to_window, swap_risk, window_days, nominal_amount_eur, leverage=1.0):
+        """Calculate comprehensive P&L analysis including window settlement scenarios
         
-        # Basic calculations
-        gross_profit_eur = profit_per_eur * nominal_amount_eur
-        leveraged_profit = gross_profit_eur * leverage
+        Minimum Profit: Client settles at window open date (gets full theoretical forward)
+        Maximum Profit: Client settles at window end date (bank keeps pricing advantage)
+        """
         
-        # Risk metrics
-        profit_percentage = (profit_per_eur / 4.25) * 100  # Approximate spot base
-        profit_bps = profit_per_eur * 10000
+        # Calculate professional rates
+        rates = self.calculate_professional_rates(spot_rate, points_to_window, swap_risk)
+        
+        # Basic P&L (current calculation)
+        basic_pnl = self.calculate_pnl_analysis(rates['profit_per_eur'], nominal_amount_eur, leverage)
+        
+        # Window settlement scenarios
+        
+        # MINIMUM PROFIT: Client settles at window open date
+        # Bank pays out at theoretical forward rate (spot + full points)
+        # Bank collected client rate but pays theoretical rate
+        min_profit_per_eur = rates['fwd_client'] - rates['fwd_to_open']  # Negative because bank pays more
+        min_gross_profit = min_profit_per_eur * nominal_amount_eur
+        min_leveraged_profit = min_gross_profit * leverage
+        min_profit_percentage = (min_profit_per_eur / spot_rate) * 100
+        min_profit_bps = min_profit_per_eur * 10000
+        
+        # MAXIMUM PROFIT: Client settles at window end date  
+        # Assume market moves favorably, bank keeps full pricing advantage
+        # Plus potential additional spread from time decay
+        time_decay_benefit = swap_risk * 0.5  # Additional benefit from time passing
+        max_profit_per_eur = rates['profit_per_eur'] + time_decay_benefit
+        max_gross_profit = max_profit_per_eur * nominal_amount_eur
+        max_leveraged_profit = max_gross_profit * leverage
+        max_profit_percentage = (max_profit_per_eur / spot_rate) * 100
+        max_profit_bps = max_profit_per_eur * 10000
         
         return {
-            'gross_profit_eur': gross_profit_eur,
-            'leveraged_profit': leveraged_profit,
-            'profit_percentage': profit_percentage,
-            'profit_bps': profit_bps,
+            # Basic metrics (existing)
+            'basic_gross_profit_eur': basic_pnl['gross_profit_eur'],
+            'basic_leveraged_profit': basic_pnl['leveraged_profit'],
+            'basic_profit_percentage': basic_pnl['profit_percentage'],
+            'basic_profit_bps': basic_pnl['profit_bps'],
+            
+            # Window settlement scenarios
+            'min_profit_per_eur': min_profit_per_eur,
+            'min_gross_profit': min_gross_profit,
+            'min_leveraged_profit': min_leveraged_profit,
+            'min_profit_percentage': min_profit_percentage,
+            'min_profit_bps': min_profit_bps,
+            
+            'max_profit_per_eur': max_profit_per_eur,
+            'max_gross_profit': max_gross_profit,
+            'max_leveraged_profit': max_leveraged_profit,
+            'max_profit_percentage': max_profit_percentage,
+            'max_profit_bps': max_profit_bps,
+            
+            # Additional metrics
+            'profit_range_eur': max_gross_profit - min_gross_profit,
+            'profit_range_percentage': max_profit_percentage - min_profit_percentage,
+            'expected_profit': (min_gross_profit + max_gross_profit) / 2,
+            'risk_reward_ratio': (max_gross_profit / abs(min_gross_profit)) if min_gross_profit != 0 else float('inf'),
+            
+            # Settlement scenarios
+            'window_open_settlement': {
+                'scenario': 'Client settles at window open',
+                'bank_position': 'Pays theoretical forward rate',
+                'profit_eur': min_gross_profit,
+                'profit_description': 'Minimum - Bank disadvantage'
+            },
+            'window_end_settlement': {
+                'scenario': 'Client settles at window end',
+                'bank_position': 'Keeps full pricing advantage',
+                'profit_eur': max_gross_profit,
+                'profit_description': 'Maximum - Full benefit realization'
+            },
+            
+            # Meta
             'nominal_amount': nominal_amount_eur,
-            'leverage_factor': leverage
+            'leverage_factor': leverage,
+            'window_days': window_days
         }
 
 # ============================================================================
@@ -541,8 +601,170 @@ def create_professional_window_forward_tab():
     )
     
     # ============================================================================
-    # COMPLETE 12-MONTH PRICING CURVE
+    # CLIENT PRICE CURVE VISUALIZATION
     # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("📈 Client Price Curve Analysis")
+    
+    # Generate complete client price curve data
+    client_curve_data = []
+    for tenor, curve_data in forward_curve.items():
+        tenor_points = curve_data["mid"]
+        tenor_swap_risk = calculator.calculate_swap_risk(curve_data["days"], tenor_points)
+        tenor_rates = calculator.calculate_professional_rates(spot_rate, tenor_points, tenor_swap_risk)
+        
+        client_curve_data.append({
+            'tenor': tenor,
+            'days': curve_data["days"],
+            'months': curve_data["months"],
+            'client_rate': tenor_rates['fwd_client'],
+            'theoretical_rate': tenor_rates['fwd_to_open'],
+            'spot_rate': spot_rate,
+            'profit_per_eur': tenor_rates['profit_per_eur'],
+            'forward_points': tenor_points,
+            'swap_risk': tenor_swap_risk
+        })
+    
+    # Create client price curve chart
+    fig_client = go.Figure()
+    
+    # Extract data for plotting
+    days_list = [item['days'] for item in client_curve_data]
+    client_rates = [item['client_rate'] for item in client_curve_data]
+    theoretical_rates = [item['theoretical_rate'] for item in client_curve_data]
+    tenor_names = [item['tenor'] for item in client_curve_data]
+    
+    # Add spot rate line
+    fig_client.add_trace(
+        go.Scatter(
+            x=days_list,
+            y=[spot_rate] * len(days_list),
+            mode='lines',
+            name='Spot Rate',
+            line=dict(color='black', width=2, dash='solid'),
+            hovertemplate='Spot Rate: %{y:.4f}<extra></extra>'
+        )
+    )
+    
+    # Add theoretical forward curve
+    fig_client.add_trace(
+        go.Scatter(
+            x=days_list,
+            y=theoretical_rates,
+            mode='lines+markers',
+            name='Theoretical Forward Curve',
+            line=dict(color='blue', width=2, dash='dash'),
+            marker=dict(size=6, color='blue'),
+            hovertemplate='<b>%{text}</b><br>Days: %{x}<br>Theoretical Rate: %{y:.4f}<extra></extra>',
+            text=tenor_names
+        )
+    )
+    
+    # Add client rate curve (main curve)
+    fig_client.add_trace(
+        go.Scatter(
+            x=days_list,
+            y=client_rates,
+            mode='lines+markers',
+            name='Client Rate Curve',
+            line=dict(color='red', width=3),
+            marker=dict(size=8, color='red'),
+            hovertemplate='<b>%{text}</b><br>Days: %{x}<br>Client Rate: %{y:.4f}<br>vs Spot: %{customdata:.4f}<extra></extra>',
+            text=tenor_names,
+            customdata=[rate - spot_rate for rate in client_rates]
+        )
+    )
+    
+    # Highlight selected window length
+    selected_client_rate = None
+    selected_theoretical_rate = None
+    for item in client_curve_data:
+        if abs(item['days'] - window_days) <= 15:
+            selected_client_rate = item['client_rate']
+            selected_theoretical_rate = item['theoretical_rate']
+            break
+    
+    if selected_client_rate:
+        fig_client.add_trace(
+            go.Scatter(
+                x=[window_days],
+                y=[selected_client_rate],
+                mode='markers',
+                name=f'Selected Window ({window_days}D)',
+                marker=dict(size=15, color='orange', symbol='diamond', line=dict(width=2, color='black')),
+                hovertemplate=f'<b>Selected: {window_days} Days</b><br>Client Rate: %{{y:.4f}}<extra></extra>'
+            )
+        )
+    
+    # Add profit area (difference between theoretical and client rates)
+    fig_client.add_trace(
+        go.Scatter(
+            x=days_list,
+            y=theoretical_rates,
+            fill='tonexty',
+            mode='none',
+            name='Bank Profit Area',
+            fillcolor='rgba(0, 255, 0, 0.2)',
+            hoverinfo='skip'
+        )
+    )
+    
+    # Update layout
+    fig_client.update_layout(
+        title="Client Rate Curve vs Theoretical Forward Curve",
+        xaxis_title="Days",
+        yaxis_title="EUR/PLN Rate",
+        height=500,
+        hovermode='x unified',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    # Add grid and formatting
+    fig_client.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+    fig_client.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+    
+    st.plotly_chart(fig_client, use_container_width=True)
+    
+    # Client curve analysis table
+    st.subheader("📊 Client Rate Curve Analysis")
+    
+    client_analysis_data = []
+    for item in client_curve_data:
+        spread_vs_spot = (item['client_rate'] - spot_rate) * 10000  # in pips
+        annualized_premium = ((item['client_rate'] / spot_rate - 1) * (365 / item['days']) * 100)
+        
+        client_analysis_data.append({
+            "Tenor": item['tenor'],
+            "Days": item['days'],
+            "Client Rate": f"{item['client_rate']:.4f}",
+            "vs Spot (pips)": f"{spread_vs_spot:.1f}",
+            "Annualized Premium": f"{annualized_premium:.2f}%",
+            "Theoretical Rate": f"{item['theoretical_rate']:.4f}",
+            "Bank Spread": f"{item['profit_per_eur']:.4f}",
+            "Forward Points": f"{item['forward_points']:.4f}",
+            "Swap Risk": f"{item['swap_risk']:.4f}"
+        })
+    
+    df_client_analysis = pd.DataFrame(client_analysis_data)
+    
+    # Highlight selected window
+    def highlight_selected_window_client(row):
+        if abs(row['Days'] - window_days) <= 15:
+            return ['background-color: #fff3cd; font-weight: bold'] * len(row)
+        return [''] * len(row)
+    
+    st.dataframe(
+        df_client_analysis.style.apply(highlight_selected_window_client, axis=1),
+        use_container_width=True,
+        height=300
+    )
     
     st.subheader("📋 Complete 12-Month Window Forward Pricing Curve")
     
@@ -559,8 +781,10 @@ def create_professional_window_forward_tab():
         # Calculate professional rates for this tenor
         tenor_rates = calculator.calculate_professional_rates(spot_rate, tenor_points, tenor_swap_risk)
         
-        # Calculate P&L for this tenor
-        tenor_pnl = calculator.calculate_pnl_analysis(tenor_rates['profit_per_eur'], nominal_amount, leverage)
+        # Calculate enhanced P&L for this tenor
+        tenor_enhanced_pnl = calculator.calculate_window_pnl_analysis(
+            spot_rate, tenor_points, tenor_swap_risk, tenor_days, nominal_amount, leverage
+        )
         
         complete_pricing_data.append({
             "Tenor": tenor,
@@ -571,9 +795,12 @@ def create_professional_window_forward_tab():
             "Client Rate": f"{tenor_rates['fwd_client']:.4f}",
             "Theoretical Rate": f"{tenor_rates['fwd_to_open']:.4f}",
             "Profit/EUR": f"{tenor_rates['profit_per_eur']:.4f}",
-            "Total Profit": f"€{tenor_pnl['gross_profit_eur']:,.0f}",
-            "Profit %": f"{tenor_pnl['profit_percentage']:.2f}%",
-            "Profit BPS": f"{tenor_pnl['profit_bps']:.1f}",
+            "Min Profit": f"€{tenor_enhanced_pnl['min_gross_profit']:,.0f}",
+            "Max Profit": f"€{tenor_enhanced_pnl['max_gross_profit']:,.0f}",
+            "Expected Profit": f"€{tenor_enhanced_pnl['expected_profit']:,.0f}",
+            "Profit Range": f"€{tenor_enhanced_pnl['profit_range_eur']:,.0f}",
+            "Profit %": f"{tenor_enhanced_pnl['basic_profit_percentage']:.2f}%",
+            "Profit BPS": f"{tenor_enhanced_pnl['basic_profit_bps']:.1f}",
             "Yield Spread": f"{curve_data['yield_spread']:.2f}pp"
         })
     
@@ -614,11 +841,11 @@ def create_professional_window_forward_tab():
         )
     
     with col3:
-        total_potential_profit = df_complete_pricing['Total Profit'].str.replace('€', '').str.replace(',', '').astype(float).sum()
+        total_expected_profit = df_complete_pricing['Expected Profit'].str.replace('€', '').str.replace(',', '').astype(float).sum()
         st.metric(
-            "Total Portfolio Value", 
-            f"€{total_potential_profit:,.0f}",
-            help="Sum of all tenor profits"
+            "Total Expected Value", 
+            f"€{total_expected_profit:,.0f}",
+            help="Sum of all tenor expected profits"
         )
     
     with col4:
@@ -657,8 +884,10 @@ def create_professional_window_forward_tab():
     # Calculate professional rates
     rates = calculator.calculate_professional_rates(spot_rate, points_to_window, swap_risk)
     
-    # Calculate P&L
-    pnl = calculator.calculate_pnl_analysis(rates['profit_per_eur'], nominal_amount, leverage)
+    # Calculate enhanced P&L with window scenarios
+    enhanced_pnl = calculator.calculate_window_pnl_analysis(
+        spot_rate, points_to_window, swap_risk, window_days, nominal_amount, leverage
+    )
     
     # ============================================================================
     # RESULTS DISPLAY
@@ -723,19 +952,45 @@ BANK PROFIT PER EUR:
         """)
     
     with col2:
-        st.markdown("**💼 P&L Analysis:**")
+        st.markdown("**💼 Enhanced P&L Analysis:**")
         
-        # P&L metrics
-        st.metric("Gross Profit", f"€{pnl['gross_profit_eur']:,.0f}", help="Total profit in EUR")
-        st.metric("Leveraged Profit", f"€{pnl['leveraged_profit']:,.0f}", help=f"With {leverage}x leverage")
-        st.metric("Profit Margin", f"{pnl['profit_percentage']:.2f}%", help="As % of spot rate")
-        st.metric("Profit (Basis Points)", f"{pnl['profit_bps']:.1f} bps", help="Profit in basis points")
+        # Enhanced P&L metrics with window scenarios
+        col_min, col_max = st.columns(2)
         
-        # Risk warning
-        if pnl['profit_percentage'] < 0.1:
-            st.warning("⚠️ Low profit margin - consider adjusting parameters")
-        elif pnl['profit_percentage'] > 1.0:
-            st.success("✅ Healthy profit margin")
+        with col_min:
+            st.markdown("**📉 Minimum Profit Scenario**")
+            st.caption("*Client settles at window open*")
+            st.metric(
+                "Min Profit", 
+                f"€{enhanced_pnl['min_gross_profit']:,.0f}",
+                delta=f"{enhanced_pnl['min_profit_percentage']:.2f}%",
+                delta_color="inverse" if enhanced_pnl['min_gross_profit'] < 0 else "normal",
+                help="When client settles at window start date"
+            )
+            st.write(f"**{enhanced_pnl['min_profit_bps']:.1f} bps**")
+        
+        with col_max:
+            st.markdown("**📈 Maximum Profit Scenario**")
+            st.caption("*Client settles at window end*")
+            st.metric(
+                "Max Profit", 
+                f"€{enhanced_pnl['max_gross_profit']:,.0f}",
+                delta=f"{enhanced_pnl['max_profit_percentage']:.2f}%",
+                help="When client settles at window end date"
+            )
+            st.write(f"**{enhanced_pnl['max_profit_bps']:.1f} bps**")
+        
+        # Summary metrics
+        st.markdown("**📊 Window P&L Summary:**")
+        st.metric("Expected Profit", f"€{enhanced_pnl['expected_profit']:,.0f}", help="Average of min/max scenarios")
+        st.metric("Profit Range", f"€{enhanced_pnl['profit_range_eur']:,.0f}", help="Difference between max and min")
+        st.metric("Risk/Reward Ratio", f"{enhanced_pnl['risk_reward_ratio']:.1f}x" if enhanced_pnl['risk_reward_ratio'] != float('inf') else "∞", help="Max profit / Min loss ratio")
+        
+        # Risk assessment
+        if enhanced_pnl['min_gross_profit'] < 0:
+            st.warning("⚠️ Negative minimum profit - consider adjusting parameters")
+        elif enhanced_pnl['min_gross_profit'] > 0:
+            st.success("✅ Profitable in all window scenarios")
     
     # ============================================================================
     # DEAL SUMMARY
@@ -763,13 +1018,13 @@ BANK PROFIT PER EUR:
         with summary_col2:
             st.markdown(f"""
             <div class="metric-card">
-                <h4>💰 Financial Summary</h4>
-                <p><strong>Bank Profit per EUR:</strong> {rates['profit_per_eur']:.4f} PLN</p>
-                <p><strong>Total Gross Profit:</strong> €{pnl['gross_profit_eur']:,.0f}</p>
-                <p><strong>Profit Margin:</strong> {pnl['profit_percentage']:.2f}%</p>
-                <p><strong>Profit (Basis Points):</strong> {pnl['profit_bps']:.1f} bps</p>
-                <p><strong>Points Given to Client:</strong> {rates['points_given_to_client']:.4f}</p>
-                <p><strong>Risk Premium Charged:</strong> {rates['swap_risk_charged']:.4f}</p>
+                <h4>💰 Enhanced P&L Summary</h4>
+                <p><strong>Expected Profit:</strong> €{enhanced_pnl['expected_profit']:,.0f}</p>
+                <p><strong>Minimum Profit:</strong> €{enhanced_pnl['min_gross_profit']:,.0f} ({enhanced_pnl['min_profit_percentage']:.2f}%)</p>
+                <p><strong>Maximum Profit:</strong> €{enhanced_pnl['max_gross_profit']:,.0f} ({enhanced_pnl['max_profit_percentage']:.2f}%)</p>
+                <p><strong>Profit Range:</strong> €{enhanced_pnl['profit_range_eur']:,.0f}</p>
+                <p><strong>Risk/Reward Ratio:</strong> {enhanced_pnl['risk_reward_ratio']:.1f}x</p>
+                <p><strong>Window Settlement Risk:</strong> {"High" if enhanced_pnl['min_gross_profit'] < 0 else "Low"}</p>
             </div>
             """, unsafe_allow_html=True)
 
