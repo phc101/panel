@@ -935,128 +935,194 @@ def create_professional_window_forward_tab():
         df_curve_analysis = pd.DataFrame(curve_analysis_data)
         st.dataframe(df_curve_analysis, use_container_width=True)
     
-    # Calculate points to window
-    points_to_window_data = calculator.interpolate_points_to_window(window_days, forward_curve)
-    points_to_window = points_to_window_data['mid']
-    
-    # Calculate swap risk
-    swap_risk = calculator.calculate_swap_risk(window_days, points_to_window)
-    
-    # Calculate professional rates with minimum profit floor
-    rates = calculator.calculate_professional_rates(spot_rate, points_to_window, swap_risk, minimum_profit_floor)
-    
-    # Calculate enhanced P&L with window scenarios
-    enhanced_pnl = calculator.calculate_window_pnl_analysis(
-        spot_rate, points_to_window, swap_risk, window_days, nominal_amount, leverage
-    )
-    
     # ============================================================================
-    # RESULTS DISPLAY
+    # PORTFOLIO WINDOW FORWARD CALCULATIONS (ALL 12 TENORS)
     # ============================================================================
     
-    st.subheader("💰 Professional Pricing Results")
+    st.markdown("---")
+    st.subheader("🔢 Portfolio Window Forward Generation")
+    st.markdown(f"*All 12 tenors converted to window forwards with {window_days}-day flexibility*")
     
-    # Key metrics
+    # Generate window forward pricing for ALL 12 tenors with same window length
+    portfolio_window_data = {}
+    portfolio_totals = {
+        'total_points_to_window': 0,
+        'total_swap_risk': 0,
+        'total_min_profit': 0,
+        'total_max_profit': 0,
+        'total_expected_profit': 0,
+        'total_client_premium': 0,
+        'total_notional': 0
+    }
+    
+    for tenor, curve_data in forward_curve.items():
+        tenor_points = curve_data["mid"]
+        
+        # Key change: Use the SAME window_days for ALL tenors
+        # This makes all of them window forwards with the same flexibility
+        tenor_window_swap_risk = calculator.calculate_swap_risk(window_days, tenor_points)
+        
+        # Calculate rates for this tenor as window forward
+        tenor_rates = calculator.calculate_professional_rates(
+            spot_rate, tenor_points, tenor_window_swap_risk, minimum_profit_floor
+        )
+        
+        # Window forward profit calculations (same logic for all tenors)
+        window_min_profit_per_eur = tenor_points - tenor_window_swap_risk
+        window_max_profit_per_eur = tenor_points
+        window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
+        
+        # Convert to totals
+        window_min_profit_total = window_min_profit_per_eur * nominal_amount
+        window_max_profit_total = window_max_profit_per_eur * nominal_amount
+        window_expected_profit_total = window_expected_profit_per_eur * nominal_amount
+        
+        # Store individual tenor data
+        portfolio_window_data[tenor] = {
+            'original_days': curve_data["days"],
+            'window_days': window_days,
+            'points': tenor_points,
+            'swap_risk': tenor_window_swap_risk,
+            'client_rate': tenor_rates['fwd_client'],
+            'theoretical_rate': tenor_rates['fwd_to_open'],
+            'min_profit_per_eur': window_min_profit_per_eur,
+            'max_profit_per_eur': window_max_profit_per_eur,
+            'expected_profit_per_eur': window_expected_profit_per_eur,
+            'min_profit_total': window_min_profit_total,
+            'max_profit_total': window_max_profit_total,
+            'expected_profit_total': window_expected_profit_total
+        }
+        
+        # Add to portfolio totals
+        portfolio_totals['total_points_to_window'] += tenor_points * nominal_amount
+        portfolio_totals['total_swap_risk'] += tenor_window_swap_risk * nominal_amount
+        portfolio_totals['total_min_profit'] += window_min_profit_total
+        portfolio_totals['total_max_profit'] += window_max_profit_total
+        portfolio_totals['total_expected_profit'] += window_expected_profit_total
+        portfolio_totals['total_client_premium'] += (tenor_rates['fwd_client'] - spot_rate) * nominal_amount
+        portfolio_totals['total_notional'] += nominal_amount
+    
+    # Calculate portfolio averages
+    portfolio_avg_points = portfolio_totals['total_points_to_window'] / portfolio_totals['total_notional']
+    portfolio_avg_swap_risk = portfolio_totals['total_swap_risk'] / portfolio_totals['total_notional']
+    portfolio_avg_min_profit = portfolio_totals['total_min_profit'] / portfolio_totals['total_notional']
+    portfolio_avg_max_profit = portfolio_totals['total_max_profit'] / portfolio_totals['total_notional']
+    
+    # ============================================================================
+    # PORTFOLIO RESULTS DISPLAY
+    # ============================================================================
+    
+    st.subheader("💰 Portfolio Window Forward Results")
+    st.markdown(f"*All 12 tenors with {window_days}-day window flexibility*")
+    
+    # Portfolio-level key metrics
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.metric(
-            "Points to Window",
-            f"{points_to_window:.4f}",
-            help=f"Forward points to window start ({points_to_window_data['interpolation_method']})"
+            "Portfolio Avg Points",
+            f"{portfolio_avg_points:.4f}",
+            help=f"Weighted average forward points across all 12 tenors"
         )
     
     with col2:
         st.metric(
-            "Swap Risk",
-            f"{swap_risk:.4f}",
-            help="Estimated swap risk for window period"
+            "Portfolio Avg Swap Risk",
+            f"{portfolio_avg_swap_risk:.4f}",
+            help=f"Average swap risk for {window_days}-day windows"
         )
     
     with col3:
+        portfolio_avg_client_rate = spot_rate + portfolio_avg_points * points_factor - portfolio_avg_swap_risk * risk_factor
         st.metric(
-            "Client Forward Rate",
-            f"{rates['fwd_client']:.4f}",
-            delta=f"{rates['fwd_client'] - spot_rate:.4f}",
-            help="Rate quoted to client"
+            "Portfolio Avg Client Rate",
+            f"{portfolio_avg_client_rate:.4f}",
+            delta=f"{portfolio_avg_client_rate - spot_rate:.4f}",
+            help="Average client rate across all window forwards"
         )
     
     with col4:
+        portfolio_avg_profit = (portfolio_avg_min_profit + portfolio_avg_max_profit) / 2
         st.metric(
-            "Profit per EUR",
-            f"{rates['profit_per_eur']:.4f} PLN",
-            help="Bank profit per EUR notional"
+            "Portfolio Avg Profit/EUR",
+            f"{portfolio_avg_profit:.4f} PLN",
+            help="Average profit per EUR across all tenors"
         )
     
-    # Detailed breakdown
+    # Detailed breakdown for portfolio
     st.markdown("---")
-    st.subheader("📈 Detailed Pricing Breakdown")
+    st.subheader("📈 Portfolio Pricing Breakdown")
     
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.markdown("**🔍 Rate Calculation:**")
+        st.markdown("**🔍 Portfolio Rate Calculation:**")
         st.code(f"""
-Forward Points to Window:     {points_to_window:.4f}
-Points Given to Client (70%): {rates['points_given_to_client']:.4f}
-Swap Risk:                    {swap_risk:.4f}
-Risk Charged to Client (40%): {rates['swap_risk_charged']:.4f}
-{f"Min Profit Floor Applied:   {minimum_profit_floor:.4f}" if rates['min_profit_adjustment']['applied'] else ""}
+PORTFOLIO WINDOW FORWARD SUMMARY:
+Window Length for All Tenors:    {window_days} days
+Total Tenors:                     12
+Total Notional:                   €{portfolio_totals['total_notional']:,}
 
-CLIENT RATE FORMULA:
-{spot_rate:.4f} + {rates['points_given_to_client']:.4f} - {rates['swap_risk_charged']:.4f}{f" - {rates['min_profit_adjustment']['amount']:.4f}" if rates['min_profit_adjustment']['applied'] else ""} = {rates['fwd_client']:.4f}
+AVERAGE CALCULATIONS:
+Avg Forward Points:               {portfolio_avg_points:.4f}
+Avg Points Given to Client (70%): {portfolio_avg_points * points_factor:.4f}
+Avg Swap Risk:                    {portfolio_avg_swap_risk:.4f}
+Avg Risk Charged to Client (40%): {portfolio_avg_swap_risk * risk_factor:.4f}
 
-THEORETICAL RATE TO WINDOW:
-{spot_rate:.4f} + {points_to_window:.4f} = {rates['fwd_to_open']:.4f}
+PORTFOLIO CLIENT RATE FORMULA:
+{spot_rate:.4f} + {portfolio_avg_points * points_factor:.4f} - {portfolio_avg_swap_risk * risk_factor:.4f} = {portfolio_avg_client_rate:.4f}
 
-BANK PROFIT PER EUR:
-{rates['fwd_to_open']:.4f} - {rates['fwd_client']:.4f} = {rates['profit_per_eur']:.4f} PLN
-{f"(Adjusted from {rates['min_profit_adjustment']['original_profit']:.4f} to meet floor)" if rates['min_profit_adjustment']['applied'] else ""}
+PORTFOLIO PROFIT RANGE:
+Min: {portfolio_avg_min_profit:.4f} PLN/EUR
+Max: {portfolio_avg_max_profit:.4f} PLN/EUR
+Avg: {portfolio_avg_profit:.4f} PLN/EUR
         """)
     
     with col2:
-        st.markdown("**💼 Enhanced P&L Analysis:**")
+        st.markdown("**💼 Portfolio P&L Analysis:**")
         
-        # Enhanced P&L metrics with window scenarios
+        # Portfolio P&L metrics with min/max scenarios
         col_min, col_max = st.columns(2)
         
         with col_min:
-            st.markdown("**📉 Minimum Profit Scenario**")
-            st.caption("*High hedging costs*")
+            st.markdown("**📉 Portfolio Minimum**")
+            st.caption("*High hedging costs scenario*")
             st.metric(
                 "Min Profit", 
-                f"€{enhanced_pnl['min_gross_profit']:,.0f}",
-                delta=f"{enhanced_pnl['min_profit_percentage']:.2f}%",
-                help="Points to Window - Full Swap Risk"
+                f"€{portfolio_totals['total_min_profit']:,.0f}",
+                delta=f"{(portfolio_avg_min_profit/spot_rate)*100:.2f}%",
+                help="Sum of all minimum profits"
             )
-            st.write(f"**{enhanced_pnl['min_profit_bps']:.1f} bps**")
-            st.caption(f"Formula: {points_to_window:.4f} - {swap_risk:.4f} = {enhanced_pnl['min_profit_per_eur']:.4f}")
+            st.write(f"**{(portfolio_avg_min_profit * 10000):.1f} bps avg**")
         
         with col_max:
-            st.markdown("**📈 Maximum Profit Scenario**")
+            st.markdown("**📈 Portfolio Maximum**")
             st.caption("*Optimal market conditions*")
             st.metric(
                 "Max Profit", 
-                f"€{enhanced_pnl['max_gross_profit']:,.0f}",
-                delta=f"{enhanced_pnl['max_profit_percentage']:.2f}%",
-                help="Full Points to Window (minimal hedging costs)"
+                f"€{portfolio_totals['total_max_profit']:,.0f}",
+                delta=f"{(portfolio_avg_max_profit/spot_rate)*100:.2f}%",
+                help="Sum of all maximum profits"
             )
-            st.write(f"**{enhanced_pnl['max_profit_bps']:.1f} bps**")
-            st.caption(f"Formula: {points_to_window:.4f} = {enhanced_pnl['max_profit_per_eur']:.4f}")
+            st.write(f"**{(portfolio_avg_max_profit * 10000):.1f} bps avg**")
         
-        # Summary metrics
-        st.markdown("**📊 Window P&L Summary:**")
-        st.metric("Expected Profit", f"€{enhanced_pnl['expected_profit']:,.0f}", help="Average of min/max scenarios")
-        st.metric("Profit Range", f"€{enhanced_pnl['profit_range_eur']:,.0f}", help="Difference between max and min")
-        st.metric("Risk/Reward Ratio", f"{enhanced_pnl['risk_reward_ratio']:.1f}x" if enhanced_pnl['risk_reward_ratio'] != float('inf') else "∞", help="Max profit / Min loss ratio")
+        # Portfolio summary metrics
+        st.markdown("**📊 Portfolio Summary:**")
+        st.metric("Expected Profit", f"€{portfolio_totals['total_expected_profit']:,.0f}", help="Average scenario")
+        profit_range_eur = portfolio_totals['total_max_profit'] - portfolio_totals['total_min_profit']
+        st.metric("Profit Range", f"€{profit_range_eur:,.0f}", help="Max - Min profit")
         
-        # Risk assessment
-        if enhanced_pnl['min_gross_profit'] < enhanced_pnl['max_gross_profit'] * 0.5:
-            st.warning("⚠️ High profit variability - significant hedging risk")
-        elif enhanced_pnl['min_gross_profit'] > enhanced_pnl['max_gross_profit'] * 0.8:
-            st.success("✅ Stable profit range - low hedging risk")
+        risk_reward_ratio = portfolio_totals['total_max_profit'] / portfolio_totals['total_min_profit'] if portfolio_totals['total_min_profit'] > 0 else float('inf')
+        st.metric("Risk/Reward", f"{risk_reward_ratio:.1f}x", help="Max/Min profit ratio")
+        
+        # Risk assessment for portfolio
+        profit_volatility = (profit_range_eur / portfolio_totals['total_expected_profit']) * 100 if portfolio_totals['total_expected_profit'] > 0 else 0
+        if profit_volatility < 20:
+            st.success("✅ Low portfolio volatility - stable profit range")
+        elif profit_volatility < 40:
+            st.info("ℹ️ Moderate portfolio volatility - standard risk")
         else:
-            st.info("ℹ️ Moderate profit variability - standard hedging risk")
+            st.warning("⚠️ High portfolio volatility - significant profit variability")
     
     # ============================================================================
     # DEAL SUMMARY
