@@ -1150,13 +1150,13 @@ Avg: {portfolio_avg_profit:.4f} PLN/EUR
         with summary_col2:
             st.markdown(f"""
             <div class="metric-card">
-                <h4>💰 Enhanced P&L Summary</h4>
-                <p><strong>Expected Profit:</strong> €{enhanced_pnl['expected_profit']:,.0f}</p>
-                <p><strong>Minimum Profit:</strong> €{enhanced_pnl['min_gross_profit']:,.0f} ({enhanced_pnl['min_profit_percentage']:.2f}%)</p>
-                <p><strong>Maximum Profit:</strong> €{enhanced_pnl['max_gross_profit']:,.0f} ({enhanced_pnl['max_profit_percentage']:.2f}%)</p>
-                <p><strong>Profit Range:</strong> €{enhanced_pnl['profit_range_eur']:,.0f}</p>
-                <p><strong>Risk/Reward Ratio:</strong> {enhanced_pnl['risk_reward_ratio']:.1f}x</p>
-                <p><strong>Window Settlement Risk:</strong> {"High" if enhanced_pnl['min_gross_profit'] < 0 else "Low"}</p>
+                <h4>💰 Portfolio Financial Summary</h4>
+                <p><strong>Total Expected Profit:</strong> €{portfolio_totals['total_expected_profit']:,.0f}</p>
+                <p><strong>Portfolio Minimum:</strong> €{portfolio_totals['total_min_profit']:,.0f}</p>
+                <p><strong>Portfolio Maximum:</strong> €{portfolio_totals['total_max_profit']:,.0f}</p>
+                <p><strong>Average Profit/EUR:</strong> {portfolio_avg_profit:.4f} PLN</p>
+                <p><strong>Total Notional:</strong> €{portfolio_totals['total_notional']:,}</p>
+                <p><strong>Average Client Rate:</strong> {portfolio_avg_client_rate:.4f}</p>
             </div>
             """, unsafe_allow_html=True)
 
