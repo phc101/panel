@@ -647,9 +647,14 @@ def create_professional_window_forward_tab():
         window_max_profit_total = tenor_enhanced_pnl['max_gross_profit_pln'] 
         window_expected_profit_total = tenor_enhanced_pnl['expected_profit_pln']
         
-        # Window forward profit calculations (same logic for all tenors)
-        window_min_profit_per_eur = tenor_points - tenor_window_swap_risk
-        window_max_profit_per_eur = tenor_points
+        # Window forward profit calculations using CORRECTED LOGIC
+        # Min = Bank Spread (guaranteed), Max = Bank Spread + Hedging Savings
+        tenor_rates = calculator.calculate_professional_rates(
+            spot_rate, tenor_points, tenor_window_swap_risk, minimum_profit_floor
+        )
+        
+        window_min_profit_per_eur = tenor_rates['fwd_to_open'] - tenor_rates['fwd_client']  # Bank spread
+        window_max_profit_per_eur = window_min_profit_per_eur + (tenor_window_swap_risk * 0.6)  # + hedging savings
         window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
         
         # Store individual tenor data
@@ -761,23 +766,23 @@ Avg: {portfolio_avg_profit:.4f} PLN/EUR
         
         with col_min:
             st.markdown("**📉 Portfolio Minimum**")
-            st.caption("*High hedging costs scenario*")
+            st.caption("*Guaranteed bank spread*")
             st.metric(
                 "Min Profit", 
                 f"{portfolio_totals['total_min_profit']:,.0f} PLN",
                 delta=f"{(portfolio_avg_min_profit/spot_rate)*100:.3f}%",
-                help="Sum of all minimum profits"
+                help="Sum of all guaranteed bank spreads"
             )
             st.write(f"**{(portfolio_avg_min_profit * 10000):.1f} bps avg**")
         
         with col_max:
             st.markdown("**📈 Portfolio Maximum**")
-            st.caption("*Optimal market conditions*")
+            st.caption("*Bank spread + hedging savings*")
             st.metric(
                 "Max Profit", 
                 f"{portfolio_totals['total_max_profit']:,.0f} PLN",
                 delta=f"{(portfolio_avg_max_profit/spot_rate)*100:.3f}%",
-                help="Sum of all maximum profits"
+                help="Sum of bank spreads plus hedging savings"
             )
             st.write(f"**{(portfolio_avg_max_profit * 10000):.1f} bps avg**")
         
@@ -993,10 +998,15 @@ Avg: {portfolio_avg_profit:.4f} PLN/EUR
             spot_rate, tenor_points, tenor_window_swap_risk, minimum_profit_floor
         )
         
-        # Calculate window forward metrics using correct logic:
-        window_min_profit_per_eur = tenor_points - tenor_window_swap_risk
-        window_max_profit_per_eur = tenor_points
+        # Calculate window forward metrics using CORRECTED BANK SPREAD LOGIC:
+        # Min Profit = Bank Spread (Theoretical - Client), Max Profit = Bank Spread + Hedging Savings
+        window_min_profit_per_eur = tenor_rates['fwd_to_open'] - tenor_rates['fwd_client']  # Bank spread
+        window_max_profit_per_eur = window_min_profit_per_eur + (tenor_window_swap_risk * 0.6)  # + hedging savings
         window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
+        
+        window_min_profit_total = window_min_profit_per_eur * nominal_amount
+        window_max_profit_total = window_max_profit_per_eur * nominal_amount
+        window_expected_profit_total = window_expected_profit_per_eur * nominal_amount
         
         window_min_profit_total = window_min_profit_per_eur * nominal_amount
         window_max_profit_total = window_max_profit_per_eur * nominal_amount
