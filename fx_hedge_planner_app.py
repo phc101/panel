@@ -329,31 +329,57 @@ class APIIntegratedForwardCalculator:
         
         return calculated_risk
     
-    def calculate_professional_rates(self, spot_rate, points_to_window, swap_risk):
+    def calculate_professional_rates(self, spot_rate, points_to_window, swap_risk, min_profit_floor=0.0):
         """Calculate rates using professional window forward logic
         
         Based on CSV analysis:
         - FWD Client = Spot + (Points to Window × 0.70) - (Swap Risk × 0.40) 
         - FWD to Open = Spot + Points to Window
         - Profit = FWD to Open - FWD Client
+        
+        Args:
+            min_profit_floor: Minimum guaranteed profit per EUR (adjusts pricing if needed)
         """
         
-        # Client rate: Give 70% of points, charge 40% of swap risk
-        fwd_client = spot_rate + (points_to_window * self.points_factor) - (swap_risk * self.risk_factor)
+        # Standard calculation
+        points_given_to_client = points_to_window * self.points_factor
+        swap_risk_charged = swap_risk * self.risk_factor
+        
+        # Initial client rate
+        fwd_client_initial = spot_rate + points_given_to_client - swap_risk_charged
         
         # Theoretical rate to window start (full points)
         fwd_to_open = spot_rate + points_to_window
         
-        # Profit analysis
-        profit_per_eur = fwd_to_open - fwd_client
+        # Check minimum profit floor
+        initial_profit = fwd_to_open - fwd_client_initial
+        
+        if initial_profit < min_profit_floor:
+            # Adjust client rate to meet minimum profit requirement
+            fwd_client = fwd_to_open - min_profit_floor
+            profit_per_eur = min_profit_floor
+            adjustment_made = True
+            adjustment_amount = fwd_client_initial - fwd_client
+        else:
+            # Use standard calculation
+            fwd_client = fwd_client_initial
+            profit_per_eur = initial_profit
+            adjustment_made = False
+            adjustment_amount = 0.0
         
         return {
             'fwd_client': fwd_client,
             'fwd_to_open': fwd_to_open,
             'profit_per_eur': profit_per_eur,
-            'points_given_to_client': points_to_window * self.points_factor,
-            'swap_risk_charged': swap_risk * self.risk_factor,
-            'effective_spread': profit_per_eur
+            'points_given_to_client': points_given_to_client,
+            'swap_risk_charged': swap_risk_charged,
+            'effective_spread': profit_per_eur,
+            'min_profit_adjustment': {
+                'applied': adjustment_made,
+                'amount': adjustment_amount,
+                'original_profit': initial_profit,
+                'floor_profit': min_profit_floor
+            }
         }
     
     def calculate_pnl_analysis(self, profit_per_eur, nominal_amount_eur, leverage=1.0):
@@ -379,45 +405,46 @@ class APIIntegratedForwardCalculator:
     def calculate_window_pnl_analysis(self, spot_rate, points_to_window, swap_risk, window_days, nominal_amount_eur, leverage=1.0):
         """Calculate comprehensive P&L analysis including window settlement scenarios
         
-        Minimum Profit: Client settles at window open date (gets full theoretical forward)
-        Maximum Profit: Client settles at window end date (bank keeps pricing advantage)
+        CORRECT LOGIC:
+        - Client always gets the same quoted rate
+        - Bank profit varies based on hedging costs and timing
+        
+        Minimum Profit: Points to Window - Swap Risk (bank pays full hedging cost)
+        Maximum Profit: Points to Window (optimal conditions, minimal hedging cost)
         """
         
-        # Calculate professional rates
+        # Calculate professional rates (client rate stays constant)
         rates = self.calculate_professional_rates(spot_rate, points_to_window, swap_risk)
         
-        # Basic P&L (current calculation)
+        # Basic P&L (current calculation) - this is the expected/average case
         basic_pnl = self.calculate_pnl_analysis(rates['profit_per_eur'], nominal_amount_eur, leverage)
         
-        # Window settlement scenarios
+        # Window settlement scenarios - CORRECT LOGIC
         
-        # MINIMUM PROFIT: Client settles at window open date
-        # Bank pays out at theoretical forward rate (spot + full points)
-        # Bank collected client rate but pays theoretical rate
-        min_profit_per_eur = rates['fwd_client'] - rates['fwd_to_open']  # Negative because bank pays more
+        # MINIMUM PROFIT: Bank faces maximum hedging costs
+        # Profit = Points to Window - Full Swap Risk
+        min_profit_per_eur = points_to_window - swap_risk
         min_gross_profit = min_profit_per_eur * nominal_amount_eur
         min_leveraged_profit = min_gross_profit * leverage
         min_profit_percentage = (min_profit_per_eur / spot_rate) * 100
         min_profit_bps = min_profit_per_eur * 10000
         
-        # MAXIMUM PROFIT: Client settles at window end date  
-        # Assume market moves favorably, bank keeps full pricing advantage
-        # Plus potential additional spread from time decay
-        time_decay_benefit = swap_risk * 0.5  # Additional benefit from time passing
-        max_profit_per_eur = rates['profit_per_eur'] + time_decay_benefit
+        # MAXIMUM PROFIT: Bank faces minimal hedging costs
+        # Profit = Full Points to Window (optimal market conditions)
+        max_profit_per_eur = points_to_window
         max_gross_profit = max_profit_per_eur * nominal_amount_eur
         max_leveraged_profit = max_gross_profit * leverage
         max_profit_percentage = (max_profit_per_eur / spot_rate) * 100
         max_profit_bps = max_profit_per_eur * 10000
         
         return {
-            # Basic metrics (existing)
+            # Basic metrics (expected case)
             'basic_gross_profit_eur': basic_pnl['gross_profit_eur'],
             'basic_leveraged_profit': basic_pnl['leveraged_profit'],
             'basic_profit_percentage': basic_pnl['profit_percentage'],
             'basic_profit_bps': basic_pnl['profit_bps'],
             
-            # Window settlement scenarios
+            # Window settlement scenarios (CORRECTED)
             'min_profit_per_eur': min_profit_per_eur,
             'min_gross_profit': min_gross_profit,
             'min_leveraged_profit': min_leveraged_profit,
@@ -434,20 +461,20 @@ class APIIntegratedForwardCalculator:
             'profit_range_eur': max_gross_profit - min_gross_profit,
             'profit_range_percentage': max_profit_percentage - min_profit_percentage,
             'expected_profit': (min_gross_profit + max_gross_profit) / 2,
-            'risk_reward_ratio': (max_gross_profit / abs(min_gross_profit)) if min_gross_profit != 0 else float('inf'),
+            'risk_reward_ratio': (max_gross_profit / min_gross_profit) if min_gross_profit > 0 else float('inf'),
             
-            # Settlement scenarios
+            # Settlement scenarios (CORRECTED DESCRIPTIONS)
             'window_open_settlement': {
-                'scenario': 'Client settles at window open',
-                'bank_position': 'Pays theoretical forward rate',
+                'scenario': 'High hedging costs',
+                'bank_position': 'Pays full swap risk for hedging',
                 'profit_eur': min_gross_profit,
-                'profit_description': 'Minimum - Bank disadvantage'
+                'profit_description': f'Minimum - Points({points_to_window:.4f}) - SwapRisk({swap_risk:.4f}) = {min_profit_per_eur:.4f}'
             },
             'window_end_settlement': {
-                'scenario': 'Client settles at window end',
-                'bank_position': 'Keeps full pricing advantage',
+                'scenario': 'Optimal market conditions',
+                'bank_position': 'Minimal hedging costs',
                 'profit_eur': max_gross_profit,
-                'profit_description': 'Maximum - Full benefit realization'
+                'profit_description': f'Maximum - Full Points({points_to_window:.4f}) = {max_profit_per_eur:.4f}'
             },
             
             # Meta
@@ -594,14 +621,14 @@ def create_professional_window_forward_tab():
             )
         
         with col3:
-            bid_ask_spread = st.number_input(
-                "Bid-Ask Spread:",
-                value=0.002,
-                min_value=0.001,
-                max_value=0.005,
-                step=0.0005,
+            minimum_profit_floor = st.number_input(
+                "Min Profit Floor (PLN/EUR):",
+                value=0.000,
+                min_value=-0.020,
+                max_value=0.020,
+                step=0.001,
                 format="%.4f",
-                help="Market bid-ask spread in forward points"
+                help="Minimum guaranteed profit per EUR (0 = allow losses)"
             )
     
     # Update calculator parameters
@@ -901,8 +928,8 @@ def create_professional_window_forward_tab():
     # Calculate swap risk
     swap_risk = calculator.calculate_swap_risk(window_days, points_to_window)
     
-    # Calculate professional rates
-    rates = calculator.calculate_professional_rates(spot_rate, points_to_window, swap_risk)
+    # Calculate professional rates with minimum profit floor
+    rates = calculator.calculate_professional_rates(spot_rate, points_to_window, swap_risk, minimum_profit_floor)
     
     # Calculate enhanced P&L with window scenarios
     enhanced_pnl = calculator.calculate_window_pnl_analysis(
@@ -960,15 +987,17 @@ Forward Points to Window:     {points_to_window:.4f}
 Points Given to Client (70%): {rates['points_given_to_client']:.4f}
 Swap Risk:                    {swap_risk:.4f}
 Risk Charged to Client (40%): {rates['swap_risk_charged']:.4f}
+{f"Min Profit Floor Applied:   {minimum_profit_floor:.4f}" if rates['min_profit_adjustment']['applied'] else ""}
 
 CLIENT RATE FORMULA:
-{spot_rate:.4f} + {rates['points_given_to_client']:.4f} - {rates['swap_risk_charged']:.4f} = {rates['fwd_client']:.4f}
+{spot_rate:.4f} + {rates['points_given_to_client']:.4f} - {rates['swap_risk_charged']:.4f}{f" - {rates['min_profit_adjustment']['amount']:.4f}" if rates['min_profit_adjustment']['applied'] else ""} = {rates['fwd_client']:.4f}
 
 THEORETICAL RATE TO WINDOW:
 {spot_rate:.4f} + {points_to_window:.4f} = {rates['fwd_to_open']:.4f}
 
 BANK PROFIT PER EUR:
 {rates['fwd_to_open']:.4f} - {rates['fwd_client']:.4f} = {rates['profit_per_eur']:.4f} PLN
+{f"(Adjusted from {rates['min_profit_adjustment']['original_profit']:.4f} to meet floor)" if rates['min_profit_adjustment']['applied'] else ""}
         """)
     
     with col2:
