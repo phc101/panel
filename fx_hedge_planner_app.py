@@ -385,19 +385,17 @@ class APIIntegratedForwardCalculator:
     def calculate_pnl_analysis(self, profit_per_eur, nominal_amount_eur, leverage=1.0):
         """Calculate basic P&L analysis (kept for compatibility)"""
         
-        # Basic calculations
-        gross_profit_eur = profit_per_eur * nominal_amount_eur
-        leveraged_profit = gross_profit_eur * leverage
+        # CORRECTED: profit_per_eur is in PLN, so total profit should be in PLN
+        gross_profit_pln = profit_per_eur * nominal_amount_eur  # PLN total profit
+        leveraged_profit_pln = gross_profit_pln * leverage
         
-        # Risk metrics - CORRECTED
-        # profit_per_eur is in PLN, so we need to convert to EUR first
-        profit_per_eur_in_eur = profit_per_eur / 4.25  # Convert PLN to EUR approximately
-        profit_percentage = (profit_per_eur_in_eur / 1.0) * 100  # As % of 1 EUR
-        profit_bps = profit_per_eur * 10000  # PLN to basis points (correct)
+        # Risk metrics
+        profit_percentage = (profit_per_eur / 4.25) * 100  # PLN profit as % of spot rate
+        profit_bps = profit_per_eur * 10000  # Basis points
         
         return {
-            'gross_profit_eur': gross_profit_eur,
-            'leveraged_profit': leveraged_profit,
+            'gross_profit_pln': gross_profit_pln,  # Changed from EUR to PLN
+            'leveraged_profit_pln': leveraged_profit_pln,  # Changed from EUR to PLN
             'profit_percentage': profit_percentage,
             'profit_bps': profit_bps,
             'nominal_amount': nominal_amount_eur,
@@ -424,21 +422,19 @@ class APIIntegratedForwardCalculator:
         # Window settlement scenarios - CORRECT LOGIC
         
         # MINIMUM PROFIT: Bank faces maximum hedging costs
-        # Profit = Points to Window - Full Swap Risk
+        # Profit = Points to Window - Full Swap Risk  
         min_profit_per_eur = points_to_window - swap_risk
-        min_gross_profit = min_profit_per_eur * nominal_amount_eur
-        min_leveraged_profit = min_gross_profit * leverage
-        # CORRECTED: profit_per_eur is in PLN, convert properly
-        min_profit_percentage = (min_profit_per_eur / spot_rate) * 100  # PLN profit as % of spot rate
+        min_gross_profit_pln = min_profit_per_eur * nominal_amount_eur  # CORRECTED: PLN total
+        min_leveraged_profit_pln = min_gross_profit_pln * leverage
+        min_profit_percentage = (min_profit_per_eur / spot_rate) * 100
         min_profit_bps = min_profit_per_eur * 10000
         
         # MAXIMUM PROFIT: Bank faces minimal hedging costs
         # Profit = Full Points to Window (optimal market conditions)
         max_profit_per_eur = points_to_window
-        max_gross_profit = max_profit_per_eur * nominal_amount_eur
-        max_leveraged_profit = max_gross_profit * leverage
-        # CORRECTED: profit_per_eur is in PLN, convert properly
-        max_profit_percentage = (max_profit_per_eur / spot_rate) * 100  # PLN profit as % of spot rate
+        max_gross_profit_pln = max_profit_per_eur * nominal_amount_eur  # CORRECTED: PLN total
+        max_leveraged_profit_pln = max_gross_profit_pln * leverage
+        max_profit_percentage = (max_profit_per_eur / spot_rate) * 100
         max_profit_bps = max_profit_per_eur * 10000
         
         return {
@@ -471,14 +467,14 @@ class APIIntegratedForwardCalculator:
             'window_open_settlement': {
                 'scenario': 'High hedging costs',
                 'bank_position': 'Pays full swap risk for hedging',
-                'profit_eur': min_gross_profit,
-                'profit_description': f'Minimum - Points({points_to_window:.4f}) - SwapRisk({swap_risk:.4f}) = {min_profit_per_eur:.4f}'
+                'profit_pln': min_gross_profit_pln,  # Changed to PLN
+                'profit_description': f'Minimum - Points({points_to_window:.4f}) - SwapRisk({swap_risk:.4f}) = {min_profit_per_eur:.4f} PLN/EUR'
             },
             'window_end_settlement': {
                 'scenario': 'Optimal market conditions',
                 'bank_position': 'Minimal hedging costs',
-                'profit_eur': max_gross_profit,
-                'profit_description': f'Maximum - Full Points({points_to_window:.4f}) = {max_profit_per_eur:.4f}'
+                'profit_pln': max_gross_profit_pln,  # Changed to PLN
+                'profit_description': f'Maximum - Full Points({points_to_window:.4f}) = {max_profit_per_eur:.4f} PLN/EUR'
             },
             
             # Meta
@@ -977,9 +973,9 @@ def create_professional_window_forward_tab():
         window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
         
         # Convert to totals
-        window_min_profit_total = window_min_profit_per_eur * nominal_amount
-        window_max_profit_total = window_max_profit_per_eur * nominal_amount
-        window_expected_profit_total = window_expected_profit_per_eur * nominal_amount
+        window_min_profit_total = window_min_profit_per_eur * nominal_amount  # PLN total
+        window_max_profit_total = window_max_profit_per_eur * nominal_amount  # PLN total
+        window_expected_profit_total = window_expected_profit_per_eur * nominal_amount  # PLN total
         
         # Store individual tenor data
         portfolio_window_data[tenor] = {
