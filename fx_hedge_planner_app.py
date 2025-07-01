@@ -7,7 +7,199 @@ import requests
 from datetime import datetime, timedelta
 
 # ============================================================================
-# PROFESSIONAL WINDOW FORWARD CALCULATOR - API INTEGRATED
+# CONFIGURATION & API KEYS
+# ============================================================================
+
+# FRED API Configuration - PLACE YOUR API KEY HERE
+FRED_API_KEY = st.secrets.get("FRED_API_KEY", "f65897ba8bbc5c387dc26081d5b66edf")  # Uses Streamlit secrets or demo
+
+# You can also set it directly:
+# FRED_API_KEY = "your_fred_api_key_here"
+
+# Page config
+st.set_page_config(
+    page_title="Professional FX Calculator",
+    page_icon="🚀",
+    layout="wide"
+)
+
+# Custom CSS
+st.markdown("""
+<style>
+    .metric-card {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #1f77b4;
+        margin: 0.5rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .actual-rate {
+        font-size: 2.2rem;
+        font-weight: bold;
+        color: #2E86AB;
+        margin: 0;
+    }
+    .predicted-rate {
+        font-size: 2.2rem;
+        font-weight: bold;
+        color: #F24236;
+        margin: 0;
+    }
+    .rate-label {
+        font-size: 0.9rem;
+        color: #666;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+    }
+    .difference {
+        font-size: 1.1rem;
+        font-weight: bold;
+        color: #28a745;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #f0f2f6;
+        border-radius: 4px 4px 0px 0px;
+        gap: 1px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ============================================================================
+# FRED API CLIENT CLASS
+# ============================================================================
+
+class FREDAPIClient:
+    """FRED API client for fetching economic data"""
+    
+    def __init__(self, api_key=FRED_API_KEY):
+        self.api_key = api_key
+        self.base_url = "https://api.stlouisfed.org/fred/series/observations"
+    
+    def get_series_data(self, series_id, limit=1, sort_order='desc'):
+        """Get latest data for a specific FRED series"""
+        url = "https://api.stlouisfed.org/fred/series/observations"
+        params = {
+            'series_id': series_id,
+            'api_key': self.api_key,
+            'file_type': 'json',
+            'limit': limit,
+            'sort_order': sort_order
+        }
+        
+        try:
+            response = requests.get(url, params=params, timeout=10)
+            data = response.json()
+            
+            if 'observations' in data and data['observations']:
+                latest = data['observations'][0]
+                if latest['value'] != '.':
+                    return {
+                        'value': float(latest['value']),
+                        'date': latest['date'],
+                        'series_id': series_id,
+                        'source': 'FRED'
+                    }
+            return None
+        except Exception as e:
+            st.warning(f"FRED API error for {series_id}: {e}")
+            return None
+    
+    def get_multiple_series(self, series_dict):
+        """Get data for multiple FRED series"""
+        results = {}
+        for name, series_id in series_dict.items():
+            data = self.get_series_data(series_id)
+            if data:
+                results[name] = data
+        return results
+
+# ============================================================================
+# CACHED DATA FUNCTIONS
+# ============================================================================
+
+@st.cache_data(ttl=3600)
+def get_fred_bond_data():
+    """Get government bond yields from FRED with fallback data"""
+    fred_client = FREDAPIClient()
+    bond_series = {
+        'Poland_10Y': 'IRLTLT01PLM156N',
+        'Germany_10Y': 'IRLTLT01DEM156N',
+        'US_10Y': 'DGS10',
+        'US_2Y': 'DGS2',
+        'Euro_Area_10Y': 'IRLTLT01EZM156N'
+    }
+    
+    try:
+        data = fred_client.get_multiple_series(bond_series)
+        
+        # Add interpolated German short-term rates
+        if 'Germany_10Y' in data:
+            de_10y = data['Germany_10Y']['value']
+            data['Germany_9M'] = {
+                'value': max(de_10y - 0.25, 0.1),
+                'date': data['Germany_10Y']['date'],
+                'series_id': 'Interpolated',
+                'source': 'FRED + Interpolation'
+            }
+        
+        # If no data from API, use fallback
+        if not data:
+            raise Exception("No data from FRED API")
+            
+        return data
+        
+    except Exception as e:
+        st.warning(f"Using fallback bond data: {e}")
+        # Fallback data
+        return {
+            'Poland_10Y': {'value': 5.70, 'date': '2025-01-15', 'source': 'Fallback'},
+            'Germany_10Y': {'value': 2.60, 'date': '2025-01-15', 'source': 'Fallback'},
+            'Germany_9M': {'value': 2.35, 'date': '2025-01-15', 'source': 'Fallback'},
+            'US_10Y': {'value': 4.25, 'date': '2025-01-15', 'source': 'Fallback'}
+        }
+
+@st.cache_data(ttl=300)
+def get_eur_pln_rate():
+    """Get current EUR/PLN from NBP API with fallback"""
+    try:
+        url = "https://api.nbp.pl/api/exchangerates/rates/a/eur/"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        return {
+            'rate': data['rates'][0]['mid'],
+            'date': data['rates'][0]['effectiveDate'],
+            'source': 'NBP'
+        }
+    except Exception as e:
+        st.warning(f"Using fallback EUR/PLN rate: {e}")
+        return {'rate': 4.25, 'date': '2025-01-15', 'source': 'Fallback'}
+
+@st.cache_data(ttl=300)
+def get_usd_pln_rate():
+    """Get current USD/PLN from NBP API with fallback"""
+    try:
+        url = "https://api.nbp.pl/api/exchangerates/rates/a/usd/"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        return {
+            'rate': data['rates'][0]['mid'],
+            'date': data['rates'][0]['effectiveDate'],
+            'source': 'NBP'
+        }
+    except Exception as e:
+        st.warning(f"Using fallback USD/PLN rate: {e}")
+        return {'rate': 3.85, 'date': '2025-01-15', 'source': 'Fallback'}
+
+# ============================================================================
+# PROFESSIONAL WINDOW FORWARD CALCULATOR
 # ============================================================================
 
 class APIIntegratedForwardCalculator:
@@ -28,7 +220,7 @@ class APIIntegratedForwardCalculator:
             "Nine Month": 9, "Ten Month": 10, "Eleven Month": 11, "One Year": 12
         }
         
-        # Professional pricing parameters (based on your CSV analysis)
+        # Professional pricing parameters (based on CSV analysis)
         self.points_factor = 0.70  # Client gets 70% of forward points
         self.risk_factor = 0.40    # Bank charges 40% of swap risk
     
@@ -127,12 +319,7 @@ class APIIntegratedForwardCalculator:
                     }
     
     def calculate_swap_risk(self, window_days, points_to_window, volatility_factor=0.25):
-        """Calculate swap risk based on window length and market volatility
-        
-        Based on your CSV analysis:
-        - Swap risk increases with tenor
-        - Typical range: 0.02-0.03 points for standard windows
-        """
+        """Calculate swap risk based on window length and market volatility"""
         base_risk = abs(points_to_window) * volatility_factor
         time_adjustment = np.sqrt(window_days / 90)  # Scale with sqrt of time
         
@@ -145,7 +332,7 @@ class APIIntegratedForwardCalculator:
     def calculate_professional_rates(self, spot_rate, points_to_window, swap_risk):
         """Calculate rates using professional window forward logic
         
-        Based on your CSV analysis:
+        Based on CSV analysis:
         - FWD Client = Spot + (Points to Window × 0.70) - (Swap Risk × 0.40) 
         - FWD to Open = Spot + Points to Window
         - Profit = FWD to Open - FWD Client
@@ -190,14 +377,30 @@ class APIIntegratedForwardCalculator:
         }
 
 # ============================================================================
-# ENHANCED STREAMLIT INTERFACE
+# MAIN APPLICATION INTERFACE
 # ============================================================================
 
 def create_professional_window_forward_tab():
     """Create the professional window forward calculator interface"""
     
-    st.header("💼 Professional Window Forward Calculator")
+    st.header("🚀 Professional Window Forward Calculator")
     st.markdown("*Real-time API data with professional pricing logic*")
+    
+    # API Key Configuration Section
+    with st.expander("🔧 API Configuration", expanded=False):
+        st.markdown("""
+        **FRED API Key Setup:**
+        1. Get free API key from: https://fred.stlouisfed.org/docs/api/api_key.html
+        2. Add to Streamlit secrets.toml: `FRED_API_KEY = "your_key_here"`
+        3. Or modify the code directly to include your key
+        
+        **Current Status:**
+        """)
+        
+        if FRED_API_KEY == "demo":
+            st.warning("⚠️ Using demo mode - limited API access")
+        else:
+            st.success("✅ FRED API key configured")
     
     # Load real market data
     with st.spinner("📡 Loading real-time market data..."):
@@ -227,7 +430,7 @@ def create_professional_window_forward_tab():
         st.metric(
             "Poland 10Y Yield",
             f"{pl_yield:.2f}%",
-            help="FRED API - Polish government bonds"
+            help=f"Source: {bond_data.get('Poland_10Y', {}).get('source', 'Fallback')}"
         )
     
     with col3:
@@ -235,7 +438,7 @@ def create_professional_window_forward_tab():
         st.metric(
             "Germany Yield",
             f"{de_yield:.2f}%", 
-            help="Interpolated from German bonds"
+            help=f"Source: {bond_data.get('Germany_9M', {}).get('source', 'Fallback')}"
         )
     
     with col4:
@@ -444,182 +647,6 @@ BANK PROFIT PER EUR:
             st.success("✅ Healthy profit margin")
     
     # ============================================================================
-    # SCENARIO ANALYSIS
-    # ============================================================================
-    
-    st.markdown("---")
-    st.subheader("📊 Scenario Analysis")
-    
-    # Create scenarios for different market conditions
-    scenarios = {
-        "Current Market": {"pl_shift": 0, "de_shift": 0, "vol_mult": 1.0},
-        "PL Yields +50bp": {"pl_shift": 0.50, "de_shift": 0, "vol_mult": 1.2},
-        "PL Yields -50bp": {"pl_shift": -0.50, "de_shift": 0, "vol_mult": 1.2}, 
-        "DE Yields +25bp": {"pl_shift": 0, "de_shift": 0.25, "vol_mult": 1.1},
-        "Spread Tightening": {"pl_shift": -0.25, "de_shift": 0.25, "vol_mult": 1.3}
-    }
-    
-    scenario_results = []
-    
-    for scenario_name, shifts in scenarios.items():
-        # Adjust yields
-        adj_pl_yield = pl_yield + shifts['pl_shift']
-        adj_de_yield = de_yield + shifts['de_shift']
-        
-        # Generate new curve
-        scenario_curve = calculator.generate_api_forward_points_curve(
-            spot_rate, adj_pl_yield, adj_de_yield, bid_ask_spread
-        )
-        
-        # Calculate scenario metrics
-        scenario_points = calculator.interpolate_points_to_window(window_days, scenario_curve)['mid']
-        scenario_swap_risk = calculator.calculate_swap_risk(window_days, scenario_points) * shifts['vol_mult']
-        scenario_rates = calculator.calculate_professional_rates(spot_rate, scenario_points, scenario_swap_risk)
-        scenario_pnl = calculator.calculate_pnl_analysis(scenario_rates['profit_per_eur'], nominal_amount, leverage)
-        
-        scenario_results.append({
-            "Scenario": scenario_name,
-            "PL Yield": f"{adj_pl_yield:.2f}%",
-            "DE Yield": f"{adj_de_yield:.2f}%",
-            "Spread": f"{adj_pl_yield - adj_de_yield:.2f}pp",
-            "Points to Window": f"{scenario_points:.4f}",
-            "Client Rate": f"{scenario_rates['fwd_client']:.4f}",
-            "Profit per EUR": f"{scenario_rates['profit_per_eur']:.4f}",
-            "Total Profit": f"€{scenario_pnl['gross_profit_eur']:,.0f}",
-            "Profit %": f"{scenario_pnl['profit_percentage']:.2f}%"
-        })
-    
-    df_scenarios = pd.DataFrame(scenario_results)
-    
-    # Style the dataframe
-    def highlight_scenarios(row):
-        if row.name == 0:  # Current market
-            return ['background-color: #e8f5e8'] * len(row)
-        elif "€-" in str(row['Total Profit']):  # Loss scenarios
-            return ['background-color: #ffe8e8'] * len(row)
-        else:
-            return [''] * len(row)
-    
-    st.dataframe(
-        df_scenarios.style.apply(highlight_scenarios, axis=1),
-        use_container_width=True
-    )
-    
-    # ============================================================================
-    # VISUALIZATION
-    # ============================================================================
-    
-    st.markdown("---")
-    st.subheader("📈 Forward Curve Visualization")
-    
-    # Create forward curve chart
-    fig = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=('Forward Points Curve', 'Profit by Scenario', 'Yield Spread Impact', 'Risk Analysis'),
-        specs=[[{"secondary_y": False}, {"secondary_y": False}],
-               [{"secondary_y": True}, {"secondary_y": False}]]
-    )
-    
-    # 1. Forward Points Curve
-    curve_days = [data["days"] for data in forward_curve.values()]
-    curve_points = [data["mid"] for data in forward_curve.values()]
-    curve_tenors = list(forward_curve.keys())
-    
-    fig.add_trace(
-        go.Scatter(
-            x=curve_days,
-            y=curve_points,
-            mode='lines+markers',
-            name='Forward Points',
-            line=dict(color='blue', width=2),
-            marker=dict(size=6)
-        ),
-        row=1, col=1
-    )
-    
-    # Highlight window point
-    fig.add_trace(
-        go.Scatter(
-            x=[window_days],
-            y=[points_to_window],
-            mode='markers',
-            name=f'{window_days}D Window',
-            marker=dict(size=12, color='red', symbol='diamond')
-        ),
-        row=1, col=1
-    )
-    
-    # 2. Profit by Scenario
-    scenario_names = [result["Scenario"] for result in scenario_results]
-    scenario_profits = [float(result["Profit per EUR"]) for result in scenario_results]
-    
-    colors = ['green' if p > 0 else 'red' for p in scenario_profits]
-    
-    fig.add_trace(
-        go.Bar(
-            x=scenario_names,
-            y=scenario_profits,
-            name='Profit per EUR',
-            marker_color=colors
-        ),
-        row=1, col=2
-    )
-    
-    # 3. Yield Spread Impact
-    spreads = [float(result["Spread"].replace('pp', '')) for result in scenario_results]
-    profits_pct = [float(result["Profit %"].replace('%', '')) for result in scenario_results]
-    
-    fig.add_trace(
-        go.Scatter(
-            x=spreads,
-            y=profits_pct,
-            mode='markers+lines',
-            name='Spread vs Profit',
-            marker=dict(size=10, color='purple')
-        ),
-        row=2, col=1
-    )
-    
-    # 4. Risk Analysis - Window Days vs Profit
-    risk_analysis_days = list(range(30, 366, 30))
-    risk_analysis_profits = []
-    
-    for days in risk_analysis_days:
-        temp_points = calculator.interpolate_points_to_window(days, forward_curve)['mid']
-        temp_risk = calculator.calculate_swap_risk(days, temp_points)
-        temp_rates = calculator.calculate_professional_rates(spot_rate, temp_points, temp_risk)
-        risk_analysis_profits.append(temp_rates['profit_per_eur'])
-    
-    fig.add_trace(
-        go.Scatter(
-            x=risk_analysis_days,
-            y=risk_analysis_profits,
-            mode='lines+markers',
-            name='Window Length vs Profit',
-            line=dict(color='orange', width=2)
-        ),
-        row=2, col=2
-    )
-    
-    # Update layout
-    fig.update_layout(
-        height=600,
-        showlegend=True,
-        title_text="Window Forward Analytics Dashboard"
-    )
-    
-    fig.update_xaxes(title_text="Days", row=1, col=1)
-    fig.update_yaxes(title_text="Forward Points", row=1, col=1)
-    fig.update_xaxes(title_text="Scenario", row=1, col=2)
-    fig.update_yaxes(title_text="Profit per EUR", row=1, col=2)
-    fig.update_xaxes(title_text="Yield Spread (pp)", row=2, col=1)
-    fig.update_yaxes(title_text="Profit %", row=2, col=1)
-    fig.update_xaxes(title_text="Window Days", row=2, col=2)
-    fig.update_yaxes(title_text="Profit per EUR", row=2, col=2)
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # ============================================================================
     # DEAL SUMMARY
     # ============================================================================
     
@@ -654,95 +681,32 @@ BANK PROFIT PER EUR:
                 <p><strong>Risk Premium Charged:</strong> {rates['swap_risk_charged']:.4f}</p>
             </div>
             """, unsafe_allow_html=True)
-    
-    # Export functionality
-    st.markdown("---")
-    col1, col2, col3 = st.columns([1, 1, 1])
-    
-    with col2:
-        if st.button("📊 Generate Deal Report", use_container_width=True):
-            # Create comprehensive deal report
-            deal_report = f"""
-# WINDOW FORWARD DEAL REPORT
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-## DEAL PARAMETERS
-- Product: {window_days}-Day EUR/PLN Window Forward
-- Notional Amount: €{nominal_amount:,}
-- Current Spot Rate: {spot_rate:.4f}
-- Client Forward Rate: {rates['fwd_client']:.4f}
-
-## MARKET DATA (Live API)
-- Poland 10Y Yield: {pl_yield:.2f}%
-- Germany Yield: {de_yield:.2f}%
-- Yield Spread: {spread:.2f}pp
-- Points to Window: {points_to_window:.4f}
-- Estimated Swap Risk: {swap_risk:.4f}
-
-## PRICING BREAKDOWN
-- Points Factor: {points_factor:.1%}
-- Risk Factor: {risk_factor:.1%}
-- Points Given to Client: {rates['points_given_to_client']:.4f}
-- Risk Premium Charged: {rates['swap_risk_charged']:.4f}
-
-## FINANCIAL ANALYSIS
-- Bank Profit per EUR: {rates['profit_per_eur']:.4f} PLN
-- Total Gross Profit: €{pnl['gross_profit_eur']:,.0f}
-- Profit Margin: {pnl['profit_percentage']:.2f}%
-- Profit in Basis Points: {pnl['profit_bps']:.1f} bps
-
-## RISK SCENARIOS
-{df_scenarios.to_string(index=False)}
-
----
-*Report generated using real-time FRED API and NBP exchange rate data*
-            """
-            
-            st.download_button(
-                label="📥 Download Deal Report",
-                data=deal_report,
-                file_name=f"window_forward_deal_report_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                mime="text/plain",
-                use_container_width=True
-            )
 
 # ============================================================================
-# INTEGRATION FUNCTIONS (to be added to main app)
+# MAIN APPLICATION ENTRY POINT
 # ============================================================================
 
-def add_api_forward_calculator_to_main_app():
-    """Integration function to add this calculator to the main Streamlit app"""
+def main():
+    """Main application entry point"""
     
-    # This would be added as Tab 4 in your main application
-    with st.tabs(["🧮 Forward Rate Calculator", "📊 Bond Spread Dashboard", "💼 Window Forward Calculator", "🚀 API Professional Calculator"])[3]:
-        create_professional_window_forward_tab()
+    # Header
+    st.markdown("""
+    <div style="display: flex; align-items: center; margin-bottom: 2rem;">
+        <div style="background: linear-gradient(45deg, #667eea, #764ba2); width: 60px; height: 60px; border-radius: 10px; margin-right: 1rem; display: flex; align-items: center; justify-content: center;">
+            <span style="font-size: 2rem;">🚀</span>
+        </div>
+        <h1 style="margin: 0; color: #2c3e50;">Professional FX Trading Calculator</h1>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("*Advanced Window Forward Pricing with Real-Time API Integration*")
+    
+    # Run the main calculator
+    create_professional_window_forward_tab()
 
 # ============================================================================
-# STANDALONE DEMO (if running this file directly)
+# RUN APPLICATION
 # ============================================================================
 
 if __name__ == "__main__":
-    st.set_page_config(
-        page_title="API Professional Forward Calculator",
-        page_icon="🚀",
-        layout="wide"
-    )
-    
-    # Add custom CSS
-    st.markdown("""
-    <style>
-        .metric-card {
-            background-color: #f8f9fa;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            border-left: 4px solid #1f77b4;
-            margin: 0.5rem 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 24px;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    create_professional_window_forward_tab()
+    main()
