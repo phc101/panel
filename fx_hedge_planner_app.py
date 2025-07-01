@@ -1137,11 +1137,11 @@ Avg: {portfolio_avg_profit:.4f} PLN/EUR
         with summary_col1:
             st.markdown(f"""
             <div class="metric-card">
-                <h4>💼 Window Forward Deal Structure</h4>
-                <p><strong>Product:</strong> {window_days}-Day EUR/PLN Window Forward</p>
-                <p><strong>Notional:</strong> €{nominal_amount:,}</p>
+                <h4>💼 Portfolio Window Forward Strategy</h4>
+                <p><strong>Strategy:</strong> 12 Window Forwards with {window_days}-day flexibility</p>
+                <p><strong>Total Notional:</strong> €{portfolio_totals['total_notional']:,}</p>
                 <p><strong>Spot Rate:</strong> {spot_rate:.4f}</p>
-                <p><strong>Client Forward Rate:</strong> {rates['fwd_client']:.4f}</p>
+                <p><strong>Portfolio Avg Client Rate:</strong> {portfolio_avg_client_rate:.4f}</p>
                 <p><strong>Points Factor:</strong> {points_factor:.1%} (Industry: 70%)</p>
                 <p><strong>Risk Factor:</strong> {risk_factor:.1%} (Industry: 40%)</p>
             </div>
