@@ -13,9 +13,6 @@ from datetime import datetime, timedelta
 # FRED API Configuration - PLACE YOUR API KEY HERE
 FRED_API_KEY = st.secrets.get("FRED_API_KEY", "f65897ba8bbc5c387dc26081d5b66edf")  # Uses Streamlit secrets or demo
 
-# You can also set it directly:
-# FRED_API_KEY = "your_fred_api_key_here"
-
 # Page config
 st.set_page_config(
     page_title="Professional FX Calculator",
@@ -34,40 +31,8 @@ st.markdown("""
         margin: 0.5rem 0;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    .actual-rate {
-        font-size: 2.2rem;
-        font-weight: bold;
-        color: #2E86AB;
-        margin: 0;
-    }
-    .predicted-rate {
-        font-size: 2.2rem;
-        font-weight: bold;
-        color: #F24236;
-        margin: 0;
-    }
-    .rate-label {
-        font-size: 0.9rem;
-        color: #666;
-        margin-bottom: 0.5rem;
-        font-weight: 500;
-    }
-    .difference {
-        font-size: 1.1rem;
-        font-weight: bold;
-        color: #28a745;
-    }
     .stTabs [data-baseweb="tab-list"] {
         gap: 24px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: #f0f2f6;
-        border-radius: 4px 4px 0px 0px;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -330,16 +295,7 @@ class APIIntegratedForwardCalculator:
         return calculated_risk
     
     def calculate_professional_rates(self, spot_rate, points_to_window, swap_risk, min_profit_floor=0.0):
-        """Calculate rates using professional window forward logic
-        
-        Based on CSV analysis:
-        - FWD Client = Spot + (Points to Window × 0.70) - (Swap Risk × 0.40) 
-        - FWD to Open = Spot + Points to Window
-        - Profit = FWD to Open - FWD Client
-        
-        Args:
-            min_profit_floor: Minimum guaranteed profit per EUR (adjusts pricing if needed)
-        """
+        """Calculate rates using professional window forward logic"""
         
         # Standard calculation
         points_given_to_client = points_to_window * self.points_factor
@@ -383,7 +339,7 @@ class APIIntegratedForwardCalculator:
         }
     
     def calculate_pnl_analysis(self, profit_per_eur, nominal_amount_eur, leverage=1.0):
-        """Calculate basic P&L analysis (kept for compatibility)"""
+        """Calculate basic P&L analysis - CORRECTED FOR PLN"""
         
         # CORRECTED: profit_per_eur is in PLN, so total profit should be in PLN
         gross_profit_pln = profit_per_eur * nominal_amount_eur  # PLN total profit
@@ -394,8 +350,8 @@ class APIIntegratedForwardCalculator:
         profit_bps = profit_per_eur * 10000  # Basis points
         
         return {
-            'gross_profit_pln': gross_profit_pln,  # Changed from EUR to PLN
-            'leveraged_profit_pln': leveraged_profit_pln,  # Changed from EUR to PLN
+            'gross_profit_pln': gross_profit_pln,
+            'leveraged_profit_pln': leveraged_profit_pln,
             'profit_percentage': profit_percentage,
             'profit_bps': profit_bps,
             'nominal_amount': nominal_amount_eur,
@@ -403,15 +359,7 @@ class APIIntegratedForwardCalculator:
         }
     
     def calculate_window_pnl_analysis(self, spot_rate, points_to_window, swap_risk, window_days, nominal_amount_eur, leverage=1.0):
-        """Calculate comprehensive P&L analysis including window settlement scenarios
-        
-        CORRECT LOGIC:
-        - Client always gets the same quoted rate
-        - Bank profit varies based on hedging costs and timing
-        
-        Minimum Profit: Points to Window - Swap Risk (bank pays full hedging cost)
-        Maximum Profit: Points to Window (optimal conditions, minimal hedging cost)
-        """
+        """Calculate comprehensive P&L analysis including window settlement scenarios"""
         
         # Calculate professional rates (client rate stays constant)
         rates = self.calculate_professional_rates(spot_rate, points_to_window, swap_risk)
@@ -438,42 +386,42 @@ class APIIntegratedForwardCalculator:
         max_profit_bps = max_profit_per_eur * 10000
         
         return {
-            # Basic metrics (expected case)
-            'basic_gross_profit_eur': basic_pnl['gross_profit_eur'],
-            'basic_leveraged_profit': basic_pnl['leveraged_profit'],
+            # Basic metrics (expected case) - CORRECTED KEYS
+            'basic_gross_profit_pln': basic_pnl['gross_profit_pln'],
+            'basic_leveraged_profit_pln': basic_pnl['leveraged_profit_pln'],
             'basic_profit_percentage': basic_pnl['profit_percentage'],
             'basic_profit_bps': basic_pnl['profit_bps'],
             
-            # Window settlement scenarios (CORRECTED)
+            # Window settlement scenarios (CORRECTED TO PLN)
             'min_profit_per_eur': min_profit_per_eur,
-            'min_gross_profit': min_gross_profit,
-            'min_leveraged_profit': min_leveraged_profit,
+            'min_gross_profit_pln': min_gross_profit_pln,
+            'min_leveraged_profit_pln': min_leveraged_profit_pln,
             'min_profit_percentage': min_profit_percentage,
             'min_profit_bps': min_profit_bps,
             
             'max_profit_per_eur': max_profit_per_eur,
-            'max_gross_profit': max_gross_profit,
-            'max_leveraged_profit': max_leveraged_profit,
+            'max_gross_profit_pln': max_gross_profit_pln,
+            'max_leveraged_profit_pln': max_leveraged_profit_pln,
             'max_profit_percentage': max_profit_percentage,
             'max_profit_bps': max_profit_bps,
             
-            # Additional metrics
-            'profit_range_eur': max_gross_profit - min_gross_profit,
+            # Additional metrics (ALL PLN)
+            'profit_range_pln': max_gross_profit_pln - min_gross_profit_pln,
             'profit_range_percentage': max_profit_percentage - min_profit_percentage,
-            'expected_profit': (min_gross_profit + max_gross_profit) / 2,
-            'risk_reward_ratio': (max_gross_profit / min_gross_profit) if min_gross_profit > 0 else float('inf'),
+            'expected_profit_pln': (min_gross_profit_pln + max_gross_profit_pln) / 2,
+            'risk_reward_ratio': (max_gross_profit_pln / min_gross_profit_pln) if min_gross_profit_pln > 0 else float('inf'),
             
-            # Settlement scenarios (CORRECTED DESCRIPTIONS)
+            # Settlement scenarios
             'window_open_settlement': {
                 'scenario': 'High hedging costs',
                 'bank_position': 'Pays full swap risk for hedging',
-                'profit_pln': min_gross_profit_pln,  # Changed to PLN
+                'profit_pln': min_gross_profit_pln,
                 'profit_description': f'Minimum - Points({points_to_window:.4f}) - SwapRisk({swap_risk:.4f}) = {min_profit_per_eur:.4f} PLN/EUR'
             },
             'window_end_settlement': {
                 'scenario': 'Optimal market conditions',
                 'bank_position': 'Minimal hedging costs',
-                'profit_pln': max_gross_profit_pln,  # Changed to PLN
+                'profit_pln': max_gross_profit_pln,
                 'profit_description': f'Maximum - Full Points({points_to_window:.4f}) = {max_profit_per_eur:.4f} PLN/EUR'
             },
             
@@ -650,298 +598,17 @@ def create_professional_window_forward_tab():
     calculator.risk_factor = risk_factor
     
     # ============================================================================
-    # REAL-TIME CALCULATIONS
-    # ============================================================================
-    
-    st.markdown("---")
-    st.subheader("🔢 Live Forward Points Generation")
-    
-    # Generate forward curve from API data
-    forward_curve = calculator.generate_api_forward_points_curve(
-        spot_rate, pl_yield, de_yield, bid_ask_spread
-    )
-    
-    # ============================================================================
-    # CLIENT PRICE CURVE VISUALIZATION
-    # ============================================================================
-    
-    st.markdown("---")
-    st.subheader("📈 Client Price Curve Analysis")
-    
-    # Generate complete client price curve data
-    client_curve_data = []
-    for tenor, curve_data in forward_curve.items():
-        tenor_points = curve_data["mid"]
-        tenor_swap_risk = calculator.calculate_swap_risk(curve_data["days"], tenor_points)
-        tenor_rates = calculator.calculate_professional_rates(spot_rate, tenor_points, tenor_swap_risk)
-        
-        client_curve_data.append({
-            'tenor': tenor,
-            'days': curve_data["days"],
-            'months': curve_data["months"],
-            'client_rate': tenor_rates['fwd_client'],
-            'theoretical_rate': tenor_rates['fwd_to_open'],
-            'spot_rate': spot_rate,
-            'profit_per_eur': tenor_rates['profit_per_eur'],
-            'forward_points': tenor_points,
-            'swap_risk': tenor_swap_risk
-        })
-    
-    # Create client price curve chart
-    fig_client = go.Figure()
-    
-    # Extract data for plotting
-    days_list = [item['days'] for item in client_curve_data]
-    client_rates = [item['client_rate'] for item in client_curve_data]
-    theoretical_rates = [item['theoretical_rate'] for item in client_curve_data]
-    tenor_names = [item['tenor'] for item in client_curve_data]
-    
-    # Add spot rate line
-    fig_client.add_trace(
-        go.Scatter(
-            x=days_list,
-            y=[spot_rate] * len(days_list),
-            mode='lines',
-            name='Spot Rate',
-            line=dict(color='black', width=2, dash='solid'),
-            hovertemplate='Spot Rate: %{y:.4f}<extra></extra>'
-        )
-    )
-    
-    # Add theoretical forward curve
-    fig_client.add_trace(
-        go.Scatter(
-            x=days_list,
-            y=theoretical_rates,
-            mode='lines+markers',
-            name='Theoretical Forward Curve',
-            line=dict(color='blue', width=2, dash='dash'),
-            marker=dict(size=6, color='blue'),
-            hovertemplate='<b>%{text}</b><br>Days: %{x}<br>Theoretical Rate: %{y:.4f}<extra></extra>',
-            text=tenor_names
-        )
-    )
-    
-    # Add client rate curve (main curve)
-    fig_client.add_trace(
-        go.Scatter(
-            x=days_list,
-            y=client_rates,
-            mode='lines+markers',
-            name='Client Rate Curve',
-            line=dict(color='red', width=3),
-            marker=dict(size=8, color='red'),
-            hovertemplate='<b>%{text}</b><br>Days: %{x}<br>Client Rate: %{y:.4f}<br>vs Spot: %{customdata:.4f}<extra></extra>',
-            text=tenor_names,
-            customdata=[rate - spot_rate for rate in client_rates]
-        )
-    )
-    
-    # Highlight selected window length
-    selected_client_rate = None
-    selected_theoretical_rate = None
-    for item in client_curve_data:
-        if abs(item['days'] - window_days) <= 15:
-            selected_client_rate = item['client_rate']
-            selected_theoretical_rate = item['theoretical_rate']
-            break
-    
-    if selected_client_rate:
-        fig_client.add_trace(
-            go.Scatter(
-                x=[window_days],
-                y=[selected_client_rate],
-                mode='markers',
-                name=f'Selected Window ({window_days}D)',
-                marker=dict(size=15, color='orange', symbol='diamond', line=dict(width=2, color='black')),
-                hovertemplate=f'<b>Selected: {window_days} Days</b><br>Client Rate: %{{y:.4f}}<extra></extra>'
-            )
-        )
-    
-    # Add profit area (difference between theoretical and client rates)
-    fig_client.add_trace(
-        go.Scatter(
-            x=days_list,
-            y=theoretical_rates,
-            fill='tonexty',
-            mode='none',
-            name='Bank Profit Area',
-            fillcolor='rgba(0, 255, 0, 0.2)',
-            hoverinfo='skip'
-        )
-    )
-    
-    # Update layout
-    fig_client.update_layout(
-        title="Client Rate Curve vs Theoretical Forward Curve",
-        xaxis_title="Days",
-        yaxis_title="EUR/PLN Rate",
-        height=500,
-        hovermode='x unified',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    
-    # Add grid and formatting
-    fig_client.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
-    fig_client.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
-    
-    st.plotly_chart(fig_client, use_container_width=True)
-    
-    # Client curve analysis table
-    st.subheader("📊 Client Rate Curve Analysis")
-    
-    client_analysis_data = []
-    for item in client_curve_data:
-        spread_vs_spot = (item['client_rate'] - spot_rate) * 10000  # in pips
-        annualized_premium = ((item['client_rate'] / spot_rate - 1) * (365 / item['days']) * 100)
-        
-        client_analysis_data.append({
-            "Tenor": item['tenor'],
-            "Days": item['days'],
-            "Client Rate": f"{item['client_rate']:.4f}",
-            "vs Spot (pips)": f"{spread_vs_spot:.1f}",
-            "Annualized Premium": f"{annualized_premium:.2f}%",
-            "Theoretical Rate": f"{item['theoretical_rate']:.4f}",
-            "Bank Spread": f"{item['profit_per_eur']:.4f}",
-            "Forward Points": f"{item['forward_points']:.4f}",
-            "Swap Risk": f"{item['swap_risk']:.4f}"
-        })
-    
-    df_client_analysis = pd.DataFrame(client_analysis_data)
-    
-    # Highlight selected window
-    def highlight_selected_window_client(row):
-        if abs(row['Days'] - window_days) <= 15:
-            return ['background-color: #fff3cd; font-weight: bold'] * len(row)
-        return [''] * len(row)
-    
-    st.dataframe(
-        df_client_analysis.style.apply(highlight_selected_window_client, axis=1),
-        use_container_width=True,
-        height=300
-    )
-    
-    st.subheader("📋 Complete 12-Month Window Forward Pricing Curve")
-    
-    # Generate pricing for all 12 tenors
-    complete_pricing_data = []
-    
-    for tenor, curve_data in forward_curve.items():
-        tenor_days = curve_data["days"]
-        tenor_points = curve_data["mid"]
-        
-        # Calculate swap risk for this tenor
-        tenor_swap_risk = calculator.calculate_swap_risk(tenor_days, tenor_points)
-        
-        # Calculate professional rates for this tenor
-        tenor_rates = calculator.calculate_professional_rates(spot_rate, tenor_points, tenor_swap_risk)
-        
-        # Calculate enhanced P&L for this tenor
-        tenor_enhanced_pnl = calculator.calculate_window_pnl_analysis(
-            spot_rate, tenor_points, tenor_swap_risk, tenor_days, nominal_amount, leverage
-        )
-        
-        complete_pricing_data.append({
-            "Tenor": tenor,
-            "Window Days": tenor_days,
-            "Window Months": f"{curve_data['months']:.1f}M",
-            "Forward Points": f"{tenor_points:.4f}",
-            "Swap Risk": f"{tenor_swap_risk:.4f}",
-            "Client Rate": f"{tenor_rates['fwd_client']:.4f}",
-            "Theoretical Rate": f"{tenor_rates['fwd_to_open']:.4f}",
-            "Profit/EUR": f"{tenor_rates['profit_per_eur']:.4f}",
-            "Min Profit": f"€{tenor_enhanced_pnl['min_gross_profit']:,.0f}",
-            "Max Profit": f"€{tenor_enhanced_pnl['max_gross_profit']:,.0f}",
-            "Expected Profit": f"€{tenor_enhanced_pnl['expected_profit']:,.0f}",
-            "Profit Range": f"€{tenor_enhanced_pnl['profit_range_eur']:,.0f}",
-            "Profit %": f"{tenor_enhanced_pnl['basic_profit_percentage']:.2f}%",
-            "Profit BPS": f"{tenor_enhanced_pnl['basic_profit_bps']:.1f}",
-            "Yield Spread": f"{curve_data['yield_spread']:.2f}pp"
-        })
-    
-    df_complete_pricing = pd.DataFrame(complete_pricing_data)
-    
-    # Highlight the selected window length
-    def highlight_selected_window(row):
-        if abs(row['Window Days'] - window_days) <= 15:  # Within 15 days tolerance
-            return ['background-color: #e8f5e8; font-weight: bold'] * len(row)
-        return [''] * len(row)
-    
-    # Display the complete pricing table
-    st.dataframe(
-        df_complete_pricing.style.apply(highlight_selected_window, axis=1),
-        use_container_width=True,
-        height=400
-    )
-    
-    # Summary statistics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        avg_profit_per_eur = df_complete_pricing['Profit/EUR'].str.replace('', '').astype(float).mean()
-        st.metric(
-            "Avg Profit/EUR", 
-            f"{avg_profit_per_eur:.4f}",
-            help="Average profit per EUR across all tenors"
-        )
-    
-    with col2:
-        max_profit_tenor = df_complete_pricing.loc[df_complete_pricing['Profit/EUR'].str.replace('', '').astype(float).idxmax(), 'Tenor']
-        max_profit_value = df_complete_pricing['Profit/EUR'].str.replace('', '').astype(float).max()
-        st.metric(
-            "Best Tenor", 
-            f"{max_profit_tenor}",
-            delta=f"{max_profit_value:.4f}",
-            help="Most profitable tenor"
-        )
-    
-    with col3:
-        total_expected_profit = df_complete_pricing['Expected Profit'].str.replace('€', '').str.replace(',', '').astype(float).sum()
-        st.metric(
-            "Total Expected Value", 
-            f"€{total_expected_profit:,.0f}",
-            help="Sum of all tenor expected profits"
-        )
-    
-    with col4:
-        profit_range = df_complete_pricing['Profit/EUR'].str.replace('', '').astype(float).max() - df_complete_pricing['Profit/EUR'].str.replace('', '').astype(float).min()
-        st.metric(
-            "Profit Range", 
-            f"{profit_range:.4f}",
-            help="Difference between best and worst tenor"
-        )
-    
-    # Advanced curve analysis
-    with st.expander("📊 Detailed Forward Points Curve Analysis"):
-        curve_analysis_data = []
-        for tenor, data in forward_curve.items():
-            curve_analysis_data.append({
-                "Tenor": tenor,
-                "Days": data["days"],
-                "Bid Points": f"{data['bid']:.4f}",
-                "Ask Points": f"{data['ask']:.4f}",
-                "Mid Points": f"{data['mid']:.4f}",
-                "Theoretical Forward": f"{data['theoretical_forward']:.4f}",
-                "Yield Spread": f"{data['yield_spread']:.2f}pp",
-                "Annualized Premium": f"{((data['theoretical_forward']/spot_rate - 1) * (365/data['days']) * 100):.2f}%"
-            })
-        
-        df_curve_analysis = pd.DataFrame(curve_analysis_data)
-        st.dataframe(df_curve_analysis, use_container_width=True)
-    
-    # ============================================================================
     # PORTFOLIO WINDOW FORWARD CALCULATIONS (ALL 12 TENORS)
     # ============================================================================
     
     st.markdown("---")
     st.subheader("🔢 Portfolio Window Forward Generation")
     st.markdown(f"*All 12 tenors converted to window forwards with {window_days}-day flexibility*")
+    
+    # Generate forward curve from API data
+    forward_curve = calculator.generate_api_forward_points_curve(
+        spot_rate, pl_yield, de_yield, bid_ask_spread
+    )
     
     # Generate window forward pricing for ALL 12 tenors with same window length
     portfolio_window_data = {}
@@ -967,15 +634,20 @@ def create_professional_window_forward_tab():
             spot_rate, tenor_points, tenor_window_swap_risk, minimum_profit_floor
         )
         
+        # Calculate enhanced P&L for this tenor
+        tenor_enhanced_pnl = calculator.calculate_window_pnl_analysis(
+            spot_rate, tenor_points, tenor_window_swap_risk, window_days, nominal_amount, leverage
+        )
+        
+        # Use the correct PLN values from enhanced P&L
+        window_min_profit_total = tenor_enhanced_pnl['min_gross_profit_pln']
+        window_max_profit_total = tenor_enhanced_pnl['max_gross_profit_pln'] 
+        window_expected_profit_total = tenor_enhanced_pnl['expected_profit_pln']
+        
         # Window forward profit calculations (same logic for all tenors)
         window_min_profit_per_eur = tenor_points - tenor_window_swap_risk
         window_max_profit_per_eur = tenor_points
         window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
-        
-        # Convert to totals
-        window_min_profit_total = window_min_profit_per_eur * nominal_amount  # PLN total
-        window_max_profit_total = window_max_profit_per_eur * nominal_amount  # PLN total
-        window_expected_profit_total = window_expected_profit_per_eur * nominal_amount  # PLN total
         
         # Store individual tenor data
         portfolio_window_data[tenor] = {
@@ -1089,8 +761,8 @@ Avg: {portfolio_avg_profit:.4f} PLN/EUR
             st.caption("*High hedging costs scenario*")
             st.metric(
                 "Min Profit", 
-                f"€{portfolio_totals['total_min_profit']:,.0f}",
-                delta=f"{(portfolio_avg_min_profit/spot_rate)*100:.2f}%",
+                f"{portfolio_totals['total_min_profit']:,.0f} PLN",
+                delta=f"{(portfolio_avg_min_profit/spot_rate)*100:.3f}%",
                 help="Sum of all minimum profits"
             )
             st.write(f"**{(portfolio_avg_min_profit * 10000):.1f} bps avg**")
@@ -1100,23 +772,23 @@ Avg: {portfolio_avg_profit:.4f} PLN/EUR
             st.caption("*Optimal market conditions*")
             st.metric(
                 "Max Profit", 
-                f"€{portfolio_totals['total_max_profit']:,.0f}",
-                delta=f"{(portfolio_avg_max_profit/spot_rate)*100:.2f}%",
+                f"{portfolio_totals['total_max_profit']:,.0f} PLN",
+                delta=f"{(portfolio_avg_max_profit/spot_rate)*100:.3f}%",
                 help="Sum of all maximum profits"
             )
             st.write(f"**{(portfolio_avg_max_profit * 10000):.1f} bps avg**")
         
         # Portfolio summary metrics
         st.markdown("**📊 Portfolio Summary:**")
-        st.metric("Expected Profit", f"€{portfolio_totals['total_expected_profit']:,.0f}", help="Average scenario")
-        profit_range_eur = portfolio_totals['total_max_profit'] - portfolio_totals['total_min_profit']
-        st.metric("Profit Range", f"€{profit_range_eur:,.0f}", help="Max - Min profit")
+        st.metric("Expected Profit", f"{portfolio_totals['total_expected_profit']:,.0f} PLN", help="Average scenario")
+        profit_range_pln = portfolio_totals['total_max_profit'] - portfolio_totals['total_min_profit']
+        st.metric("Profit Range", f"{profit_range_pln:,.0f} PLN", help="Max - Min profit")
         
         risk_reward_ratio = portfolio_totals['total_max_profit'] / portfolio_totals['total_min_profit'] if portfolio_totals['total_min_profit'] > 0 else float('inf')
         st.metric("Risk/Reward", f"{risk_reward_ratio:.1f}x", help="Max/Min profit ratio")
         
         # Risk assessment for portfolio
-        profit_volatility = (profit_range_eur / portfolio_totals['total_expected_profit']) * 100 if portfolio_totals['total_expected_profit'] > 0 else 0
+        profit_volatility = (profit_range_pln / portfolio_totals['total_expected_profit']) * 100 if portfolio_totals['total_expected_profit'] > 0 else 0
         if profit_volatility < 20:
             st.success("✅ Low portfolio volatility - stable profit range")
         elif profit_volatility < 40:
@@ -1125,9 +797,295 @@ Avg: {portfolio_avg_profit:.4f} PLN/EUR
             st.warning("⚠️ High portfolio volatility - significant profit variability")
     
     # ============================================================================
-    # DEAL SUMMARY
+    # CLIENT PRICE CURVE VISUALIZATION
     # ============================================================================
     
+    st.markdown("---")
+    st.subheader("📈 Client Price Curve Analysis")
+    
+    # Generate complete client price curve data
+    client_curve_data = []
+    for tenor, curve_data in forward_curve.items():
+        tenor_points = curve_data["mid"]
+        tenor_swap_risk = calculator.calculate_swap_risk(window_days, tenor_points)
+        tenor_rates = calculator.calculate_professional_rates(spot_rate, tenor_points, tenor_swap_risk, minimum_profit_floor)
+        
+        client_curve_data.append({
+            'tenor': tenor,
+            'days': curve_data["days"],
+            'months': curve_data["months"],
+            'client_rate': tenor_rates['fwd_client'],
+            'theoretical_rate': tenor_rates['fwd_to_open'],
+            'spot_rate': spot_rate,
+            'profit_per_eur': tenor_rates['profit_per_eur'],
+            'forward_points': tenor_points,
+            'swap_risk': tenor_swap_risk
+        })
+    
+    # Create client price curve chart
+    fig_client = go.Figure()
+    
+    # Extract data for plotting
+    days_list = [item['days'] for item in client_curve_data]
+    client_rates = [item['client_rate'] for item in client_curve_data]
+    theoretical_rates = [item['theoretical_rate'] for item in client_curve_data]
+    tenor_names = [item['tenor'] for item in client_curve_data]
+    
+    # Add spot rate line
+    fig_client.add_trace(
+        go.Scatter(
+            x=days_list,
+            y=[spot_rate] * len(days_list),
+            mode='lines',
+            name='Spot Rate',
+            line=dict(color='black', width=2, dash='solid'),
+            hovertemplate='Spot Rate: %{y:.4f}<extra></extra>'
+        )
+    )
+    
+    # Add theoretical forward curve
+    fig_client.add_trace(
+        go.Scatter(
+            x=days_list,
+            y=theoretical_rates,
+            mode='lines+markers',
+            name='Theoretical Forward Curve',
+            line=dict(color='blue', width=2, dash='dash'),
+            marker=dict(size=6, color='blue'),
+            hovertemplate='<b>%{text}</b><br>Days: %{x}<br>Theoretical Rate: %{y:.4f}<extra></extra>',
+            text=tenor_names
+        )
+    )
+    
+    # Add client rate curve (main curve)
+    fig_client.add_trace(
+        go.Scatter(
+            x=days_list,
+            y=client_rates,
+            mode='lines+markers',
+            name='Client Rate Curve',
+            line=dict(color='red', width=3),
+            marker=dict(size=8, color='red'),
+            hovertemplate='<b>%{text}</b><br>Days: %{x}<br>Client Rate: %{y:.4f}<br>vs Spot: %{customdata:.4f}<extra></extra>',
+            text=tenor_names,
+            customdata=[rate - spot_rate for rate in client_rates]
+        )
+    )
+    
+    # Highlight selected window length
+    selected_client_rate = None
+    for item in client_curve_data:
+        if abs(item['days'] - window_days) <= 15:
+            selected_client_rate = item['client_rate']
+            break
+    
+    if selected_client_rate:
+        fig_client.add_trace(
+            go.Scatter(
+                x=[window_days],
+                y=[selected_client_rate],
+                mode='markers',
+                name=f'Selected Window ({window_days}D)',
+                marker=dict(size=15, color='orange', symbol='diamond', line=dict(width=2, color='black')),
+                hovertemplate=f'<b>Selected: {window_days} Days</b><br>Client Rate: %{{y:.4f}}<extra></extra>'
+            )
+        )
+    
+    # Add profit area (difference between theoretical and client rates)
+    fig_client.add_trace(
+        go.Scatter(
+            x=days_list,
+            y=theoretical_rates,
+            fill='tonexty',
+            mode='none',
+            name='Bank Profit Area',
+            fillcolor='rgba(0, 255, 0, 0.2)',
+            hoverinfo='skip'
+        )
+    )
+    
+    # Update layout
+    fig_client.update_layout(
+        title="Client Rate Curve vs Theoretical Forward Curve",
+        xaxis_title="Days",
+        yaxis_title="EUR/PLN Rate",
+        height=500,
+        hovermode='x unified',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    # Add grid and formatting
+    fig_client.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+    fig_client.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+    
+    st.plotly_chart(fig_client, use_container_width=True)
+    
+    # Client curve analysis table
+    st.subheader("📊 Client Rate Curve Analysis")
+    
+    client_analysis_data = []
+    for item in client_curve_data:
+        spread_vs_spot = (item['client_rate'] - spot_rate) * 10000  # in pips
+        annualized_premium = ((item['client_rate'] / spot_rate - 1) * (365 / item['days']) * 100)
+        
+        client_analysis_data.append({
+            "Tenor": item['tenor'],
+            "Days": item['days'],
+            "Client Rate": f"{item['client_rate']:.4f}",
+            "vs Spot (pips)": f"{spread_vs_spot:.1f}",
+            "Annualized Premium": f"{annualized_premium:.2f}%",
+            "Theoretical Rate": f"{item['theoretical_rate']:.4f}",
+            "Bank Spread": f"{item['profit_per_eur']:.4f}",
+            "Forward Points": f"{item['forward_points']:.4f}",
+            "Swap Risk": f"{item['swap_risk']:.4f}"
+        })
+    
+    df_client_analysis = pd.DataFrame(client_analysis_data)
+    
+    # Highlight selected window
+    def highlight_selected_window_client(row):
+        if abs(row['Days'] - window_days) <= 15:
+            return ['background-color: #fff3cd; font-weight: bold'] * len(row)
+        return [''] * len(row)
+    
+    st.dataframe(
+        df_client_analysis.style.apply(highlight_selected_window_client, axis=1),
+        use_container_width=True,
+        height=300
+    )
+    
+    # ============================================================================
+    # COMPLETE 12-MONTH WINDOW FORWARD PORTFOLIO ANALYSIS
+    # ============================================================================
+    
+    st.subheader("📋 Complete 12-Month Window Forward Portfolio")
+    st.markdown(f"*All tenors with {window_days}-day window flexibility*")
+    
+    # Generate window forward pricing for all 12 tenors
+    complete_window_pricing_data = []
+    portfolio_summary = {
+        'total_min_profit': 0,
+        'total_max_profit': 0,
+        'total_expected_profit': 0,
+        'total_profit_range': 0,
+        'weighted_avg_profit_pct': 0,
+        'total_nominal': 0
+    }
+    
+    for tenor, curve_data in forward_curve.items():
+        tenor_days = curve_data["days"]
+        tenor_points = curve_data["mid"]
+        
+        # Calculate window-specific swap risk for this tenor with selected window length
+        tenor_window_swap_risk = calculator.calculate_swap_risk(window_days, tenor_points)
+        
+        # Calculate professional window forward rates
+        tenor_rates = calculator.calculate_professional_rates(
+            spot_rate, tenor_points, tenor_window_swap_risk, minimum_profit_floor
+        )
+        
+        # Calculate window forward metrics using correct logic:
+        window_min_profit_per_eur = tenor_points - tenor_window_swap_risk
+        window_max_profit_per_eur = tenor_points
+        window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
+        
+        window_min_profit_total = window_min_profit_per_eur * nominal_amount
+        window_max_profit_total = window_max_profit_per_eur * nominal_amount
+        window_expected_profit_total = window_expected_profit_per_eur * nominal_amount
+        
+        # Add to portfolio summary
+        portfolio_summary['total_min_profit'] += window_min_profit_total
+        portfolio_summary['total_max_profit'] += window_max_profit_total
+        portfolio_summary['total_expected_profit'] += window_expected_profit_total
+        portfolio_summary['total_profit_range'] += (window_max_profit_total - window_min_profit_total)
+        portfolio_summary['total_nominal'] += nominal_amount
+        
+        complete_window_pricing_data.append({
+            "Tenor": tenor,
+            "Forward Days": tenor_days,
+            "Window Days": window_days,
+            "Window Months": f"{window_days/30:.1f}M",
+            "Forward Points": f"{tenor_points:.4f}",
+            "Window Swap Risk": f"{tenor_window_swap_risk:.4f}",
+            "Client Rate": f"{tenor_rates['fwd_client']:.4f}",
+            "Theoretical Rate": f"{tenor_rates['fwd_to_open']:.4f}",
+            "Min Profit/EUR": f"{window_min_profit_per_eur:.4f}",
+            "Max Profit/EUR": f"{window_max_profit_per_eur:.4f}",
+            "Expected Profit/EUR": f"{window_expected_profit_per_eur:.4f}",
+            "Min Profit Total": f"{window_min_profit_total:,.0f} PLN",
+            "Max Profit Total": f"{window_max_profit_total:,.0f} PLN",
+            "Expected Profit Total": f"{window_expected_profit_total:,.0f} PLN",
+            "Profit Range": f"{(window_max_profit_total - window_min_profit_total):,.0f} PLN",
+            "Profit Min %": f"{(window_min_profit_per_eur/spot_rate)*100:.2f}%",
+            "Profit Max %": f"{(window_max_profit_per_eur/spot_rate)*100:.2f}%",
+            "Yield Spread": f"{curve_data['yield_spread']:.2f}pp"
+        })
+    
+    # Calculate weighted averages for portfolio
+    portfolio_summary['weighted_avg_profit_pct'] = (portfolio_summary['total_expected_profit'] / portfolio_summary['total_nominal'] / spot_rate) * 100
+    
+    df_complete_window_pricing = pd.DataFrame(complete_window_pricing_data)
+    
+    # Highlight the selected window length in the table
+    def highlight_selected_window_portfolio(row):
+        # Highlight rows where Forward Days is close to Window Days (same tenor approximately)
+        if abs(row['Forward Days'] - window_days) <= 15:
+            return ['background-color: #e8f5e8; font-weight: bold'] * len(row)
+        return [''] * len(row)
+    
+    # Display the complete window forward portfolio table
+    st.dataframe(
+        df_complete_window_pricing.style.apply(highlight_selected_window_portfolio, axis=1),
+        use_container_width=True,
+        height=400
+    )
+    
+    # ============================================================================
+    # PORTFOLIO WINDOW FORWARD SUMMARY
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("💼 Portfolio Window Forward Summary")
+    st.markdown(f"*Aggregated results for all 12 tenors with {window_days}-day window*")
+    
+    # Portfolio summary metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "Portfolio Min Profit", 
+            f"{portfolio_summary['total_min_profit']:,.0f} PLN",
+            help=f"Sum of all minimum profits (Points - Swap Risk) × €{nominal_amount:,} × 12 tenors"
+        )
+    
+    with col2:
+        st.metric(
+            "Portfolio Max Profit", 
+            f"{portfolio_summary['total_max_profit']:,.0f} PLN",
+            help=f"Sum of all maximum profits (Full Points) × €{nominal_amount:,} × 12 tenors"
+        )
+    
+    with col3:
+        st.metric(
+            "Portfolio Expected Profit", 
+            f"{portfolio_summary['total_expected_profit']:,.0f} PLN",
+            help="Average of min/max scenarios across all tenors"
+        )
+    
+    with col4:
+        st.metric(
+            "Portfolio Profit Range", 
+            f"{portfolio_summary['total_profit_range']:,.0f} PLN",
+            help="Total variability across all window forwards"
+        )
+    
+    # Deal summary
     st.markdown("---")
     st.subheader("📋 Deal Summary")
     
@@ -1151,9 +1109,9 @@ Avg: {portfolio_avg_profit:.4f} PLN/EUR
             st.markdown(f"""
             <div class="metric-card">
                 <h4>💰 Portfolio Financial Summary</h4>
-                <p><strong>Total Expected Profit:</strong> €{portfolio_totals['total_expected_profit']:,.0f}</p>
-                <p><strong>Portfolio Minimum:</strong> €{portfolio_totals['total_min_profit']:,.0f}</p>
-                <p><strong>Portfolio Maximum:</strong> €{portfolio_totals['total_max_profit']:,.0f}</p>
+                <p><strong>Total Expected Profit:</strong> {portfolio_totals['total_expected_profit']:,.0f} PLN</p>
+                <p><strong>Portfolio Minimum:</strong> {portfolio_totals['total_min_profit']:,.0f} PLN</p>
+                <p><strong>Portfolio Maximum:</strong> {portfolio_totals['total_max_profit']:,.0f} PLN</p>
                 <p><strong>Average Profit/EUR:</strong> {portfolio_avg_profit:.4f} PLN</p>
                 <p><strong>Total Notional:</strong> €{portfolio_totals['total_notional']:,}</p>
                 <p><strong>Average Client Rate:</strong> {portfolio_avg_client_rate:.4f}</p>
