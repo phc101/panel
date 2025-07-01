@@ -540,21 +540,112 @@ def create_professional_window_forward_tab():
         spot_rate, pl_yield, de_yield, bid_ask_spread
     )
     
-    # Display forward points table
-    with st.expander("📋 Complete Forward Points Curve"):
-        curve_display_data = []
+    # ============================================================================
+    # COMPLETE 12-MONTH PRICING CURVE
+    # ============================================================================
+    
+    st.subheader("📋 Complete 12-Month Window Forward Pricing Curve")
+    
+    # Generate pricing for all 12 tenors
+    complete_pricing_data = []
+    
+    for tenor, curve_data in forward_curve.items():
+        tenor_days = curve_data["days"]
+        tenor_points = curve_data["mid"]
+        
+        # Calculate swap risk for this tenor
+        tenor_swap_risk = calculator.calculate_swap_risk(tenor_days, tenor_points)
+        
+        # Calculate professional rates for this tenor
+        tenor_rates = calculator.calculate_professional_rates(spot_rate, tenor_points, tenor_swap_risk)
+        
+        # Calculate P&L for this tenor
+        tenor_pnl = calculator.calculate_pnl_analysis(tenor_rates['profit_per_eur'], nominal_amount, leverage)
+        
+        complete_pricing_data.append({
+            "Tenor": tenor,
+            "Window Days": tenor_days,
+            "Window Months": f"{curve_data['months']:.1f}M",
+            "Forward Points": f"{tenor_points:.4f}",
+            "Swap Risk": f"{tenor_swap_risk:.4f}",
+            "Client Rate": f"{tenor_rates['fwd_client']:.4f}",
+            "Theoretical Rate": f"{tenor_rates['fwd_to_open']:.4f}",
+            "Profit/EUR": f"{tenor_rates['profit_per_eur']:.4f}",
+            "Total Profit": f"€{tenor_pnl['gross_profit_eur']:,.0f}",
+            "Profit %": f"{tenor_pnl['profit_percentage']:.2f}%",
+            "Profit BPS": f"{tenor_pnl['profit_bps']:.1f}",
+            "Yield Spread": f"{curve_data['yield_spread']:.2f}pp"
+        })
+    
+    df_complete_pricing = pd.DataFrame(complete_pricing_data)
+    
+    # Highlight the selected window length
+    def highlight_selected_window(row):
+        if abs(row['Window Days'] - window_days) <= 15:  # Within 15 days tolerance
+            return ['background-color: #e8f5e8; font-weight: bold'] * len(row)
+        return [''] * len(row)
+    
+    # Display the complete pricing table
+    st.dataframe(
+        df_complete_pricing.style.apply(highlight_selected_window, axis=1),
+        use_container_width=True,
+        height=400
+    )
+    
+    # Summary statistics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        avg_profit_per_eur = df_complete_pricing['Profit/EUR'].str.replace('', '').astype(float).mean()
+        st.metric(
+            "Avg Profit/EUR", 
+            f"{avg_profit_per_eur:.4f}",
+            help="Average profit per EUR across all tenors"
+        )
+    
+    with col2:
+        max_profit_tenor = df_complete_pricing.loc[df_complete_pricing['Profit/EUR'].str.replace('', '').astype(float).idxmax(), 'Tenor']
+        max_profit_value = df_complete_pricing['Profit/EUR'].str.replace('', '').astype(float).max()
+        st.metric(
+            "Best Tenor", 
+            f"{max_profit_tenor}",
+            delta=f"{max_profit_value:.4f}",
+            help="Most profitable tenor"
+        )
+    
+    with col3:
+        total_potential_profit = df_complete_pricing['Total Profit'].str.replace('€', '').str.replace(',', '').astype(float).sum()
+        st.metric(
+            "Total Portfolio Value", 
+            f"€{total_potential_profit:,.0f}",
+            help="Sum of all tenor profits"
+        )
+    
+    with col4:
+        profit_range = df_complete_pricing['Profit/EUR'].str.replace('', '').astype(float).max() - df_complete_pricing['Profit/EUR'].str.replace('', '').astype(float).min()
+        st.metric(
+            "Profit Range", 
+            f"{profit_range:.4f}",
+            help="Difference between best and worst tenor"
+        )
+    
+    # Advanced curve analysis
+    with st.expander("📊 Detailed Forward Points Curve Analysis"):
+        curve_analysis_data = []
         for tenor, data in forward_curve.items():
-            curve_display_data.append({
+            curve_analysis_data.append({
                 "Tenor": tenor,
                 "Days": data["days"],
-                "Bid": f"{data['bid']:.4f}",
-                "Ask": f"{data['ask']:.4f}",
-                "Mid": f"{data['mid']:.4f}",
-                "Yield Spread": f"{data['yield_spread']:.2f}pp"
+                "Bid Points": f"{data['bid']:.4f}",
+                "Ask Points": f"{data['ask']:.4f}",
+                "Mid Points": f"{data['mid']:.4f}",
+                "Theoretical Forward": f"{data['theoretical_forward']:.4f}",
+                "Yield Spread": f"{data['yield_spread']:.2f}pp",
+                "Annualized Premium": f"{((data['theoretical_forward']/spot_rate - 1) * (365/data['days']) * 100):.2f}%"
             })
         
-        df_curve = pd.DataFrame(curve_display_data)
-        st.dataframe(df_curve, use_container_width=True)
+        df_curve_analysis = pd.DataFrame(curve_analysis_data)
+        st.dataframe(df_curve_analysis, use_container_width=True)
     
     # Calculate points to window
     points_to_window_data = calculator.interpolate_points_to_window(window_days, forward_curve)
