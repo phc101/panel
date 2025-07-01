@@ -621,6 +621,20 @@ def create_professional_window_forward_tab():
             )
         
         with col3:
+            bid_ask_spread = st.number_input(
+                "Bid-Ask Spread:",
+                value=0.002,
+                min_value=0.001,
+                max_value=0.005,
+                step=0.0005,
+                format="%.4f",
+                help="Market bid-ask spread in forward points"
+            )
+        
+        # Additional parameters row
+        col4, col5, col6 = st.columns(3)
+        
+        with col4:
             minimum_profit_floor = st.number_input(
                 "Min Profit Floor (PLN/EUR):",
                 value=0.000,
@@ -628,7 +642,7 @@ def create_professional_window_forward_tab():
                 max_value=0.020,
                 step=0.001,
                 format="%.4f",
-                help="Minimum guaranteed profit per EUR (0 = allow losses)"
+                help="Minimum guaranteed profit per EUR (0 = allow natural range)"
             )
     
     # Update calculator parameters
@@ -1008,26 +1022,27 @@ BANK PROFIT PER EUR:
         
         with col_min:
             st.markdown("**📉 Minimum Profit Scenario**")
-            st.caption("*Client settles at window open*")
+            st.caption("*High hedging costs*")
             st.metric(
                 "Min Profit", 
                 f"€{enhanced_pnl['min_gross_profit']:,.0f}",
                 delta=f"{enhanced_pnl['min_profit_percentage']:.2f}%",
-                delta_color="inverse" if enhanced_pnl['min_gross_profit'] < 0 else "normal",
-                help="When client settles at window start date"
+                help="Points to Window - Full Swap Risk"
             )
             st.write(f"**{enhanced_pnl['min_profit_bps']:.1f} bps**")
+            st.caption(f"Formula: {points_to_window:.4f} - {swap_risk:.4f} = {enhanced_pnl['min_profit_per_eur']:.4f}")
         
         with col_max:
             st.markdown("**📈 Maximum Profit Scenario**")
-            st.caption("*Client settles at window end*")
+            st.caption("*Optimal market conditions*")
             st.metric(
                 "Max Profit", 
                 f"€{enhanced_pnl['max_gross_profit']:,.0f}",
                 delta=f"{enhanced_pnl['max_profit_percentage']:.2f}%",
-                help="When client settles at window end date"
+                help="Full Points to Window (minimal hedging costs)"
             )
             st.write(f"**{enhanced_pnl['max_profit_bps']:.1f} bps**")
+            st.caption(f"Formula: {points_to_window:.4f} = {enhanced_pnl['max_profit_per_eur']:.4f}")
         
         # Summary metrics
         st.markdown("**📊 Window P&L Summary:**")
@@ -1036,10 +1051,12 @@ BANK PROFIT PER EUR:
         st.metric("Risk/Reward Ratio", f"{enhanced_pnl['risk_reward_ratio']:.1f}x" if enhanced_pnl['risk_reward_ratio'] != float('inf') else "∞", help="Max profit / Min loss ratio")
         
         # Risk assessment
-        if enhanced_pnl['min_gross_profit'] < 0:
-            st.warning("⚠️ Negative minimum profit - consider adjusting parameters")
-        elif enhanced_pnl['min_gross_profit'] > 0:
-            st.success("✅ Profitable in all window scenarios")
+        if enhanced_pnl['min_gross_profit'] < enhanced_pnl['max_gross_profit'] * 0.5:
+            st.warning("⚠️ High profit variability - significant hedging risk")
+        elif enhanced_pnl['min_gross_profit'] > enhanced_pnl['max_gross_profit'] * 0.8:
+            st.success("✅ Stable profit range - low hedging risk")
+        else:
+            st.info("ℹ️ Moderate profit variability - standard hedging risk")
     
     # ============================================================================
     # DEAL SUMMARY
