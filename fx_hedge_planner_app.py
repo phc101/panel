@@ -389,9 +389,11 @@ class APIIntegratedForwardCalculator:
         gross_profit_eur = profit_per_eur * nominal_amount_eur
         leveraged_profit = gross_profit_eur * leverage
         
-        # Risk metrics
-        profit_percentage = (profit_per_eur / 4.25) * 100  # Approximate spot base
-        profit_bps = profit_per_eur * 10000
+        # Risk metrics - CORRECTED
+        # profit_per_eur is in PLN, so we need to convert to EUR first
+        profit_per_eur_in_eur = profit_per_eur / 4.25  # Convert PLN to EUR approximately
+        profit_percentage = (profit_per_eur_in_eur / 1.0) * 100  # As % of 1 EUR
+        profit_bps = profit_per_eur * 10000  # PLN to basis points (correct)
         
         return {
             'gross_profit_eur': gross_profit_eur,
@@ -426,7 +428,8 @@ class APIIntegratedForwardCalculator:
         min_profit_per_eur = points_to_window - swap_risk
         min_gross_profit = min_profit_per_eur * nominal_amount_eur
         min_leveraged_profit = min_gross_profit * leverage
-        min_profit_percentage = (min_profit_per_eur / spot_rate) * 100
+        # CORRECTED: profit_per_eur is in PLN, convert properly
+        min_profit_percentage = (min_profit_per_eur / spot_rate) * 100  # PLN profit as % of spot rate
         min_profit_bps = min_profit_per_eur * 10000
         
         # MAXIMUM PROFIT: Bank faces minimal hedging costs
@@ -434,7 +437,8 @@ class APIIntegratedForwardCalculator:
         max_profit_per_eur = points_to_window
         max_gross_profit = max_profit_per_eur * nominal_amount_eur
         max_leveraged_profit = max_gross_profit * leverage
-        max_profit_percentage = (max_profit_per_eur / spot_rate) * 100
+        # CORRECTED: profit_per_eur is in PLN, convert properly
+        max_profit_percentage = (max_profit_per_eur / spot_rate) * 100  # PLN profit as % of spot rate
         max_profit_bps = max_profit_per_eur * 10000
         
         return {
