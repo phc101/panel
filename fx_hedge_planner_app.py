@@ -367,20 +367,22 @@ class APIIntegratedForwardCalculator:
         # Basic P&L (current calculation) - this is the expected/average case
         basic_pnl = self.calculate_pnl_analysis(rates['profit_per_eur'], nominal_amount_eur, leverage)
         
-        # Window settlement scenarios - CORRECT LOGIC
+        # Window settlement scenarios - CORRECTED LOGIC BASED ON BANK SPREAD
         
-        # MINIMUM PROFIT: Bank faces maximum hedging costs
-        # Profit = Points to Window - Full Swap Risk  
-        min_profit_per_eur = points_to_window - swap_risk
-        min_gross_profit_pln = min_profit_per_eur * nominal_amount_eur  # CORRECTED: PLN total
+        # MINIMUM PROFIT: Bank's guaranteed spread from client pricing
+        # This is the bank spread = theoretical_forward - client_rate
+        # Bank always gets this profit regardless of settlement timing
+        min_profit_per_eur = rates['fwd_to_open'] - rates['fwd_client']  # Bank spread
+        min_gross_profit_pln = min_profit_per_eur * nominal_amount_eur
         min_leveraged_profit_pln = min_gross_profit_pln * leverage
         min_profit_percentage = (min_profit_per_eur / spot_rate) * 100
         min_profit_bps = min_profit_per_eur * 10000
         
-        # MAXIMUM PROFIT: Bank faces minimal hedging costs
-        # Profit = Full Points to Window (optimal market conditions)
-        max_profit_per_eur = points_to_window
-        max_gross_profit_pln = max_profit_per_eur * nominal_amount_eur  # CORRECTED: PLN total
+        # MAXIMUM PROFIT: Bank spread + additional benefits from optimal hedging
+        # In best case scenario, bank saves on hedging costs
+        hedging_savings = swap_risk * 0.6  # Bank saves 60% of expected swap risk
+        max_profit_per_eur = min_profit_per_eur + hedging_savings
+        max_gross_profit_pln = max_profit_per_eur * nominal_amount_eur
         max_leveraged_profit_pln = max_gross_profit_pln * leverage
         max_profit_percentage = (max_profit_per_eur / spot_rate) * 100
         max_profit_bps = max_profit_per_eur * 10000
@@ -392,7 +394,7 @@ class APIIntegratedForwardCalculator:
             'basic_profit_percentage': basic_pnl['profit_percentage'],
             'basic_profit_bps': basic_pnl['profit_bps'],
             
-            # Window settlement scenarios (CORRECTED TO PLN)
+            # Window settlement scenarios (CORRECTED TO BANK SPREAD LOGIC)
             'min_profit_per_eur': min_profit_per_eur,
             'min_gross_profit_pln': min_gross_profit_pln,
             'min_leveraged_profit_pln': min_leveraged_profit_pln,
@@ -413,22 +415,23 @@ class APIIntegratedForwardCalculator:
             
             # Settlement scenarios
             'window_open_settlement': {
-                'scenario': 'High hedging costs',
-                'bank_position': 'Pays full swap risk for hedging',
+                'scenario': 'Guaranteed bank spread',
+                'bank_position': 'Bank always earns client pricing spread',
                 'profit_pln': min_gross_profit_pln,
-                'profit_description': f'Minimum - Points({points_to_window:.4f}) - SwapRisk({swap_risk:.4f}) = {min_profit_per_eur:.4f} PLN/EUR'
+                'profit_description': f'Minimum - Bank Spread: {rates["fwd_to_open"]:.4f} - {rates["fwd_client"]:.4f} = {min_profit_per_eur:.4f} PLN/EUR'
             },
             'window_end_settlement': {
-                'scenario': 'Optimal market conditions',
-                'bank_position': 'Minimal hedging costs',
+                'scenario': 'Bank spread + hedging savings',
+                'bank_position': 'Bank earns spread plus saves on hedging',
                 'profit_pln': max_gross_profit_pln,
-                'profit_description': f'Maximum - Full Points({points_to_window:.4f}) = {max_profit_per_eur:.4f} PLN/EUR'
+                'profit_description': f'Maximum - Bank Spread + Hedging Savings = {max_profit_per_eur:.4f} PLN/EUR'
             },
             
             # Meta
             'nominal_amount': nominal_amount_eur,
             'leverage_factor': leverage,
-            'window_days': window_days
+            'window_days': window_days,
+            'hedging_savings': hedging_savings
         }
 
 # ============================================================================
