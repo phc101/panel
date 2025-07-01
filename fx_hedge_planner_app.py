@@ -356,6 +356,26 @@ class APIIntegratedForwardCalculator:
             'effective_spread': profit_per_eur
         }
     
+    def calculate_pnl_analysis(self, profit_per_eur, nominal_amount_eur, leverage=1.0):
+        """Calculate basic P&L analysis (kept for compatibility)"""
+        
+        # Basic calculations
+        gross_profit_eur = profit_per_eur * nominal_amount_eur
+        leveraged_profit = gross_profit_eur * leverage
+        
+        # Risk metrics
+        profit_percentage = (profit_per_eur / 4.25) * 100  # Approximate spot base
+        profit_bps = profit_per_eur * 10000
+        
+        return {
+            'gross_profit_eur': gross_profit_eur,
+            'leveraged_profit': leveraged_profit,
+            'profit_percentage': profit_percentage,
+            'profit_bps': profit_bps,
+            'nominal_amount': nominal_amount_eur,
+            'leverage_factor': leverage
+        }
+    
     def calculate_window_pnl_analysis(self, spot_rate, points_to_window, swap_risk, window_days, nominal_amount_eur, leverage=1.0):
         """Calculate comprehensive P&L analysis including window settlement scenarios
         
