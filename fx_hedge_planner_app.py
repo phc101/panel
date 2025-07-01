@@ -6,607 +6,743 @@ from plotly.subplots import make_subplots
 import requests
 from datetime import datetime, timedelta
 
-# FRED API Configuration
-FRED_API_KEY = "f65897ba8bbc5c387dc26081d5b66edf"  # Replace with your API key
-
-# Page config
-st.set_page_config(
-    page_title="Window Forward Calculator - Prawdziwa Metodologia",
-    page_icon="💱",
-    layout="wide"
-)
-
-# Custom CSS
-st.markdown("""
-<style>
-    .calculation-step {
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        padding: 1.5rem;
-        border-radius: 0.8rem;
-        border-left: 4px solid #28a745;
-        margin: 1rem 0;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    .result-box {
-        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-        padding: 1.5rem;
-        border-radius: 0.8rem;
-        border-left: 4px solid #2196f3;
-        margin: 1rem 0;
-        text-align: center;
-    }
-    .final-rate {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1976d2;
-        margin: 0.5rem 0;
-    }
-    .profit-box {
-        background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%);
-        padding: 1.5rem;
-        border-radius: 0.8rem;
-        border-left: 4px solid #4caf50;
-        margin: 1rem 0;
-        text-align: center;
-    }
-    .formula-box {
-        background-color: #2d3748;
-        color: #e2e8f0;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        font-family: 'Courier New', monospace;
-        margin: 1rem 0;
-    }
-    .metric-large {
-        font-size: 1.8rem;
-        font-weight: bold;
-        color: #2c3e50;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 # ============================================================================
-# API CLIENTS
+# PROFESSIONAL WINDOW FORWARD CALCULATOR - API INTEGRATED
 # ============================================================================
 
-class FREDAPIClient:
-    """FRED API client for fetching economic data"""
+class APIIntegratedForwardCalculator:
+    """Professional window forward calculator using real API data"""
     
-    def __init__(self, api_key=FRED_API_KEY):
-        self.api_key = api_key
-        self.base_url = "https://api.stlouisfed.org/fred/series/observations"
-    
-    def get_series_data(self, series_id, limit=1, sort_order='desc'):
-        """Get latest data for a specific FRED series"""
-        url = f"https://api.stlouisfed.org/fred/series/observations"
-        params = {
-            'series_id': series_id,
-            'api_key': self.api_key,
-            'file_type': 'json',
-            'limit': limit,
-            'sort_order': sort_order
+    def __init__(self, fred_client):
+        self.fred_client = fred_client
+        self.tenors = [
+            "One Month", "Two Month", "Three Month", "Four Month", 
+            "Five Month", "Six Month", "Seven Month", "Eight Month",
+            "Nine Month", "Ten Month", "Eleven Month", "One Year"
+        ]
+        
+        # Tenor mapping to months
+        self.tenor_months = {
+            "One Month": 1, "Two Month": 2, "Three Month": 3, "Four Month": 4,
+            "Five Month": 5, "Six Month": 6, "Seven Month": 7, "Eight Month": 8,
+            "Nine Month": 9, "Ten Month": 10, "Eleven Month": 11, "One Year": 12
         }
         
-        try:
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            
-            if 'observations' in data and data['observations']:
-                latest = data['observations'][0]
-                if latest['value'] != '.':
-                    return {
-                        'value': float(latest['value']),
-                        'date': latest['date'],
-                        'series_id': series_id,
-                        'source': 'FRED',
-                        'status': 'success'
-                    }
-            return {'status': 'no_data', 'series_id': series_id}
-        except Exception as e:
-            return {'status': 'error', 'error': str(e), 'series_id': series_id}
+        # Professional pricing parameters (based on your CSV analysis)
+        self.points_factor = 0.70  # Client gets 70% of forward points
+        self.risk_factor = 0.40    # Bank charges 40% of swap risk
     
-    def get_multiple_series(self, series_dict):
-        """Get data for multiple FRED series"""
-        results = {}
-        errors = []
-        for name, series_id in series_dict.items():
-            data = self.get_series_data(series_id)
-            if data.get('status') == 'success':
-                results[name] = data
-            else:
-                errors.append(f"{name}: {data.get('error', 'No data available')}")
-        
-        if errors:
-            st.warning(f"FRED API issues: {'; '.join(errors)}")
-        
-        return results
-
-# ============================================================================
-# WINDOW FORWARD CALCULATOR
-# ============================================================================
-
-class WindowForwardCalculator:
-    """Professional Window Forward Calculator with correct methodology"""
-    
-    def __init__(self):
-        self.fred_client = FREDAPIClient()
-    
-    def calculate_forward_points(self, spot_rate, polish_yield, german_yield, days):
-        """Calculate forward points using bond yield differential"""
+    def calculate_theoretical_forward_points(self, spot_rate, pl_yield, de_yield, days):
+        """Calculate theoretical forward points using bond yield spreads"""
         T = days / 365.0
-        if T == 0:
-            return 0
         
-        forward_rate = spot_rate * (1 + polish_yield/100 * T) / (1 + german_yield/100 * T)
+        # Interest rate parity formula
+        forward_rate = spot_rate * (1 + pl_yield/100 * T) / (1 + de_yield/100 * T)
         forward_points = forward_rate - spot_rate
-        return forward_points
-    
-    def calculate_window_forward_pricing(self, spot_rate, forward_points, points_to_client_pct=0.70, risk_compensation_pct=0.40):
-        """
-        Calculate Window Forward pricing using CORRECT methodology:
-        FWD_Client = Spot + (Forward_Points × 0.70) - (Forward_Points × 0.40)
-        FWD_Client = Spot + (Forward_Points × 0.30)
-        """
-        
-        # Points given to client (70% of forward points)
-        points_to_client = forward_points * points_to_client_pct
-        
-        # Risk compensation (40% of forward points) - DEDUCTED from client rate
-        risk_compensation = forward_points * risk_compensation_pct
-        
-        # Final client rate
-        client_rate = spot_rate + points_to_client - risk_compensation
-        
-        # Net points for client (30% of forward points)
-        net_points_client = forward_points * (points_to_client_pct - risk_compensation_pct)
-        
-        # Dealer profit (70% of forward points)
-        dealer_profit = forward_points * (1 - (points_to_client_pct - risk_compensation_pct))
-        
-        # Theoretical forward rate (100% of points)
-        theoretical_rate = spot_rate + forward_points
         
         return {
-            "client_rate": client_rate,
-            "theoretical_rate": theoretical_rate,
-            "forward_points": forward_points,
-            "points_to_client": points_to_client,
-            "risk_compensation": risk_compensation,
-            "net_points_client": net_points_client,
-            "dealer_profit": dealer_profit,
-            "dealer_profit_pct": (dealer_profit / spot_rate) * 100
+            'forward_rate': forward_rate,
+            'forward_points': forward_points,
+            'days': days,
+            'yield_spread': pl_yield - de_yield,
+            'time_factor': T
         }
     
-    def analyze_multiple_windows(self, spot_rate, polish_yield, german_yield):
-        """Analyze different window lengths"""
-        windows = [30, 60, 90, 120, 180, 270, 365]
-        results = []
+    def generate_api_forward_points_curve(self, spot_rate, pl_yield, de_yield, bid_ask_spread=0.002):
+        """Generate complete forward points curve from API bond data"""
+        curve_data = {}
         
-        for days in windows:
-            forward_points = self.calculate_forward_points(spot_rate, polish_yield, german_yield, days)
-            pricing = self.calculate_window_forward_pricing(spot_rate, forward_points)
+        for tenor in self.tenors:
+            months = self.tenor_months[tenor]
+            days = months * 30  # Approximate days
             
-            results.append({
-                "window_days": days,
-                "window_months": days / 30,
-                "forward_points": forward_points,
-                "forward_points_pips": forward_points * 10000,
-                "client_rate": pricing["client_rate"],
-                "dealer_profit": pricing["dealer_profit"],
-                "dealer_profit_pips": pricing["dealer_profit"] * 10000,
-                "dealer_profit_pct": pricing["dealer_profit_pct"]
+            # Calculate theoretical forward points
+            theoretical = self.calculate_theoretical_forward_points(spot_rate, pl_yield, de_yield, days)
+            forward_points = theoretical['forward_points']
+            
+            # Add market spread
+            bid_points = forward_points - (bid_ask_spread / 2)
+            ask_points = forward_points + (bid_ask_spread / 2)
+            mid_points = forward_points
+            
+            curve_data[tenor] = {
+                "days": days,
+                "months": months,
+                "bid": bid_points,
+                "ask": ask_points,
+                "mid": mid_points,
+                "theoretical_forward": theoretical['forward_rate'],
+                "yield_spread": theoretical['yield_spread']
+            }
+        
+        return curve_data
+    
+    def interpolate_points_to_window(self, window_days, forward_curve):
+        """Interpolate forward points to the exact window start date"""
+        # Convert window days to months
+        window_months = window_days / 30.0
+        
+        # Get available tenors sorted by months
+        available_data = [(data["months"], tenor, data) for tenor, data in forward_curve.items()]
+        available_data.sort(key=lambda x: x[0])
+        
+        # Find interpolation bounds
+        if window_months <= available_data[0][0]:
+            # Extrapolate from shortest tenor
+            months = available_data[0][0]
+            data = available_data[0][2]
+            ratio = window_months / months
+            return {
+                "bid": data["bid"] * ratio,
+                "ask": data["ask"] * ratio,
+                "mid": data["mid"] * ratio,
+                "interpolation_method": f"Extrapolated from {available_data[0][1]}"
+            }
+        
+        elif window_months >= available_data[-1][0]:
+            # Use longest tenor
+            data = available_data[-1][2]
+            return {
+                "bid": data["bid"],
+                "ask": data["ask"], 
+                "mid": data["mid"],
+                "interpolation_method": f"Used {available_data[-1][1]}"
+            }
+        
+        else:
+            # Linear interpolation between two tenors
+            for i in range(len(available_data) - 1):
+                lower_months, lower_tenor, lower_data = available_data[i]
+                upper_months, upper_tenor, upper_data = available_data[i + 1]
+                
+                if lower_months <= window_months <= upper_months:
+                    # Interpolation ratio
+                    ratio = (window_months - lower_months) / (upper_months - lower_months)
+                    
+                    return {
+                        "bid": lower_data["bid"] + ratio * (upper_data["bid"] - lower_data["bid"]),
+                        "ask": lower_data["ask"] + ratio * (upper_data["ask"] - lower_data["ask"]),
+                        "mid": lower_data["mid"] + ratio * (upper_data["mid"] - lower_data["mid"]),
+                        "interpolation_method": f"Interpolated between {lower_tenor} and {upper_tenor}"
+                    }
+    
+    def calculate_swap_risk(self, window_days, points_to_window, volatility_factor=0.25):
+        """Calculate swap risk based on window length and market volatility
+        
+        Based on your CSV analysis:
+        - Swap risk increases with tenor
+        - Typical range: 0.02-0.03 points for standard windows
+        """
+        base_risk = abs(points_to_window) * volatility_factor
+        time_adjustment = np.sqrt(window_days / 90)  # Scale with sqrt of time
+        
+        # Add minimum risk floor
+        min_risk = 0.015
+        calculated_risk = max(base_risk * time_adjustment, min_risk)
+        
+        return calculated_risk
+    
+    def calculate_professional_rates(self, spot_rate, points_to_window, swap_risk):
+        """Calculate rates using professional window forward logic
+        
+        Based on your CSV analysis:
+        - FWD Client = Spot + (Points to Window × 0.70) - (Swap Risk × 0.40) 
+        - FWD to Open = Spot + Points to Window
+        - Profit = FWD to Open - FWD Client
+        """
+        
+        # Client rate: Give 70% of points, charge 40% of swap risk
+        fwd_client = spot_rate + (points_to_window * self.points_factor) - (swap_risk * self.risk_factor)
+        
+        # Theoretical rate to window start (full points)
+        fwd_to_open = spot_rate + points_to_window
+        
+        # Profit analysis
+        profit_per_eur = fwd_to_open - fwd_client
+        
+        return {
+            'fwd_client': fwd_client,
+            'fwd_to_open': fwd_to_open,
+            'profit_per_eur': profit_per_eur,
+            'points_given_to_client': points_to_window * self.points_factor,
+            'swap_risk_charged': swap_risk * self.risk_factor,
+            'effective_spread': profit_per_eur
+        }
+    
+    def calculate_pnl_analysis(self, profit_per_eur, nominal_amount_eur, leverage=1.0):
+        """Calculate comprehensive P&L analysis"""
+        
+        # Basic calculations
+        gross_profit_eur = profit_per_eur * nominal_amount_eur
+        leveraged_profit = gross_profit_eur * leverage
+        
+        # Risk metrics
+        profit_percentage = (profit_per_eur / 4.25) * 100  # Approximate spot base
+        profit_bps = profit_per_eur * 10000
+        
+        return {
+            'gross_profit_eur': gross_profit_eur,
+            'leveraged_profit': leveraged_profit,
+            'profit_percentage': profit_percentage,
+            'profit_bps': profit_bps,
+            'nominal_amount': nominal_amount_eur,
+            'leverage_factor': leverage
+        }
+
+# ============================================================================
+# ENHANCED STREAMLIT INTERFACE
+# ============================================================================
+
+def create_professional_window_forward_tab():
+    """Create the professional window forward calculator interface"""
+    
+    st.header("💼 Professional Window Forward Calculator")
+    st.markdown("*Real-time API data with professional pricing logic*")
+    
+    # Load real market data
+    with st.spinner("📡 Loading real-time market data..."):
+        bond_data = get_fred_bond_data()
+        forex_data = get_eur_pln_rate()
+    
+    # Initialize calculator
+    calculator = APIIntegratedForwardCalculator(FREDAPIClient())
+    
+    # ============================================================================
+    # MARKET DATA DISPLAY
+    # ============================================================================
+    
+    st.subheader("📊 Live Market Data")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        spot_rate = forex_data['rate']
+        st.metric(
+            "EUR/PLN Spot",
+            f"{spot_rate:.4f}",
+            help=f"Source: {forex_data['source']} | Updated: {forex_data['date']}"
+        )
+    
+    with col2:
+        pl_yield = bond_data['Poland_10Y']['value'] if 'Poland_10Y' in bond_data else 5.70
+        st.metric(
+            "Poland 10Y Yield",
+            f"{pl_yield:.2f}%",
+            help="FRED API - Polish government bonds"
+        )
+    
+    with col3:
+        de_yield = bond_data['Germany_9M']['value'] if 'Germany_9M' in bond_data else 2.35
+        st.metric(
+            "Germany Yield",
+            f"{de_yield:.2f}%", 
+            help="Interpolated from German bonds"
+        )
+    
+    with col4:
+        spread = pl_yield - de_yield
+        st.metric(
+            "PL-DE Spread",
+            f"{spread:.2f}pp",
+            help="Yield differential driving forward points"
+        )
+    
+    # ============================================================================
+    # CONFIGURATION PARAMETERS
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("⚙️ Deal Configuration")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        window_days = st.number_input(
+            "Window Length (days):",
+            value=90,
+            min_value=30,
+            max_value=365,
+            step=5,
+            help="Length of the window forward period"
+        )
+    
+    with col2:
+        nominal_amount = st.number_input(
+            "Nominal Amount (EUR):",
+            value=2_500_000,
+            min_value=100_000,
+            max_value=100_000_000,
+            step=100_000,
+            format="%d",
+            help="Deal notional amount"
+        )
+    
+    with col3:
+        leverage = st.number_input(
+            "Leverage Factor:",
+            value=1.0,
+            min_value=1.0,
+            max_value=3.0,
+            step=0.1,
+            help="Risk leverage for P&L calculation"
+        )
+    
+    # Advanced parameters
+    with st.expander("🔧 Advanced Pricing Parameters"):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            points_factor = st.slider(
+                "Points Factor (% to client):",
+                min_value=0.60,
+                max_value=0.85,
+                value=0.70,
+                step=0.01,
+                help="Percentage of forward points given to client"
+            )
+        
+        with col2:
+            risk_factor = st.slider(
+                "Risk Factor (% charged):",
+                min_value=0.30,
+                max_value=0.60,
+                value=0.40,
+                step=0.01,
+                help="Percentage of swap risk charged to client"
+            )
+        
+        with col3:
+            bid_ask_spread = st.number_input(
+                "Bid-Ask Spread:",
+                value=0.002,
+                min_value=0.001,
+                max_value=0.005,
+                step=0.0005,
+                format="%.4f",
+                help="Market bid-ask spread in forward points"
+            )
+    
+    # Update calculator parameters
+    calculator.points_factor = points_factor
+    calculator.risk_factor = risk_factor
+    
+    # ============================================================================
+    # REAL-TIME CALCULATIONS
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("🔢 Live Forward Points Generation")
+    
+    # Generate forward curve from API data
+    forward_curve = calculator.generate_api_forward_points_curve(
+        spot_rate, pl_yield, de_yield, bid_ask_spread
+    )
+    
+    # Display forward points table
+    with st.expander("📋 Complete Forward Points Curve"):
+        curve_display_data = []
+        for tenor, data in forward_curve.items():
+            curve_display_data.append({
+                "Tenor": tenor,
+                "Days": data["days"],
+                "Bid": f"{data['bid']:.4f}",
+                "Ask": f"{data['ask']:.4f}",
+                "Mid": f"{data['mid']:.4f}",
+                "Yield Spread": f"{data['yield_spread']:.2f}pp"
             })
         
-        return results
+        df_curve = pd.DataFrame(curve_display_data)
+        st.dataframe(df_curve, use_container_width=True)
+    
+    # Calculate points to window
+    points_to_window_data = calculator.interpolate_points_to_window(window_days, forward_curve)
+    points_to_window = points_to_window_data['mid']
+    
+    # Calculate swap risk
+    swap_risk = calculator.calculate_swap_risk(window_days, points_to_window)
+    
+    # Calculate professional rates
+    rates = calculator.calculate_professional_rates(spot_rate, points_to_window, swap_risk)
+    
+    # Calculate P&L
+    pnl = calculator.calculate_pnl_analysis(rates['profit_per_eur'], nominal_amount, leverage)
+    
+    # ============================================================================
+    # RESULTS DISPLAY
+    # ============================================================================
+    
+    st.subheader("💰 Professional Pricing Results")
+    
+    # Key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "Points to Window",
+            f"{points_to_window:.4f}",
+            help=f"Forward points to window start ({points_to_window_data['interpolation_method']})"
+        )
+    
+    with col2:
+        st.metric(
+            "Swap Risk",
+            f"{swap_risk:.4f}",
+            help="Estimated swap risk for window period"
+        )
+    
+    with col3:
+        st.metric(
+            "Client Forward Rate",
+            f"{rates['fwd_client']:.4f}",
+            delta=f"{rates['fwd_client'] - spot_rate:.4f}",
+            help="Rate quoted to client"
+        )
+    
+    with col4:
+        st.metric(
+            "Profit per EUR",
+            f"{rates['profit_per_eur']:.4f} PLN",
+            help="Bank profit per EUR notional"
+        )
+    
+    # Detailed breakdown
+    st.markdown("---")
+    st.subheader("📈 Detailed Pricing Breakdown")
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.markdown("**🔍 Rate Calculation:**")
+        st.code(f"""
+Forward Points to Window:     {points_to_window:.4f}
+Points Given to Client (70%): {rates['points_given_to_client']:.4f}
+Swap Risk:                    {swap_risk:.4f}
+Risk Charged to Client (40%): {rates['swap_risk_charged']:.4f}
 
-# ============================================================================
-# DATA FUNCTIONS
-# ============================================================================
+CLIENT RATE FORMULA:
+{spot_rate:.4f} + {rates['points_given_to_client']:.4f} - {rates['swap_risk_charged']:.4f} = {rates['fwd_client']:.4f}
 
-@st.cache_data(ttl=3600)
-def get_bond_data():
-    """Get government bond yields from FRED"""
-    fred_client = FREDAPIClient()
-    bond_series = {
-        'Poland_10Y': 'IRLTLT01PLM156N',
-        'Germany_10Y': 'IRLTLT01DEM156N'
+THEORETICAL RATE TO WINDOW:
+{spot_rate:.4f} + {points_to_window:.4f} = {rates['fwd_to_open']:.4f}
+
+BANK PROFIT PER EUR:
+{rates['fwd_to_open']:.4f} - {rates['fwd_client']:.4f} = {rates['profit_per_eur']:.4f} PLN
+        """)
+    
+    with col2:
+        st.markdown("**💼 P&L Analysis:**")
+        
+        # P&L metrics
+        st.metric("Gross Profit", f"€{pnl['gross_profit_eur']:,.0f}", help="Total profit in EUR")
+        st.metric("Leveraged Profit", f"€{pnl['leveraged_profit']:,.0f}", help=f"With {leverage}x leverage")
+        st.metric("Profit Margin", f"{pnl['profit_percentage']:.2f}%", help="As % of spot rate")
+        st.metric("Profit (Basis Points)", f"{pnl['profit_bps']:.1f} bps", help="Profit in basis points")
+        
+        # Risk warning
+        if pnl['profit_percentage'] < 0.1:
+            st.warning("⚠️ Low profit margin - consider adjusting parameters")
+        elif pnl['profit_percentage'] > 1.0:
+            st.success("✅ Healthy profit margin")
+    
+    # ============================================================================
+    # SCENARIO ANALYSIS
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("📊 Scenario Analysis")
+    
+    # Create scenarios for different market conditions
+    scenarios = {
+        "Current Market": {"pl_shift": 0, "de_shift": 0, "vol_mult": 1.0},
+        "PL Yields +50bp": {"pl_shift": 0.50, "de_shift": 0, "vol_mult": 1.2},
+        "PL Yields -50bp": {"pl_shift": -0.50, "de_shift": 0, "vol_mult": 1.2}, 
+        "DE Yields +25bp": {"pl_shift": 0, "de_shift": 0.25, "vol_mult": 1.1},
+        "Spread Tightening": {"pl_shift": -0.25, "de_shift": 0.25, "vol_mult": 1.3}
     }
     
-    data = fred_client.get_multiple_series(bond_series)
-    return data
-
-@st.cache_data(ttl=300)
-def get_eur_pln_rate():
-    """Get current EUR/PLN from NBP API"""
-    try:
-        url = "https://api.nbp.pl/api/exchangerates/rates/a/eur/"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        return {
-            'rate': data['rates'][0]['mid'],
-            'date': data['rates'][0]['effectiveDate'],
-            'source': 'NBP',
-            'status': 'success'
-        }
-    except Exception as e:
-        return {
-            'rate': 4.25, 
-            'date': datetime.now().strftime('%Y-%m-%d'), 
-            'source': 'Fallback',
-            'status': 'fallback'
-        }
-
-# ============================================================================
-# MAIN APPLICATION
-# ============================================================================
-
-# Header
-st.markdown("""
-<div style="display: flex; align-items: center; margin-bottom: 2rem;">
-    <div style="background: linear-gradient(45deg, #667eea, #764ba2); width: 60px; height: 60px; border-radius: 10px; margin-right: 1rem; display: flex; align-items: center; justify-content: center;">
-        <span style="font-size: 2rem;">💱</span>
-    </div>
-    <div>
-        <h1 style="margin: 0; color: #2c3e50;">Window Forward Calculator</h1>
-        <p style="margin: 0; color: #7f8c8d;">Prawdziwa Metodologia Dealerska</p>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-# Load market data
-with st.spinner("📡 Ładowanie danych rynkowych..."):
-    bond_data = get_bond_data()
-    forex_data = get_eur_pln_rate()
-
-# Initialize calculator
-calc = WindowForwardCalculator()
-
-# ============================================================================
-# MARKET DATA DISPLAY
-# ============================================================================
-
-st.subheader("📊 Aktualne Dane Rynkowe")
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    status_emoji = "🟢" if forex_data.get('status') == 'success' else "🟡"
-    st.metric(
-        f"{status_emoji} EUR/PLN Spot", 
-        f"{forex_data['rate']:.4f}",
-        help=f"Źródło: {forex_data['source']} | Data: {forex_data['date']}"
-    )
-
-with col2:
-    if 'Poland_10Y' in bond_data:
-        pl_yield = bond_data['Poland_10Y']['value']
-        status_emoji = "🟢" if bond_data['Poland_10Y'].get('status') == 'success' else "🟡"
-        st.metric(
-            f"{status_emoji} Polska 10Y", 
-            f"{pl_yield:.2f}%",
-            help=f"Data: {bond_data['Poland_10Y']['date']}"
+    scenario_results = []
+    
+    for scenario_name, shifts in scenarios.items():
+        # Adjust yields
+        adj_pl_yield = pl_yield + shifts['pl_shift']
+        adj_de_yield = de_yield + shifts['de_shift']
+        
+        # Generate new curve
+        scenario_curve = calculator.generate_api_forward_points_curve(
+            spot_rate, adj_pl_yield, adj_de_yield, bid_ask_spread
         )
-    else:
-        pl_yield = 5.70
-        st.metric("🟡 Polska 10Y", f"{pl_yield:.2f}%", help="Dane zastępcze")
-
-with col3:
-    if 'Germany_10Y' in bond_data:
-        de_yield = bond_data['Germany_10Y']['value']
-        status_emoji = "🟢" if bond_data['Germany_10Y'].get('status') == 'success' else "🟡"
-        st.metric(
-            f"{status_emoji} Niemcy 10Y", 
-            f"{de_yield:.2f}%",
-            help=f"Data: {bond_data['Germany_10Y']['date']}"
-        )
-    else:
-        de_yield = 2.35
-        st.metric("🟡 Niemcy 10Y", f"{de_yield:.2f}%", help="Dane zastępcze")
-
-with col4:
-    spread = pl_yield - de_yield
-    st.metric(
-        "Spread PL-DE", 
-        f"{spread:.2f}pp",
-        help="Różnica zysków obligacji"
-    )
-
-# ============================================================================
-# CALCULATOR INTERFACE
-# ============================================================================
-
-st.markdown("---")
-st.subheader("🧮 Kalkulator Window Forward")
-
-# Input parameters
-input_col1, input_col2 = st.columns(2)
-
-with input_col1:
-    st.markdown("**Parametry Transakcji:**")
+        
+        # Calculate scenario metrics
+        scenario_points = calculator.interpolate_points_to_window(window_days, scenario_curve)['mid']
+        scenario_swap_risk = calculator.calculate_swap_risk(window_days, scenario_points) * shifts['vol_mult']
+        scenario_rates = calculator.calculate_professional_rates(spot_rate, scenario_points, scenario_swap_risk)
+        scenario_pnl = calculator.calculate_pnl_analysis(scenario_rates['profit_per_eur'], nominal_amount, leverage)
+        
+        scenario_results.append({
+            "Scenario": scenario_name,
+            "PL Yield": f"{adj_pl_yield:.2f}%",
+            "DE Yield": f"{adj_de_yield:.2f}%",
+            "Spread": f"{adj_pl_yield - adj_de_yield:.2f}pp",
+            "Points to Window": f"{scenario_points:.4f}",
+            "Client Rate": f"{scenario_rates['fwd_client']:.4f}",
+            "Profit per EUR": f"{scenario_rates['profit_per_eur']:.4f}",
+            "Total Profit": f"€{scenario_pnl['gross_profit_eur']:,.0f}",
+            "Profit %": f"{scenario_pnl['profit_percentage']:.2f}%"
+        })
     
-    spot_rate = st.number_input(
-        "Kurs Spot EUR/PLN:",
-        value=forex_data['rate'],
-        min_value=3.0,
-        max_value=6.0,
-        step=0.0001,
-        format="%.4f"
+    df_scenarios = pd.DataFrame(scenario_results)
+    
+    # Style the dataframe
+    def highlight_scenarios(row):
+        if row.name == 0:  # Current market
+            return ['background-color: #e8f5e8'] * len(row)
+        elif "€-" in str(row['Total Profit']):  # Loss scenarios
+            return ['background-color: #ffe8e8'] * len(row)
+        else:
+            return [''] * len(row)
+    
+    st.dataframe(
+        df_scenarios.style.apply(highlight_scenarios, axis=1),
+        use_container_width=True
     )
     
-    window_days = st.selectbox(
-        "Długość Okna:",
-        [30, 60, 90, 120, 180, 270, 365],
-        index=2,  # Default 90 days
-        help="Długość okna transakcyjnego w dniach"
+    # ============================================================================
+    # VISUALIZATION
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("📈 Forward Curve Visualization")
+    
+    # Create forward curve chart
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=('Forward Points Curve', 'Profit by Scenario', 'Yield Spread Impact', 'Risk Analysis'),
+        specs=[[{"secondary_y": False}, {"secondary_y": False}],
+               [{"secondary_y": True}, {"secondary_y": False}]]
     )
     
-    nominal_amount = st.number_input(
-        "Kwota Nominalna (EUR):",
-        value=1_000_000,
-        min_value=100_000,
-        max_value=100_000_000,
-        step=100_000,
-        format="%d"
-    )
-
-with input_col2:
-    st.markdown("**Parametry Rynkowe:**")
+    # 1. Forward Points Curve
+    curve_days = [data["days"] for data in forward_curve.values()]
+    curve_points = [data["mid"] for data in forward_curve.values()]
+    curve_tenors = list(forward_curve.keys())
     
-    pl_yield_input = st.number_input(
-        "Zysk Obligacji Polski (%):",
-        value=pl_yield,
-        min_value=0.0,
-        max_value=20.0,
-        step=0.01,
-        format="%.2f"
+    fig.add_trace(
+        go.Scatter(
+            x=curve_days,
+            y=curve_points,
+            mode='lines+markers',
+            name='Forward Points',
+            line=dict(color='blue', width=2),
+            marker=dict(size=6)
+        ),
+        row=1, col=1
     )
     
-    de_yield_input = st.number_input(
-        "Zysk Obligacji Niemiec (%):",
-        value=de_yield,
-        min_value=-2.0,
-        max_value=10.0,
-        step=0.01,
-        format="%.2f"
+    # Highlight window point
+    fig.add_trace(
+        go.Scatter(
+            x=[window_days],
+            y=[points_to_window],
+            mode='markers',
+            name=f'{window_days}D Window',
+            marker=dict(size=12, color='red', symbol='diamond')
+        ),
+        row=1, col=1
     )
     
-    st.info(f"**Spread:** {pl_yield_input - de_yield_input:.2f} punktów proc.")
+    # 2. Profit by Scenario
+    scenario_names = [result["Scenario"] for result in scenario_results]
+    scenario_profits = [float(result["Profit per EUR"]) for result in scenario_results]
+    
+    colors = ['green' if p > 0 else 'red' for p in scenario_profits]
+    
+    fig.add_trace(
+        go.Bar(
+            x=scenario_names,
+            y=scenario_profits,
+            name='Profit per EUR',
+            marker_color=colors
+        ),
+        row=1, col=2
+    )
+    
+    # 3. Yield Spread Impact
+    spreads = [float(result["Spread"].replace('pp', '')) for result in scenario_results]
+    profits_pct = [float(result["Profit %"].replace('%', '')) for result in scenario_results]
+    
+    fig.add_trace(
+        go.Scatter(
+            x=spreads,
+            y=profits_pct,
+            mode='markers+lines',
+            name='Spread vs Profit',
+            marker=dict(size=10, color='purple')
+        ),
+        row=2, col=1
+    )
+    
+    # 4. Risk Analysis - Window Days vs Profit
+    risk_analysis_days = list(range(30, 366, 30))
+    risk_analysis_profits = []
+    
+    for days in risk_analysis_days:
+        temp_points = calculator.interpolate_points_to_window(days, forward_curve)['mid']
+        temp_risk = calculator.calculate_swap_risk(days, temp_points)
+        temp_rates = calculator.calculate_professional_rates(spot_rate, temp_points, temp_risk)
+        risk_analysis_profits.append(temp_rates['profit_per_eur'])
+    
+    fig.add_trace(
+        go.Scatter(
+            x=risk_analysis_days,
+            y=risk_analysis_profits,
+            mode='lines+markers',
+            name='Window Length vs Profit',
+            line=dict(color='orange', width=2)
+        ),
+        row=2, col=2
+    )
+    
+    # Update layout
+    fig.update_layout(
+        height=600,
+        showlegend=True,
+        title_text="Window Forward Analytics Dashboard"
+    )
+    
+    fig.update_xaxes(title_text="Days", row=1, col=1)
+    fig.update_yaxes(title_text="Forward Points", row=1, col=1)
+    fig.update_xaxes(title_text="Scenario", row=1, col=2)
+    fig.update_yaxes(title_text="Profit per EUR", row=1, col=2)
+    fig.update_xaxes(title_text="Yield Spread (pp)", row=2, col=1)
+    fig.update_yaxes(title_text="Profit %", row=2, col=1)
+    fig.update_xaxes(title_text="Window Days", row=2, col=2)
+    fig.update_yaxes(title_text="Profit per EUR", row=2, col=2)
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # ============================================================================
+    # DEAL SUMMARY
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("📋 Deal Summary")
+    
+    with st.container():
+        summary_col1, summary_col2 = st.columns([1, 1])
+        
+        with summary_col1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <h4>💼 Window Forward Deal Structure</h4>
+                <p><strong>Product:</strong> {window_days}-Day EUR/PLN Window Forward</p>
+                <p><strong>Notional:</strong> €{nominal_amount:,}</p>
+                <p><strong>Spot Rate:</strong> {spot_rate:.4f}</p>
+                <p><strong>Client Forward Rate:</strong> {rates['fwd_client']:.4f}</p>
+                <p><strong>Points Factor:</strong> {points_factor:.1%} (Industry: 70%)</p>
+                <p><strong>Risk Factor:</strong> {risk_factor:.1%} (Industry: 40%)</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with summary_col2:
+            st.markdown(f"""
+            <div class="metric-card">
+                <h4>💰 Financial Summary</h4>
+                <p><strong>Bank Profit per EUR:</strong> {rates['profit_per_eur']:.4f} PLN</p>
+                <p><strong>Total Gross Profit:</strong> €{pnl['gross_profit_eur']:,.0f}</p>
+                <p><strong>Profit Margin:</strong> {pnl['profit_percentage']:.2f}%</p>
+                <p><strong>Profit (Basis Points):</strong> {pnl['profit_bps']:.1f} bps</p>
+                <p><strong>Points Given to Client:</strong> {rates['points_given_to_client']:.4f}</p>
+                <p><strong>Risk Premium Charged:</strong> {rates['swap_risk_charged']:.4f}</p>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # Export functionality
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 1, 1])
+    
+    with col2:
+        if st.button("📊 Generate Deal Report", use_container_width=True):
+            # Create comprehensive deal report
+            deal_report = f"""
+# WINDOW FORWARD DEAL REPORT
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+## DEAL PARAMETERS
+- Product: {window_days}-Day EUR/PLN Window Forward
+- Notional Amount: €{nominal_amount:,}
+- Current Spot Rate: {spot_rate:.4f}
+- Client Forward Rate: {rates['fwd_client']:.4f}
+
+## MARKET DATA (Live API)
+- Poland 10Y Yield: {pl_yield:.2f}%
+- Germany Yield: {de_yield:.2f}%
+- Yield Spread: {spread:.2f}pp
+- Points to Window: {points_to_window:.4f}
+- Estimated Swap Risk: {swap_risk:.4f}
+
+## PRICING BREAKDOWN
+- Points Factor: {points_factor:.1%}
+- Risk Factor: {risk_factor:.1%}
+- Points Given to Client: {rates['points_given_to_client']:.4f}
+- Risk Premium Charged: {rates['swap_risk_charged']:.4f}
+
+## FINANCIAL ANALYSIS
+- Bank Profit per EUR: {rates['profit_per_eur']:.4f} PLN
+- Total Gross Profit: €{pnl['gross_profit_eur']:,.0f}
+- Profit Margin: {pnl['profit_percentage']:.2f}%
+- Profit in Basis Points: {pnl['profit_bps']:.1f} bps
+
+## RISK SCENARIOS
+{df_scenarios.to_string(index=False)}
+
+---
+*Report generated using real-time FRED API and NBP exchange rate data*
+            """
+            
+            st.download_button(
+                label="📥 Download Deal Report",
+                data=deal_report,
+                file_name=f"window_forward_deal_report_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
 
 # ============================================================================
-# CALCULATION AND RESULTS
+# INTEGRATION FUNCTIONS (to be added to main app)
 # ============================================================================
 
-st.markdown("---")
-st.subheader("📋 Kalkulacja Krok po Kroku")
-
-# Step 1: Calculate forward points
-forward_points = calc.calculate_forward_points(spot_rate, pl_yield_input, de_yield_input, window_days)
-
-st.markdown(f"""
-<div class="calculation-step">
-<h4>Krok 1: Punkty Forward ({window_days} dni)</h4>
-<div class="formula-box">
-T = {window_days}/365 = {window_days/365:.3f} lat
-
-Forward_Rate = {spot_rate:.4f} × (1 + {pl_yield_input:.2f}% × {window_days/365:.3f}) / (1 + {de_yield_input:.2f}% × {window_days/365:.3f})
-Forward_Rate = {spot_rate:.4f} × {1 + pl_yield_input/100 * window_days/365:.5f} / {1 + de_yield_input/100 * window_days/365:.5f}
-Forward_Rate = {spot_rate + forward_points:.4f}
-
-Forward_Points = {spot_rate + forward_points:.4f} - {spot_rate:.4f} = {forward_points:.4f}
-</div>
-<p><strong>Punkty Forward: {forward_points:.4f} ({forward_points*10000:.1f} pips)</strong></p>
-</div>
-""", unsafe_allow_html=True)
-
-# Step 2: Window Forward calculation
-pricing = calc.calculate_window_forward_pricing(spot_rate, forward_points)
-
-st.markdown(f"""
-<div class="calculation-step">
-<h4>Krok 2: Kalkulacja Window Forward</h4>
-<div class="formula-box">
-Points_dla_klienta = {forward_points:.4f} × 0.70 = {pricing['points_to_client']:.4f}
-Risk_compensation = {forward_points:.4f} × 0.40 = {pricing['risk_compensation']:.4f}
-
-FWD_Client = Spot + Points_dla_klienta - Risk_compensation
-FWD_Client = {spot_rate:.4f} + {pricing['points_to_client']:.4f} - {pricing['risk_compensation']:.4f}
-FWD_Client = {pricing['client_rate']:.4f}
-</div>
-<p><strong>Uproszczenie: FWD_Client = Spot + (Forward_Points × 0.30)</strong></p>
-<p><strong>FWD_Client = {spot_rate:.4f} + ({forward_points:.4f} × 0.30) = {pricing['client_rate']:.4f}</strong></p>
-</div>
-""", unsafe_allow_html=True)
+def add_api_forward_calculator_to_main_app():
+    """Integration function to add this calculator to the main Streamlit app"""
+    
+    # This would be added as Tab 4 in your main application
+    with st.tabs(["🧮 Forward Rate Calculator", "📊 Bond Spread Dashboard", "💼 Window Forward Calculator", "🚀 API Professional Calculator"])[3]:
+        create_professional_window_forward_tab()
 
 # ============================================================================
-# RESULTS DISPLAY
+# STANDALONE DEMO (if running this file directly)
 # ============================================================================
 
-st.markdown("---")
-st.subheader("🎯 Wyniki Końcowe")
-
-result_col1, result_col2, result_col3 = st.columns(3)
-
-with result_col1:
-    st.markdown(f"""
-    <div class="result-box">
-        <h4>🎯 Kurs dla Klienta</h4>
-        <div class="final-rate">{pricing['client_rate']:.4f}</div>
-        <p>EUR/PLN Window Forward</p>
-    </div>
+if __name__ == "__main__":
+    st.set_page_config(
+        page_title="API Professional Forward Calculator",
+        page_icon="🚀",
+        layout="wide"
+    )
+    
+    # Add custom CSS
+    st.markdown("""
+    <style>
+        .metric-card {
+            background-color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border-left: 4px solid #1f77b4;
+            margin: 0.5rem 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 24px;
+        }
+    </style>
     """, unsafe_allow_html=True)
-
-with result_col2:
-    st.markdown(f"""
-    <div class="result-box">
-        <h4>📈 Kurs Teoretyczny</h4>
-        <div class="final-rate">{pricing['theoretical_rate']:.4f}</div>
-        <p>Pełny Forward (100% punktów)</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with result_col3:
-    profit_nominal = pricing['dealer_profit'] * nominal_amount
-    st.markdown(f"""
-    <div class="profit-box">
-        <h4>💰 Zysk Dealera</h4>
-        <div class="final-rate">{pricing['dealer_profit_pct']:.3f}%</div>
-        <p>{pricing['dealer_profit']*10000:.1f} pips | {profit_nominal:,.0f} EUR</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-# ============================================================================
-# DETAILED BREAKDOWN
-# ============================================================================
-
-st.markdown("---")
-st.subheader("🔍 Szczegółowy Rozkład")
-
-breakdown_col1, breakdown_col2 = st.columns(2)
-
-with breakdown_col1:
-    st.markdown("**Komponenty Ceny:**")
-    st.write(f"• Kurs Spot: **{spot_rate:.4f}**")
-    st.write(f"• Punkty Forward: **{forward_points:.4f}** ({forward_points*10000:.1f} pips)")
-    st.write(f"• Points dla klienta (70%): **+{pricing['points_to_client']:.4f}**")
-    st.write(f"• Risk compensation (40%): **-{pricing['risk_compensation']:.4f}**")
-    st.write(f"• **Kurs końcowy: {pricing['client_rate']:.4f}**")
-    st.write(f"• **Netto dla klienta: +{pricing['net_points_client']:.4f}** (30% punktów)")
-
-with breakdown_col2:
-    st.markdown("**Analiza Zysku:**")
-    st.write(f"• Punkty zatrzymane: **{pricing['dealer_profit']:.4f}** (70%)")
-    st.write(f"• Zysk w pipsach: **{pricing['dealer_profit']*10000:.1f} pips**")
-    st.write(f"• Zysk procentowy: **{pricing['dealer_profit_pct']:.3f}%**")
-    st.write(f"• Kwota nominalna: **{nominal_amount:,} EUR**")
-    st.write(f"• **Zysk nominalny: {profit_nominal:,.0f} EUR**")
     
-    # ROI calculation
-    required_capital = nominal_amount * 0.05  # Assume 5% margin requirement
-    roi = (profit_nominal / required_capital) * 100
-    st.write(f"• **ROI (przy 5% marży): {roi:.1f}%**")
-
-# ============================================================================
-# WINDOW LENGTH ANALYSIS
-# ============================================================================
-
-st.markdown("---")
-st.subheader("📊 Analiza Różnych Długości Okien")
-
-analysis_results = calc.analyze_multiple_windows(spot_rate, pl_yield_input, de_yield_input)
-
-# Create table
-analysis_data = []
-for result in analysis_results:
-    analysis_data.append({
-        "Okno": f"{result['window_days']} dni ({result['window_months']:.1f}M)",
-        "Forward Points": f"{result['forward_points']:.4f}",
-        "Pips Forward": f"{result['forward_points_pips']:.1f}",
-        "Kurs Klienta": f"{result['client_rate']:.4f}",
-        "Zysk Dealera": f"{result['dealer_profit']:.4f}",
-        "Zysk (pips)": f"{result['dealer_profit_pips']:.1f}",
-        "Zysk (%)": f"{result['dealer_profit_pct']:.3f}%"
-    })
-
-df_analysis = pd.DataFrame(analysis_data)
-st.dataframe(df_analysis, use_container_width=True)
-
-# ============================================================================
-# VISUALIZATION
-# ============================================================================
-
-st.subheader("📈 Wizualizacja Zysków vs Długość Okna")
-
-# Create profit chart
-fig = go.Figure()
-
-windows = [r['window_days'] for r in analysis_results]
-profits_pips = [r['dealer_profit_pips'] for r in analysis_results]
-profits_pct = [r['dealer_profit_pct'] for r in analysis_results]
-
-fig.add_trace(go.Scatter(
-    x=windows,
-    y=profits_pips,
-    mode='lines+markers',
-    name='Zysk (pips)',
-    line=dict(color='#1f77b4', width=3),
-    marker=dict(size=8),
-    yaxis='y'
-))
-
-fig.add_trace(go.Scatter(
-    x=windows,
-    y=profits_pct,
-    mode='lines+markers',
-    name='Zysk (%)',
-    line=dict(color='#ff7f0e', width=3),
-    marker=dict(size=8),
-    yaxis='y2'
-))
-
-fig.update_layout(
-    title="Zysk Dealera vs Długość Okna",
-    xaxis_title="Długość Okna (dni)",
-    yaxis=dict(title="Zysk (pips)", side="left"),
-    yaxis2=dict(title="Zysk (%)", side="right", overlaying="y"),
-    height=400,
-    legend=dict(x=0.02, y=0.98)
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-# ============================================================================
-# SUMMARY AND INSIGHTS
-# ============================================================================
-
-st.markdown("---")
-st.subheader("💡 Wnioski i Rekomendacje")
-
-insights_col1, insights_col2 = st.columns(2)
-
-with insights_col1:
-    st.markdown("**Kluczowe Obserwacje:**")
-    
-    # Find optimal window
-    optimal_result = max(analysis_results, key=lambda x: x['dealer_profit_pct'])
-    
-    st.success(f"🎯 **Optymalne okno:** {optimal_result['window_days']} dni ({optimal_result['dealer_profit_pct']:.3f}% zysku)")
-    
-    if spread > 3:
-        st.warning("⚠️ **Wysoki spread** - zwiększone ryzyko, ale wyższe zyski")
-    else:
-        st.info("ℹ️ **Normalny spread** - stabilne warunki rynkowe")
-    
-    if pricing['dealer_profit_pct'] > 0.3:
-        st.success("✅ **Atrakcyjna marża** - dobra rentowność transakcji")
-    else:
-        st.warning("⚠️ **Niska marża** - rozważ zmianę parametrów")
-
-with insights_col2:
-    st.markdown("**Strategiczne Rekomendacje:**")
-    
-    st.markdown(f"""
-    • **Obecna transakcja**: {pricing['dealer_profit']*10000:.1f} pips zysku
-    • **Nominalny zysk**: {profit_nominal:,.0f} EUR
-    • **ROI**: {roi:.1f}% (przy 5% marży)
-    
-    **Działania:**
-    """)
-    
-    if window_days < 90:
-        st.info("📈 Rozważ dłuższe okna dla wyższych zysków")
-    elif window_days > 180:
-        st.warning("📉 Krótsze okna mogą być bardziej konkurencyjne")
-    else:
-        st.success("✅ Optymalna długość okna")
-
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #666; padding: 2rem;">
-    <p><strong>Window Forward Calculator</strong> - Prawdziwa Metodologia Dealerska</p>
-    <p>Formuła: FWD_Client = Spot + (Forward_Points × 0.30)</p>
-    <p>Dealer zatrzymuje 70% punktów forward jako zysk</p>
-</div>
-""", unsafe_allow_html=True)
+    create_professional_window_forward_tab()
