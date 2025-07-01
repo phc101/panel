@@ -474,7 +474,7 @@ with st.spinner("📡 Loading market data..."):
     usd_forex_data = get_usd_pln_rate()
 
 # Main tabs
-tab1, tab2, tab3 = st.tabs(["🧮 Forward Rate Calculator", "📊 Bond Spread Dashboard (EUR/PLN + USD/PLN)", "💼 Window Forward Dealer Calculator"])
+tab1, tab2, tab3 = st.tabs(["🧮 Forward Rate Calculator", "📊 Bond Spread Dashboard", "💼 Window Forward Calculator"])
 
 # ============================================================================
 # TAB 1: FORWARD RATE CALCULATOR
@@ -715,7 +715,7 @@ with tab1:
     st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================================
-# TAB 2: BOND SPREAD DASHBOARD (ABBREVIATED VERSION FOR SPACE)
+# TAB 2: BOND SPREAD DASHBOARD (SIMPLIFIED)
 # ============================================================================
 
 with tab2:
@@ -731,70 +731,66 @@ with tab2:
     # Simplified EUR/PLN section
     st.subheader("🇪🇺 EUR/PLN Bond Spread Analytics")
     
-    with st.spinner("📊 Loading EUR historical data..."):
-        try:
-            # Get historical EUR/PLN
-    with st.spinner("📊 Loading EUR historical data..."):
-        try:
-            # Get historical EUR/PLN
-            eur_pln_data = dashboard.get_nbp_historical_data(start_date, end_date, 'eur')
+    try:
+        # Get historical EUR/PLN
+        eur_pln_data = dashboard.get_nbp_historical_data(start_date, end_date, 'eur')
+        
+        # Get bond yields
+        pl_bonds = dashboard.fred_client.get_historical_data('IRLTLT01PLM156N', 
+                                                           start_date.strftime('%Y-%m-%d'), 
+                                                           end_date.strftime('%Y-%m-%d'))
+        de_bonds = dashboard.fred_client.get_historical_data('IRLTLT01DEM156N', 
+                                                           start_date.strftime('%Y-%m-%d'), 
+                                                           end_date.strftime('%Y-%m-%d'))
+        
+        if not eur_pln_data.empty and not pl_bonds.empty and not de_bonds.empty:
+            # Combine real data
+            df = eur_pln_data.copy()
+            df.columns = ['actual_eur_pln']
+            df = df.join(pl_bonds.rename(columns={'value': 'pl_yield'}), how='left')
+            df = df.join(de_bonds.rename(columns={'value': 'de_yield'}), how='left')
+            df = df.fillna(method='ffill').fillna(method='bfill')
             
-            # Get bond yields
-            pl_bonds = dashboard.fred_client.get_historical_data('IRLTLT01PLM156N', 
-                                                               start_date.strftime('%Y-%m-%d'), 
-                                                               end_date.strftime('%Y-%m-%d'))
-            de_bonds = dashboard.fred_client.get_historical_data('IRLTLT01DEM156N', 
-                                                               start_date.strftime('%Y-%m-%d'), 
-                                                               end_date.strftime('%Y-%m-%d'))
+            # Calculate predicted rates
+            df['predicted_eur_pln'] = df.apply(
+                lambda row: dashboard.calculate_predicted_fx_rate(
+                    row['pl_yield'], row['de_yield'], df['actual_eur_pln'].iloc[0], 'EUR'
+                ), axis=1
+            )
+            df['yield_spread'] = df['pl_yield'] - df['de_yield']
+            st.success("✅ Using real EUR market data")
+        else:
+            raise Exception("Insufficient EUR data")
             
-            if not eur_pln_data.empty and not pl_bonds.empty and not de_bonds.empty:
-                # Combine real data
-                df = eur_pln_data.copy()
-                df.columns = ['actual_eur_pln']
-                df = df.join(pl_bonds.rename(columns={'value': 'pl_yield'}), how='left')
-                df = df.join(de_bonds.rename(columns={'value': 'de_yield'}), how='left')
-                df = df.fillna(method='ffill').fillna(method='bfill')
-                
-                # Calculate predicted rates
-                df['predicted_eur_pln'] = df.apply(
-                    lambda row: dashboard.calculate_predicted_fx_rate(
-                        row['pl_yield'], row['de_yield'], df['actual_eur_pln'].iloc[0], 'EUR'
-                    ), axis=1
-                )
-                df['yield_spread'] = df['pl_yield'] - df['de_yield']
-                st.success("✅ Using real EUR market data")
-            else:
-                raise Exception("Insufficient EUR data")
-                
-        except Exception as e:
-            st.info("📊 Using sample EUR data for demonstration")
-            # Generate sample data
-            dates = pd.date_range(start=start_date, end=end_date, freq='D')
-            np.random.seed(42)
-            
-            # Sample EUR/PLN
-            base_rate = 4.24
-            trend = np.linspace(0, 0.02, len(dates))
-            noise = np.cumsum(np.random.randn(len(dates)) * 0.003)
-            actual_eur_pln = base_rate + trend + noise
-            
-            # Sample yields
-            pl_yields = 5.7 + np.cumsum(np.random.randn(len(dates)) * 0.01)
-            de_yields = 2.2 + np.cumsum(np.random.randn(len(dates)) * 0.008)
-            
-            predicted_eur_pln = []
-            for i in range(len(dates)):
-                pred_rate = dashboard.calculate_predicted_fx_rate(pl_yields[i], de_yields[i], base_rate, 'EUR')
-                predicted_eur_pln.append(pred_rate)
-            
-            df = pd.DataFrame({
-                'actual_eur_pln': actual_eur_pln,
-                'predicted_eur_pln': predicted_eur_pln,
-                'pl_yield': pl_yields,
-                'de_yield': de_yields,
-                'yield_spread': pl_yields - de_yields
-            }, index=dates)
-    
+    except Exception as e:
+        st.info("📊 Using sample EUR data for demonstration")
+        # Generate sample data
+        dates = pd.date_range(start=start_date, end=end_date, freq='D')
+        np.random.seed(42)
+        
+        # Sample EUR/PLN
+        base_rate = 4.24
+        trend = np.linspace(0, 0.02, len(dates))
+        noise = np.cumsum(np.random.randn(len(dates)) * 0.003)
+        actual_eur_pln = base_rate + trend + noise
+        
+        # Sample yields
+        pl_yields = 5.7 + np.cumsum(np.random.randn(len(dates)) * 0.01)
+        de_yields = 2.2 + np.cumsum(np.random.randn(len(dates)) * 0.008)
+        
+        predicted_eur_pln = []
+        for i in range(len(dates)):
+            pred_rate = dashboard.calculate_predicted_fx_rate(pl_yields[i], de_yields[i], base_rate, 'EUR')
+            predicted_eur_pln.append(pred_rate)
+        
+        df = pd.DataFrame({
+            'actual_eur_pln': actual_eur_pln,
+            'predicted_eur_pln': predicted_eur_pln,
+            'pl_yield': pl_yields,
+            'de_yield': de_yields,
+            'yield_spread': pl_yields - de_yields
+        }, index=dates)
+
     # Current values
     current_actual = df['actual_eur_pln'].iloc[-1]
     current_predicted = df['predicted_eur_pln'].iloc[-1]
@@ -1101,11 +1097,9 @@ with tab3:
             )
         
         with col3:
-            profit_color = "normal" if total_net_worst >= 0 else "inverse"
             st.metric(
                 "Total Net Worst",
                 f"€{total_net_worst:,.0f}",
-                delta_color=profit_color,
                 help="Sum of all net worst case scenarios"
             )
         
@@ -1122,8 +1116,6 @@ with tab3:
         
         st.markdown("---")
         st.subheader("🎯 Bond Spread Scenario Analysis")
-        
-        st.markdown("**Analyze impact of bond spread changes on window forward profitability**")
         
         col1, col2, col3 = st.columns(3)
         
@@ -1205,65 +1197,6 @@ with tab3:
             # Display scenario results
             if scenario_results:
                 scenario_df = pd.DataFrame(scenario_results)
-                
-                # Scenario impact charts
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    # Net worst comparison
-                    fig_scenario_risk = go.Figure()
-                    
-                    fig_scenario_risk.add_trace(go.Bar(
-                        x=scenario_df["Tenor"],
-                        y=scenario_df["Original Net Worst"],
-                        name="Original",
-                        marker_color='lightblue',
-                        opacity=0.7
-                    ))
-                    
-                    fig_scenario_risk.add_trace(go.Bar(
-                        x=scenario_df["Tenor"],
-                        y=scenario_df["Scenario Net Worst"],
-                        name="Scenario",
-                        marker_color='darkblue',
-                        opacity=0.9
-                    ))
-                    
-                    fig_scenario_risk.update_layout(
-                        title="Net Worst: Original vs Scenario",
-                        xaxis_title="Tenor",
-                        yaxis_title="Net Worst (EUR)",
-                        height=400,
-                        xaxis_tickangle=-45,
-                        barmode='group'
-                    )
-                    
-                    st.plotly_chart(fig_scenario_risk, use_container_width=True)
-                
-                with col2:
-                    # Profit impact
-                    fig_scenario_profit = go.Figure()
-                    
-                    colors = ['red' if x < 0 else 'green' for x in scenario_df["Profit Impact"]]
-                    
-                    fig_scenario_profit.add_trace(go.Bar(
-                        x=scenario_df["Tenor"],
-                        y=scenario_df["Profit Impact"],
-                        name="Profit Impact",
-                        marker_color=colors,
-                        text=scenario_df["Profit Impact"].apply(lambda x: f"{x:+.3f}%"),
-                        textposition='auto'
-                    ))
-                    
-                    fig_scenario_profit.update_layout(
-                        title="Profit Margin Impact",
-                        xaxis_title="Tenor",
-                        yaxis_title="Profit Impact (%)",
-                        height=400,
-                        xaxis_tickangle=-45
-                    )
-                    
-                    st.plotly_chart(fig_scenario_profit, use_container_width=True)
                 
                 # Impact summary
                 total_impact = scenario_df["Impact"].sum()
