@@ -1,4 +1,196 @@
-import streamlit as st
+# ============================================================================
+        # RISK ANALYSIS SECTION
+        # ============================================================================
+        
+        st.markdown("---")
+        st.subheader("⚠️ Risk Analysis Dashboard")
+        
+        # Key metrics for window forward
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "Window Exposure",
+                f"€{nominal_amount:,.0f}",
+                help=f"Nominal exposure for {window_days}-day window"
+            )
+        
+        with col2:
+            st.metric(
+                "Profit Margin",
+                f"{profit_percentage:.3f}%",
+                help="Dealer profit margin on window forward"
+            )
+        
+        with col3:
+            st.metric(
+                "Points Efficiency",
+                f"{points_factor:.0%}",
+                help="Percentage of forward points given to client"
+            )
+        
+        with col4:
+            st.metric(
+                "Risk Coverage",
+                f"{risk_factor:.0%}",
+                help="Percentage of swap risk charged to client"
+            )
+        
+        # Window forward insights
+        st.markdown("### 💡 Window Forward Insights")
+        
+        insights = []
+        
+        # Points analysis
+        points_kept_pct = (1 - points_factor) * 100
+        risk_coverage_pct = risk_factor * 100
+        
+        insights.append(f"📊 **Points Strategy**: Giving {points_factor:.0%} of forward points to client, keeping {points_kept_pct:.0f}% as premium")
+        insights.append(f"⚠️ **Risk Management**: Charging client {risk_coverage_pct:.0f}% of swap risk, dealer covers {100-risk_coverage_pct:.0f}%")
+        insights.append(f"💰 **Profit Source**: {points_kept_pct:.0f}% from points retention + {risk_coverage_pct:.0f}% from risk premium")
+        
+        # Window length analysis
+        if window_days <= 60:
+            insights.append(f"⏰ **Window Length**: {window_days}-day window is relatively short - lower risk, lower premium")
+        elif window_days <= 120:
+            insights.append(f"⏰ **Window Length**: {window_days}-day window is moderate - balanced risk/reward")
+        else:
+            insights.append(f"⏰ **Window Length**: {window_days}-day window is long - higher risk, higher premium required")
+        
+        # Profitability analysis
+        if profit_percentage > 0.1:
+            insights.append(f"✅ **Profitability**: Strong profit margin of {profit_percentage:.3f}% - competitive pricing")
+        elif profit_percentage > 0.05:
+            insights.append(f"⚡ **Profitability**: Moderate profit margin of {profit_percentage:.3f}% - acceptable but could optimize")
+        else:
+            insights.append(f"🚨 **Profitability**: Low profit margin of {profit_percentage:.3f}% - consider increasing risk factor")
+        
+        # Display insights
+        for insight in insights:
+            st.markdown(insight)
+        
+        # Trading recommendations
+        st.markdown("### 📋 Window Forward Recommendations")
+        
+        recommendations = []
+        
+        # Risk factor recommendations
+        if risk_factor < 0.4:
+            recommendations.append("🔴 **Risk Factor Too Low**: Consider increasing to 40-45% for better risk coverage")
+        elif risk_factor > 0.6:
+            recommendations.append("🟡 **Risk Factor High**: Consider if client will accept 60%+ risk charge")
+        else:
+            recommendations.append("🟢 **Risk Factor Optimal**: 40-60% range provides good balance")
+        
+        # Points factor recommendations
+        if points_factor > 0.8:
+            recommendations.append("🟡 **Points Factor High**: Giving 80%+ points - ensure adequate profit margin")
+        elif points_factor < 0.6:
+            recommendations.append("🔴 **Points Factor Low**: <60% may not be attractive to clients")
+        else:
+            recommendations.append("🟢 **Points Factor Good**: 60-80% range is client-friendly yet profitable")
+        
+        # Window length recommendations
+        optimal_window = 90  # days
+        if abs(window_days - optimal_window) > 30:
+            recommendations.append(f"💡 **Window Optimization**: Consider {optimal_window}-day window for optimal risk/reward balance")
+        
+        # Display recommendations
+        for rec in recommendations:
+            if "🟢" in rec:
+                st.success(rec)
+            elif "🟡" in rec:
+                st.warning(rec)
+            elif "🔴" in rec:
+                st.error(rec)
+            else:
+                st.info(rec)
+
+# ============================================================================
+# SHARED CONTROLS AND FOOTER
+# ============================================================================
+
+st.markdown("---")
+
+# Refresh and info controls
+col1, col2, col3 = st.columns([1, 1, 1])
+
+with col1:
+    if st.button("🔄 Refresh All Data", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+with col2:
+    if st.button("📊 FRED Series Info", use_container_width=True):
+        with st.expander("📋 FRED Series Used", expanded=True):
+            st.markdown("""
+            **Bond Yields:**
+            - Poland 10Y: `IRLTLT01PLM156N`
+            - Germany 10Y: `IRLTLT01DEM156N`
+            - US 10Y: `DGS10`
+            - US 2Y: `DGS2`
+            
+            **Interest Rates:**
+            - EURIBOR 3M: `EUR3MTD156N`
+            - Fed Funds: `FEDFUNDS`
+            - ECB Rate: `IRSTCB01EZM156N`
+            
+            **FX Rates:**
+            - EUR/PLN: NBP API
+            - USD/PLN: NBP API
+            """)
+
+with col3:
+    if st.button("ℹ️ Methodology", use_container_width=True):
+        with st.expander("🔬 Calculation Methods", expanded=True):
+            st.markdown("""
+            **Forward Rate Formula:**
+            ```
+            Forward = Spot × (1 + r_PL × T) / (1 + r_Foreign × T)
+            ```
+            
+            **Window Forward Formula (Final Correct Version):**
+            ```
+            FWD_Client = Spot + (Points_to_Window × Points_Factor) - (Swap_Risk × Risk_Factor)
+            
+            Where:
+            - Points_to_Window = Forward points to window START (not maturity)
+            - Points_Factor = 0.70 (70% of points given to client)
+            - Risk_Factor = 0.40 (40% of swap risk charged to client)
+            - Swap_Risk = Ask_Points - Mid_Points (bid-ask spread)
+            ```
+            
+            **Key Logic:**
+            - Client gets 70% benefit of forward points TO WINDOW
+            - Client pays 40% of swap risk for window flexibility
+            - Dealer keeps 30% of points + 60% risk coverage as profit
+            - Window length determines points calculation period
+            
+            **Data Sources:**
+            - **FX Rates**: NBP API (Polish Central Bank)
+            - **Bond Yields**: FRED API (Federal Reserve Economic Data)
+            - **Forward Points**: Live generation from spreads with interpolation
+            
+            **Update Frequency:**
+            - Bond data: 1 hour cache
+            - FX data: 5 minute cache
+            - Forward points: Real-time calculation
+            """)
+
+# Performance note
+st.markdown("---")
+st.markdown(
+    f"""
+    <div style='text-align: center; color: gray; font-size: 0.8em; padding: 1rem; border-top: 1px solid #eee;'>
+    💱 <strong>Professional FX Trading Dashboard</strong><br>
+    📊 Real-time data: NBP API, FRED API | 🧮 Forward Calculator | 📈 Bond Spread Analytics | 💼 Window Forward Calculator<br>
+    ⏰ Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 
+    🔗 <a href="https://fred.stlouisfed.org/docs/api/" target="_blank">FRED API Docs</a><br>
+    ⚠️ <em>For educational and analytical purposes - not financial advice</em>
+    </div>
+    """, 
+    unsafe_allow_html=True
+)import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -7,7 +199,7 @@ import requests
 from datetime import datetime, timedelta
 
 # FRED API Configuration
-FRED_API_KEY = "f65897ba8bbc5c387dc26081d5b66edf"  # Replace with your API key
+FRED_API_KEY = "demo"  # Replace with your API key
 
 # Page config
 st.set_page_config(
@@ -255,10 +447,54 @@ class WindowForwardCalculator:
             points_data[tenor] = {
                 "bid": bid_points,
                 "ask": ask_points,
-                "mid": mid_points
+                "mid": mid_points,
+                "days": days,
+                "months": months
             }
         
         return points_data
+    
+    def calculate_points_to_window(self, window_days, points_data):
+        """Calculate forward points to the start of the window"""
+        # Interpolate points for the window start date
+        window_months = window_days / 30.0
+        
+        # Find the closest tenors for interpolation
+        available_months = sorted([data["months"] for data in points_data.values()])
+        
+        if window_months <= available_months[0]:
+            # Use shortest tenor
+            shortest_tenor = next(tenor for tenor, data in points_data.items() if data["months"] == available_months[0])
+            ratio = window_months / available_months[0]
+            return {
+                "bid": points_data[shortest_tenor]["bid"] * ratio,
+                "ask": points_data[shortest_tenor]["ask"] * ratio,
+                "mid": points_data[shortest_tenor]["mid"] * ratio
+            }
+        elif window_months >= available_months[-1]:
+            # Use longest tenor
+            longest_tenor = next(tenor for tenor, data in points_data.items() if data["months"] == available_months[-1])
+            return {
+                "bid": points_data[longest_tenor]["bid"],
+                "ask": points_data[longest_tenor]["ask"],
+                "mid": points_data[longest_tenor]["mid"]
+            }
+        else:
+            # Interpolate between two tenors
+            lower_months = max([m for m in available_months if m <= window_months])
+            upper_months = min([m for m in available_months if m >= window_months])
+            
+            lower_tenor = next(tenor for tenor, data in points_data.items() if data["months"] == lower_months)
+            upper_tenor = next(tenor for tenor, data in points_data.items() if data["months"] == upper_months)
+            
+            # Linear interpolation
+            ratio = (window_months - lower_months) / (upper_months - lower_months)
+            
+            return {
+                "bid": points_data[lower_tenor]["bid"] + ratio * (points_data[upper_tenor]["bid"] - points_data[lower_tenor]["bid"]),
+                "ask": points_data[lower_tenor]["ask"] + ratio * (points_data[upper_tenor]["ask"] - points_data[lower_tenor]["ask"]),
+                "mid": points_data[lower_tenor]["mid"] + ratio * (points_data[upper_tenor]["mid"] - points_data[lower_tenor]["mid"])
+            }
     
     def calculate_forward_rate(self, spot_rate, domestic_yield, foreign_yield, days):
         """Calculate forward rate using bond yields"""
@@ -278,17 +514,31 @@ class WindowForwardCalculator:
         """Calculate swap risk: closing cost - points to window"""
         return closing_cost - points_to_window
     
-    def calculate_forward_client(self, spot_rate, forward_points_to_maturity, swap_risk, points_factor=0.70, risk_factor=0.4):
-        """Calculate forward rate for client using correct dealer formula"""
-        # Correct Formula: Spot + (Forward_Points_to_maturity × 0.70) - (Swap_Risk × 0.4-0.65)
-        # We give client 70% of forward points but compensate for swap risk
-        points_for_client = forward_points_to_maturity * points_factor
+    def calculate_forward_client(self, spot_rate, points_to_window, swap_risk, points_factor=0.70, risk_factor=0.4):
+        """Calculate forward rate for client using correct window forward logic"""
+        # Correct Formula: Spot + (Points_to_Window × 0.70) - (Swap_Risk × 0.40)
+        # We give client 70% of points TO WINDOW start, but charge for swap risk
+        points_for_client = points_to_window * points_factor
         swap_risk_compensation = swap_risk * risk_factor
         return spot_rate + points_for_client - swap_risk_compensation
     
-    def calculate_forward_to_window(self, spot_rate, forward_points_to_maturity):
-        """Calculate theoretical forward rate to maturity (full points)"""
-        return spot_rate + forward_points_to_maturity
+    def calculate_forward_theoretical(self, spot_rate, points_to_window):
+        """Calculate theoretical forward rate to window start (full points)"""
+        return spot_rate + points_to_window
+    
+    def calculate_closing_cost_for_window(self, ask_points_to_window, window_length_months):
+        """Calculate closing cost based on window length"""
+        # Closing cost is the cost to hedge during the window period
+        return ask_points_to_window * (window_length_months / self.get_months_for_points(ask_points_to_window))
+    
+    def get_months_for_points(self, points_value):
+        """Estimate months corresponding to points value (simple approximation)"""
+        # This is a simplified approach - in practice you'd use proper interpolation
+        return max(1.0, abs(points_value) * 100)  # Rough approximation
+    
+    def calculate_swap_risk_for_window(self, closing_cost, points_to_window):
+        """Calculate swap risk for window period"""
+        return closing_cost - points_to_window
     
     def calculate_profit_to_window(self, fwd_theoretical, fwd_client):
         """Calculate dealer profit margin"""
@@ -879,6 +1129,33 @@ with tab3:
             key="wf_spread"
         )
     
+    # Advanced configuration
+    st.subheader("🔧 Advanced Dealer Parameters")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        points_factor = st.slider(
+            "Points Factor (% given to client):",
+            min_value=0.50,
+            max_value=0.90,
+            value=0.70,
+            step=0.05,
+            key="points_factor",
+            help="Percentage of forward points given to client (typical: 70%)"
+        )
+    
+    with col2:
+        risk_factor = st.slider(
+            "Risk Factor (swap risk compensation):",
+            min_value=0.30,
+            max_value=0.70,
+            value=0.40,
+            step=0.05,
+            key="risk_factor",
+            help="Percentage of swap risk charged to client (typical: 40-65%)"
+        )
+    
     # Get current bond yields for forward points generation
     default_pl_yield = bond_data['Poland_10Y']['value'] if 'Poland_10Y' in bond_data else 5.70
     default_de_yield = bond_data['Germany_9M']['value'] if 'Germany_9M' in bond_data else 2.35
@@ -898,14 +1175,29 @@ with tab3:
         bid_ask_spread
     )
     
+    # Calculate points to window start
+    points_to_window = wf_calc.calculate_points_to_window(window_days, forward_points_data)
+    
     # Display current spread info
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.info(f"🇵🇱 Poland 10Y: **{default_pl_yield:.2f}%**")
     with col2:
         st.info(f"🇩🇪 Germany 10Y: **{default_de_yield:.2f}%**")
     with col3:
         st.info(f"📊 Current Spread: **{(default_pl_yield - default_de_yield):.2f}pp**")
+    with col4:
+        st.info(f"📅 Window: **{window_days} days** ({window_days/30:.1f}M)")
+    
+    # Show points to window
+    st.markdown("### 📈 Forward Points to Window Start")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Bid Points to Window", f"{points_to_window['bid']:.5f}")
+    with col2:
+        st.metric("Ask Points to Window", f"{points_to_window['ask']:.5f}")
+    with col3:
+        st.metric("Mid Points to Window", f"{points_to_window['mid']:.5f}")
     
     # ============================================================================
     # CALCULATIONS SECTION
@@ -913,75 +1205,84 @@ with tab3:
     
     st.subheader("💰 Window Forward Pricing Table")
     
-    # Calculate months for window
-    months_to_window = wf_calc.calculate_months_to_period(window_days)
+    # Calculate window length in months
+    window_months = window_days / 30.0
     
-    # Prepare calculation results
-    results = []
+    # Prepare single calculation for window forward
+    window_forward_result = {
+        "Window Period": f"{window_days} days ({window_months:.1f}M)",
+        "Points to Window (Mid)": points_to_window['mid'],
+        "Points to Window (Bid)": points_to_window['bid'],
+        "Points to Window (Ask)": points_to_window['ask'],
+        "Points Given to Client": points_to_window['mid'] * points_factor,
+        "Closing Cost": points_to_window['ask'],  # Simplified: ask points represent closing cost
+        "Swap Risk": points_to_window['ask'] - points_to_window['mid'],
+        "Risk Compensation": (points_to_window['ask'] - points_to_window['mid']) * risk_factor,
+        "FWD Theoretical": spot_rate_wf + points_to_window['mid'],
+        "FWD Client": wf_calc.calculate_forward_client(spot_rate_wf, points_to_window['mid'], 
+                                                      points_to_window['ask'] - points_to_window['mid'], 
+                                                      points_factor, risk_factor),
+        "Dealer Profit (Absolute)": None,  # Will calculate after
+        "Dealer Profit %": None,  # Will calculate after
+        "Net Worst (EUR)": None,  # Will calculate after
+    }
     
-    for tenor in wf_calc.tenors:
-        if tenor in forward_points_data:
-            data = forward_points_data[tenor]
-            tenor_months = wf_calc.tenor_months[tenor]
-            
-            # Calculate components using live data
-            points_to_window = data["bid"]  # Using bid as points to window
-            closing_cost = wf_calc.calculate_closing_cost(data["ask"], tenor_months)
-            swap_risk = wf_calc.calculate_swap_risk(closing_cost, points_to_window)
-            
-            # Main calculations with corrected dealer logic
-            window_factor = 0.75  # Can be made configurable
-            risk_factor = 0.4     # Can be made configurable
-            
-            # Calculate forward rates using corrected logic
-            fwd_to_window = wf_calc.calculate_forward_to_window(spot_rate_wf, points_to_window)  # Clean forward
-            fwd_client = wf_calc.calculate_forward_client(spot_rate_wf, points_to_window, swap_risk, window_factor, risk_factor)  # Client rate
-            
-            # Calculate profits
-            profit_absolute = wf_calc.calculate_profit_to_window(fwd_to_window, fwd_client)  # Absolute profit
-            profit_percentage = wf_calc.calculate_profit_percentage(profit_absolute, fwd_client)  # Profit %
-            
-            # Risk calculations
-            net_worst = profit_absolute  # Simplified - could add other risk factors
-            net_worst_nominal = wf_calc.calculate_net_worst_nominal(profit_absolute, nominal_amount)
-            potential_profit = wf_calc.calculate_potential_profit(net_worst_nominal)
-            
-            results.append({
-                "Tenor": tenor,
-                "Bid Points": data["bid"],
-                "Ask Points": data["ask"],
-                "Mid Points": data["mid"],
-                "FWD Client": fwd_client,
-                "FWD to Window": fwd_to_window,
-                "Profit (Absolute)": profit_absolute,
-                "Profit %": profit_percentage,
-                "Closing Cost": closing_cost,
-                "Swap Risk": swap_risk,
-                "Net Worst": profit_absolute,
-                "Net Worst (EUR)": net_worst_nominal,
-                "Potential Profit (EUR)": potential_profit
-            })
+    # Calculate profits
+    fwd_theoretical = window_forward_result["FWD Theoretical"]
+    fwd_client = window_forward_result["FWD Client"]
+    profit_absolute = fwd_theoretical - fwd_client
+    profit_percentage = (profit_absolute / fwd_client) * 100
+    net_worst_nominal = profit_absolute * nominal_amount
     
-    # Display results table
-    if results:
-        df_results = pd.DataFrame(results)
-        
-        # Format columns for better display
-        formatted_df = df_results.copy()
-        formatted_df["Bid Points"] = formatted_df["Bid Points"].apply(lambda x: f"{x:.5f}")
-        formatted_df["Ask Points"] = formatted_df["Ask Points"].apply(lambda x: f"{x:.5f}")
-        formatted_df["Mid Points"] = formatted_df["Mid Points"].apply(lambda x: f"{x:.5f}")
-        formatted_df["FWD Client"] = formatted_df["FWD Client"].apply(lambda x: f"{x:.4f}")
-        formatted_df["FWD to Window"] = formatted_df["FWD to Window"].apply(lambda x: f"{x:.4f}")
-        formatted_df["Profit (Absolute)"] = formatted_df["Profit (Absolute)"].apply(lambda x: f"{x:.5f}")
-        formatted_df["Profit %"] = formatted_df["Profit %"].apply(lambda x: f"{x:.3f}%")
-        formatted_df["Closing Cost"] = formatted_df["Closing Cost"].apply(lambda x: f"{x:.5f}")
-        formatted_df["Swap Risk"] = formatted_df["Swap Risk"].apply(lambda x: f"{x:.5f}")
-        formatted_df["Net Worst"] = formatted_df["Net Worst"].apply(lambda x: f"{x:.5f}")
-        formatted_df["Net Worst (EUR)"] = formatted_df["Net Worst (EUR)"].apply(lambda x: f"{x:,.0f}")
-        formatted_df["Potential Profit (EUR)"] = formatted_df["Potential Profit (EUR)"].apply(lambda x: f"{x:,.0f}")
-        
-        st.dataframe(formatted_df, use_container_width=True)
+    # Update results
+    window_forward_result.update({
+        "Dealer Profit (Absolute)": profit_absolute,
+        "Dealer Profit %": profit_percentage,
+        "Net Worst (EUR)": net_worst_nominal,
+        "Potential Profit (EUR)": net_worst_nominal * 1.5
+    })
+    
+    # Display results in a nice format
+    st.markdown("### 📊 Window Forward Calculation Results")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("FWD Theoretical", f"{fwd_theoretical:.4f}")
+        st.metric("Points to Window", f"{points_to_window['mid']:.5f}")
+    
+    with col2:
+        st.metric("FWD Client", f"{fwd_client:.4f}")
+        st.metric("Points Given (70%)", f"{window_forward_result['Points Given to Client']:.5f}")
+    
+    with col3:
+        st.metric("Dealer Profit", f"{profit_absolute:.5f}")
+        st.metric("Risk Compensation", f"{window_forward_result['Risk Compensation']:.5f}")
+    
+    with col4:
+        st.metric("Profit %", f"{profit_percentage:.3f}%")
+        st.metric("Net Worst (EUR)", f"€{net_worst_nominal:,.0f}")
+    
+    # Detailed breakdown table
+    st.markdown("### 📋 Detailed Calculation Breakdown")
+    
+    breakdown_data = [
+        ["Spot Rate", f"{spot_rate_wf:.4f}"],
+        ["Window Length", f"{window_days} days ({window_months:.1f} months)"],
+        ["Points to Window (Mid)", f"{points_to_window['mid']:.5f}"],
+        ["Points Factor", f"{points_factor:.0%}"],
+        ["Points Given to Client", f"{window_forward_result['Points Given to Client']:.5f}"],
+        ["Swap Risk", f"{window_forward_result['Swap Risk']:.5f}"],
+        ["Risk Factor", f"{risk_factor:.0%}"],
+        ["Risk Compensation", f"{window_forward_result['Risk Compensation']:.5f}"],
+        ["FWD Theoretical", f"{fwd_theoretical:.4f}"],
+        ["FWD Client", f"{fwd_client:.4f}"],
+        ["Dealer Profit", f"{profit_absolute:.5f}"],
+        ["Profit Percentage", f"{profit_percentage:.3f}%"]
+    ]
+    
+    df_breakdown = pd.DataFrame(breakdown_data, columns=["Component", "Value"])
+    st.dataframe(df_breakdown, use_container_width=True)
         
         # ============================================================================
         # VISUALIZATIONS
@@ -993,93 +1294,150 @@ with tab3:
         col1, col2 = st.columns(2)
         
         with col1:
-            # Profit margin chart
+            # Window forward breakdown chart
+            categories = ['Spot Rate', 'Points Given', 'Risk Compensation', 'Final Client Rate']
+            values = [spot_rate_wf, 
+                     window_forward_result['Points Given to Client'], 
+                     -window_forward_result['Risk Compensation'],
+                     fwd_client]
+            colors = ['blue', 'green', 'red', 'purple']
+            
+            fig_breakdown = go.Figure()
+            
+            # Add bars for breakdown
+            cumulative = spot_rate_wf
+            fig_breakdown.add_trace(go.Bar(
+                x=['Components'],
+                y=[spot_rate_wf],
+                name='Spot Rate',
+                marker_color='blue',
+                text=f'{spot_rate_wf:.4f}',
+                textposition='middle'
+            ))
+            
+            fig_breakdown.add_trace(go.Bar(
+                x=['Components'],
+                y=[window_forward_result['Points Given to Client']],
+                name='Points Given (+)',
+                marker_color='green',
+                text=f"+{window_forward_result['Points Given to Client']:.5f}",
+                textposition='middle'
+            ))
+            
+            fig_breakdown.add_trace(go.Bar(
+                x=['Components'],
+                y=[-window_forward_result['Risk Compensation']],
+                name='Risk Compensation (-)',
+                marker_color='red',
+                text=f"-{window_forward_result['Risk Compensation']:.5f}",
+                textposition='middle'
+            ))
+            
+            fig_breakdown.update_layout(
+                title="Window Forward Rate Breakdown",
+                yaxis_title="Rate Components",
+                height=400,
+                barmode='relative'
+            )
+            
+            st.plotly_chart(fig_breakdown, use_container_width=True)
+        
+        with col2:
+            # Profit analysis chart
+            profit_components = ['Points Kept', 'Risk Coverage', 'Total Profit']
+            profit_values = [
+                points_to_window['mid'] * (1 - points_factor),  # 30% of points kept
+                window_forward_result['Risk Compensation'],  # Risk coverage
+                profit_absolute  # Total profit
+            ]
+            
             fig_profit = go.Figure()
             fig_profit.add_trace(go.Bar(
-                x=df_results["Tenor"],
-                y=df_results["Profit %"],
-                name="Profit Margin %",
-                marker_color='lightgreen',
-                text=df_results["Profit %"].apply(lambda x: f"{x:.3f}%"),
+                x=profit_components,
+                y=profit_values,
+                marker_color=['lightblue', 'lightcoral', 'gold'],
+                text=[f"{val:.5f}" for val in profit_values],
                 textposition='auto'
             ))
             
             fig_profit.update_layout(
-                title="Dealer Profit Margin by Tenor",
-                xaxis_title="Tenor",
-                yaxis_title="Profit Margin (%)",
-                height=400,
-                xaxis_tickangle=-45
+                title="Dealer Profit Components",
+                yaxis_title="Profit (Rate Points)",
+                height=400
             )
             
             st.plotly_chart(fig_profit, use_container_width=True)
         
-        with col2:
-            # Net worst nominal chart
-            fig_risk = go.Figure()
-            
-            colors = ['red' if x < 0 else 'green' for x in df_results["Net Worst (EUR)"]]
-            
-            fig_risk.add_trace(go.Bar(
-                x=df_results["Tenor"],
-                y=df_results["Net Worst (EUR)"],
-                name="Net Worst (EUR)",
-                marker_color=colors,
-                text=df_results["Net Worst (EUR)"].apply(lambda x: f"{x:,.0f}"),
-                textposition='auto'
-            ))
-            
-            fig_risk.update_layout(
-                title="Net Worst Case Scenario (EUR)",
-                xaxis_title="Tenor",
-                yaxis_title="Net Worst (EUR)",
-                height=400,
-                xaxis_tickangle=-45
+        # Forward rate comparison over different window lengths
+        st.subheader("📊 Window Length Impact Analysis")
+        
+        # Calculate for different window lengths
+        window_lengths = [30, 60, 90, 120, 150, 180]
+        window_analysis = []
+        
+        for window_length in window_lengths:
+            temp_points = wf_calc.calculate_points_to_window(window_length, forward_points_data)
+            temp_fwd_client = wf_calc.calculate_forward_client(
+                spot_rate_wf, 
+                temp_points['mid'], 
+                temp_points['ask'] - temp_points['mid'], 
+                points_factor, 
+                risk_factor
             )
+            temp_profit = (spot_rate_wf + temp_points['mid']) - temp_fwd_client
             
-            st.plotly_chart(fig_risk, use_container_width=True)
+            window_analysis.append({
+                'Window Days': window_length,
+                'Points to Window': temp_points['mid'],
+                'FWD Client': temp_fwd_client,
+                'Dealer Profit': temp_profit
+            })
         
-        # Forward rates comparison chart
-        st.subheader("💱 Forward Rates Comparison")
+        df_window_analysis = pd.DataFrame(window_analysis)
         
-        fig_fwd = go.Figure()
+        fig_window = make_subplots(
+            rows=2, cols=1,
+            subplot_titles=("Client Forward Rate by Window Length", "Dealer Profit by Window Length"),
+            vertical_spacing=0.12
+        )
         
-        fig_fwd.add_trace(go.Scatter(
-            x=df_results["Tenor"],
-            y=df_results["FWD Client"],
+        # Client forward rates
+        fig_window.add_trace(go.Scatter(
+            x=df_window_analysis['Window Days'],
+            y=df_window_analysis['FWD Client'],
             mode='lines+markers',
-            name='Forward Client Rate',
+            name='FWD Client',
             line=dict(color='blue', width=3),
             marker=dict(size=8)
-        ))
+        ), row=1, col=1)
         
-        fig_fwd.add_trace(go.Scatter(
-            x=df_results["Tenor"],
-            y=df_results["FWD to Window"],
+        # Dealer profit
+        fig_window.add_trace(go.Scatter(
+            x=df_window_analysis['Window Days'],
+            y=df_window_analysis['Dealer Profit'],
             mode='lines+markers',
-            name='Forward to Window Rate',
-            line=dict(color='red', width=3),
+            name='Dealer Profit',
+            line=dict(color='green', width=3),
             marker=dict(size=8)
-        ))
+        ), row=2, col=1)
         
-        # Add spot rate line
-        fig_fwd.add_hline(
-            y=spot_rate_wf,
-            line_dash="dash",
-            line_color="green",
-            annotation_text=f"Spot Rate: {spot_rate_wf:.4f}"
+        # Add current window marker
+        current_window_data = df_window_analysis[df_window_analysis['Window Days'] == window_days]
+        if not current_window_data.empty:
+            fig_window.add_vline(x=window_days, line_dash="dash", line_color="red", 
+                                annotation_text=f"Current: {window_days}d")
+        
+        fig_window.update_layout(
+            title=f"Window Forward Analysis (Points Factor: {points_factor:.0%}, Risk Factor: {risk_factor:.0%})",
+            height=600,
+            showlegend=False
         )
         
-        fig_fwd.update_layout(
-            title="Forward Rates: Clean vs Client (Corrected Dealer Logic)",
-            xaxis_title="Tenor",
-            yaxis_title="EUR/PLN Rate",
-            height=500,
-            xaxis_tickangle=-45,
-            hovermode='x unified'
-        )
+        fig_window.update_xaxes(title_text="Window Length (Days)", row=2, col=1)
+        fig_window.update_yaxes(title_text="EUR/PLN Rate", row=1, col=1)
+        fig_window.update_yaxes(title_text="Profit (Rate Points)", row=2, col=1)
         
-        st.plotly_chart(fig_fwd, use_container_width=True)
+        st.plotly_chart(fig_window, use_container_width=True)
         
         # ============================================================================
         # RISK ANALYSIS SECTION
@@ -1189,12 +1547,12 @@ with tab3:
                     tenor_months = wf_calc.tenor_months[tenor]
                     
                     # Recalculate with scenario parameters
-                    points_to_window = scenario_data["bid"]
+                    forward_points_to_maturity = scenario_data["mid"]
                     closing_cost = wf_calc.calculate_closing_cost(scenario_data["ask"], tenor_months)
-                    swap_risk = wf_calc.calculate_swap_risk(closing_cost, points_to_window)
-                    fwd_to_window = wf_calc.calculate_forward_to_window(scenario_spot, points_to_window)
-                    fwd_client = wf_calc.calculate_forward_client(scenario_spot, points_to_window, swap_risk)
-                    profit_absolute = wf_calc.calculate_profit_to_window(fwd_to_window, fwd_client)
+                    swap_risk = wf_calc.calculate_swap_risk(closing_cost, forward_points_to_maturity)
+                    fwd_theoretical = wf_calc.calculate_forward_to_window(scenario_spot, forward_points_to_maturity)
+                    fwd_client = wf_calc.calculate_forward_client(scenario_spot, forward_points_to_maturity, swap_risk, points_factor, risk_factor)
+                    profit_absolute = wf_calc.calculate_profit_to_window(fwd_theoretical, fwd_client)
                     profit_percentage = wf_calc.calculate_profit_percentage(profit_absolute, fwd_client)
                     net_worst_nominal = wf_calc.calculate_net_worst_nominal(profit_absolute, scenario_nominal)
                     
@@ -1318,12 +1676,20 @@ with col3:
             Forward = Spot × (1 + r_PL × T) / (1 + r_Foreign × T)
             ```
             
-            **Window Forward Dealer Formula (Corrected):**
+            **Window Forward Dealer Formula (Final Correct Version):**
             ```
-            FWD_Clean = Spot + Forward_Points
-            FWD_Client = FWD_Clean - Cost_Adjustments
-            Dealer_Profit = FWD_Clean - FWD_Client
+            FWD_Client = Spot + (Forward_Points × Points_Factor) - (Swap_Risk × Risk_Factor)
+            
+            Where:
+            - Points_Factor = 0.70 (70% of points given to client)
+            - Risk_Factor = 0.40 (40% of swap risk charged to client)
+            - Swap_Risk = Closing_Cost - Forward_Points
             ```
+            
+            **Economic Logic:**
+            - Client gets 70% benefit of forward points
+            - Client pays 40% of swap risk for window flexibility
+            - Dealer keeps 30% of points + 60% risk coverage as profit
             
             **Forward Points Generation:**
             - Generated from live bond spreads (PL vs DE)
