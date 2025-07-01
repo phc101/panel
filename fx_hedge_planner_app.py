@@ -278,22 +278,22 @@ class WindowForwardCalculator:
         """Calculate swap risk: closing cost - points to window"""
         return closing_cost - points_to_window
     
-    def calculate_forward_client(self, spot_rate, points_to_window, swap_risk, window_factor=0.75, risk_factor=0.4):
-        """Calculate forward rate for client using corrected dealer formula"""
-        # Corrected Formula: Spot + Points - (Closing_Cost + Swap_Risk adjustments)
-        # Dealer adds points but deducts costs and risks to get client rate
-        forward_theoretical = spot_rate + points_to_window
-        cost_adjustment = (swap_risk * risk_factor)  # Risk adjustment
-        return forward_theoretical - cost_adjustment
+    def calculate_forward_client(self, spot_rate, forward_points_to_maturity, swap_risk, points_factor=0.70, risk_factor=0.4):
+        """Calculate forward rate for client using correct dealer formula"""
+        # Correct Formula: Spot + (Forward_Points_to_maturity × 0.70) - (Swap_Risk × 0.4-0.65)
+        # We give client 70% of forward points but compensate for swap risk
+        points_for_client = forward_points_to_maturity * points_factor
+        swap_risk_compensation = swap_risk * risk_factor
+        return spot_rate + points_for_client - swap_risk_compensation
     
-    def calculate_forward_to_window(self, spot_rate, points_to_window):
-        """Calculate clean forward rate to window (no adjustments)"""
-        return spot_rate + points_to_window
+    def calculate_forward_to_window(self, spot_rate, forward_points_to_maturity):
+        """Calculate theoretical forward rate to maturity (full points)"""
+        return spot_rate + forward_points_to_maturity
     
-    def calculate_profit_to_window(self, fwd_to_window, fwd_client):
+    def calculate_profit_to_window(self, fwd_theoretical, fwd_client):
         """Calculate dealer profit margin"""
-        # Profit is the difference between clean forward and client rate
-        return fwd_to_window - fwd_client
+        # Profit is the difference between theoretical forward and client rate
+        return fwd_theoretical - fwd_client
     
     def calculate_profit_percentage(self, profit_absolute, fwd_client):
         """Calculate profit as percentage of client rate"""
@@ -1071,7 +1071,7 @@ with tab3:
         )
         
         fig_fwd.update_layout(
-            title="Forward Rates by Tenor (Based on Live Bond Spreads)",
+            title="Forward Rates: Clean vs Client (Corrected Dealer Logic)",
             xaxis_title="Tenor",
             yaxis_title="EUR/PLN Rate",
             height=500,
@@ -1192,11 +1192,11 @@ with tab3:
                     points_to_window = scenario_data["bid"]
                     closing_cost = wf_calc.calculate_closing_cost(scenario_data["ask"], tenor_months)
                     swap_risk = wf_calc.calculate_swap_risk(closing_cost, points_to_window)
-                    fwd_client = wf_calc.calculate_forward_client(scenario_spot, points_to_window, swap_risk)
                     fwd_to_window = wf_calc.calculate_forward_to_window(scenario_spot, points_to_window)
-                    profit_to_window = wf_calc.calculate_profit_to_window(fwd_to_window, fwd_client)
-                    net_worst = wf_calc.calculate_net_worst(profit_to_window)
-                    net_worst_nominal = wf_calc.calculate_net_worst_nominal(net_worst, scenario_nominal)
+                    fwd_client = wf_calc.calculate_forward_client(scenario_spot, points_to_window, swap_risk)
+                    profit_absolute = wf_calc.calculate_profit_to_window(fwd_to_window, fwd_client)
+                    profit_percentage = wf_calc.calculate_profit_percentage(profit_absolute, fwd_client)
+                    net_worst_nominal = wf_calc.calculate_net_worst_nominal(profit_absolute, scenario_nominal)
                     
                     scenario_results.append({
                         "Tenor": tenor,
@@ -1204,8 +1204,8 @@ with tab3:
                         "Scenario Net Worst": net_worst_nominal,
                         "Impact": net_worst_nominal - result["Net Worst (EUR)"],
                         "Original Profit %": result["Profit %"],
-                        "Scenario Profit %": profit_to_window * 100,
-                        "Profit Impact": (profit_to_window * 100) - result["Profit %"]
+                        "Scenario Profit %": profit_percentage,
+                        "Profit Impact": profit_percentage - result["Profit %"]
                     })
             
             # Display scenario results
@@ -1318,9 +1318,11 @@ with col3:
             Forward = Spot × (1 + r_PL × T) / (1 + r_Foreign × T)
             ```
             
-            **Window Forward Dealer Formula:**
+            **Window Forward Dealer Formula (Corrected):**
             ```
-            FWD_Client = Spot + (Points_to_Window × 0.75) - (Swap_Risk × 0.4)
+            FWD_Clean = Spot + Forward_Points
+            FWD_Client = FWD_Clean - Cost_Adjustments
+            Dealer_Profit = FWD_Clean - FWD_Client
             ```
             
             **Forward Points Generation:**
