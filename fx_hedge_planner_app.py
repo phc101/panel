@@ -279,17 +279,25 @@ class WindowForwardCalculator:
         return closing_cost - points_to_window
     
     def calculate_forward_client(self, spot_rate, points_to_window, swap_risk, window_factor=0.75, risk_factor=0.4):
-        """Calculate forward rate for client using dealer formula"""
-        # Formula from Excel: Spot + (points_to_window * 0.75) - (swap_risk * 0.4)
-        return spot_rate + (points_to_window * window_factor) - (swap_risk * risk_factor)
+        """Calculate forward rate for client using corrected dealer formula"""
+        # Corrected Formula: Spot + Points - (Closing_Cost + Swap_Risk adjustments)
+        # Dealer adds points but deducts costs and risks to get client rate
+        forward_theoretical = spot_rate + points_to_window
+        cost_adjustment = (swap_risk * risk_factor)  # Risk adjustment
+        return forward_theoretical - cost_adjustment
     
     def calculate_forward_to_window(self, spot_rate, points_to_window):
-        """Calculate forward rate to window"""
+        """Calculate clean forward rate to window (no adjustments)"""
         return spot_rate + points_to_window
     
     def calculate_profit_to_window(self, fwd_to_window, fwd_client):
-        """Calculate profit margin to window"""
-        return (fwd_to_window / fwd_client) - 1
+        """Calculate dealer profit margin"""
+        # Profit is the difference between clean forward and client rate
+        return fwd_to_window - fwd_client
+    
+    def calculate_profit_percentage(self, profit_absolute, fwd_client):
+        """Calculate profit as percentage of client rate"""
+        return (profit_absolute / fwd_client) * 100
     
     def calculate_net_worst(self, profit_to_window, swap_profit=0, swap_risk_calc=0):
         """Calculate net worst case scenario"""
@@ -921,17 +929,21 @@ with tab3:
             closing_cost = wf_calc.calculate_closing_cost(data["ask"], tenor_months)
             swap_risk = wf_calc.calculate_swap_risk(closing_cost, points_to_window)
             
-            # Main calculations with adjustable parameters
+            # Main calculations with corrected dealer logic
             window_factor = 0.75  # Can be made configurable
             risk_factor = 0.4     # Can be made configurable
             
-            fwd_client = wf_calc.calculate_forward_client(spot_rate_wf, points_to_window, swap_risk, window_factor, risk_factor)
-            fwd_to_window = wf_calc.calculate_forward_to_window(spot_rate_wf, points_to_window)
-            profit_to_window = wf_calc.calculate_profit_to_window(fwd_to_window, fwd_client)
+            # Calculate forward rates using corrected logic
+            fwd_to_window = wf_calc.calculate_forward_to_window(spot_rate_wf, points_to_window)  # Clean forward
+            fwd_client = wf_calc.calculate_forward_client(spot_rate_wf, points_to_window, swap_risk, window_factor, risk_factor)  # Client rate
+            
+            # Calculate profits
+            profit_absolute = wf_calc.calculate_profit_to_window(fwd_to_window, fwd_client)  # Absolute profit
+            profit_percentage = wf_calc.calculate_profit_percentage(profit_absolute, fwd_client)  # Profit %
             
             # Risk calculations
-            net_worst = wf_calc.calculate_net_worst(profit_to_window)
-            net_worst_nominal = wf_calc.calculate_net_worst_nominal(net_worst, nominal_amount)
+            net_worst = profit_absolute  # Simplified - could add other risk factors
+            net_worst_nominal = wf_calc.calculate_net_worst_nominal(profit_absolute, nominal_amount)
             potential_profit = wf_calc.calculate_potential_profit(net_worst_nominal)
             
             results.append({
@@ -941,10 +953,11 @@ with tab3:
                 "Mid Points": data["mid"],
                 "FWD Client": fwd_client,
                 "FWD to Window": fwd_to_window,
-                "Profit %": profit_to_window * 100,
+                "Profit (Absolute)": profit_absolute,
+                "Profit %": profit_percentage,
                 "Closing Cost": closing_cost,
                 "Swap Risk": swap_risk,
-                "Net Worst": net_worst,
+                "Net Worst": profit_absolute,
                 "Net Worst (EUR)": net_worst_nominal,
                 "Potential Profit (EUR)": potential_profit
             })
@@ -960,6 +973,7 @@ with tab3:
         formatted_df["Mid Points"] = formatted_df["Mid Points"].apply(lambda x: f"{x:.5f}")
         formatted_df["FWD Client"] = formatted_df["FWD Client"].apply(lambda x: f"{x:.4f}")
         formatted_df["FWD to Window"] = formatted_df["FWD to Window"].apply(lambda x: f"{x:.4f}")
+        formatted_df["Profit (Absolute)"] = formatted_df["Profit (Absolute)"].apply(lambda x: f"{x:.5f}")
         formatted_df["Profit %"] = formatted_df["Profit %"].apply(lambda x: f"{x:.3f}%")
         formatted_df["Closing Cost"] = formatted_df["Closing Cost"].apply(lambda x: f"{x:.5f}")
         formatted_df["Swap Risk"] = formatted_df["Swap Risk"].apply(lambda x: f"{x:.5f}")
@@ -991,7 +1005,7 @@ with tab3:
             ))
             
             fig_profit.update_layout(
-                title="Profit Margin by Tenor",
+                title="Dealer Profit Margin by Tenor",
                 xaxis_title="Tenor",
                 yaxis_title="Profit Margin (%)",
                 height=400,
