@@ -1383,13 +1383,13 @@ def create_client_hedging_advisor():
     # Style the table
     def highlight_recommendations(row):
         if "🟢" in str(row['Rekomendacja']):
-            return ['background-color: #d4edda'] * len(row)  # Green
+            return ['background-color: #d4edda'] * len(row)
         elif "🟡" in str(row['Rekomendacja']):
-            return ['background-color: #fff3cd'] * len(row)  # Yellow
+            return ['background-color: #fff3cd'] * len(row)
         elif "🟠" in str(row['Rekomendacja']):
-            return ['background-color: #ffeaa7'] * len(row)  # Orange
+            return ['background-color: #ffeaa7'] * len(row)
         else:
-            return ['background-color: #f8d7da'] * len(row)  # Red
+            return ['background-color: #f8d7da'] * len(row)
     
     st.dataframe(
         df_client_rates.style.apply(highlight_recommendations, axis=1),
@@ -1398,216 +1398,23 @@ def create_client_hedging_advisor():
         hide_index=True
     )
     
-    # ============================================================================
-    # WIZUALIZACJA STRATEGII ZABEZPIECZENIA
-    # ============================================================================
-    
+    # Simple recommendations
     st.markdown("---")
-    st.subheader("📈 Proponowana Strategia Zabezpieczenia")
+    st.subheader("🎯 Rekomendacje")
     
-    # Create hedging visualization
-    fig_hedging = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=(
-            'Kursy Terminowe vs Kurs Spot',
-            'Twoja Korzyść z Zabezpieczenia',
-            'Ochrona przed Ryzykiem w Czasie',
-            'Rekomendowany Podział Portfela'
-        ),
-        specs=[[{"secondary_y": False}, {"secondary_y": False}],
-               [{"secondary_y": False}, {"type": "pie"}]]
-    )
-    
-    # Extract data for charts
-    tenors_list = [data["Tenor"] for data in client_rates_data]
-    forward_rates = [float(data["Kurs terminowy"]) for data in client_rates_data]
-    rate_advantages = [float(data["vs Dzisiaj"].replace("%", "").replace("+", "")) for data in client_rates_data]
-    extra_pln = [float(data["Dodatkowe PLN"].replace(",", "").replace("+", "")) for data in client_rates_data]
-    
-    # 1. Forward Rates vs Spot
-    fig_hedging.add_trace(
-        go.Scatter(
-            x=tenors_list,
-            y=[spot_rate] * len(tenors_list),
-            mode='lines',
-            name='Kurs dzisiejszy',
-            line=dict(color='red', width=3, dash='dash'),
-            hovertemplate='Kurs dzisiejszy: %{y:.4f}<extra></extra>'
-        ),
-        row=1, col=1
-    )
-    
-    fig_hedging.add_trace(
-        go.Scatter(
-            x=tenors_list,
-            y=forward_rates,
-            mode='lines+markers',
-            name='Kursy terminowe',
-            line=dict(color='green', width=3),
-            marker=dict(size=10, color='green'),
-            hovertemplate='<b>%{x}</b><br>Kurs terminowy: %{y:.4f}<br>Korzyść: %{customdata:.2f}%<extra></extra>',
-            customdata=rate_advantages
-        ),
-        row=1, col=1
-    )
-    
-    # 2. Hedging Benefit
-    colors = ['green' if x > 0 else 'red' for x in extra_pln]
-    fig_hedging.add_trace(
-        go.Bar(
-            x=tenors_list,
-            y=extra_pln,
-            name='Dodatkowe PLN',
-            marker_color=colors,
-            hovertemplate='<b>%{x}</b><br>Dodatkowe PLN: %{y:,.0f}<extra></extra>'
-        ),
-        row=1, col=2
-    )
-    
-    # 3. Risk Protection Over Time
-    protection_levels = []
-    for i, advantage in enumerate(rate_advantages):
-        if advantage > 0.5:
-            protection_levels.append(95)
-        elif advantage > 0.2:
-            protection_levels.append(80)
-        elif advantage > 0:
-            protection_levels.append(60)
-        else:
-            protection_levels.append(30)
-    
-    fig_hedging.add_trace(
-        go.Scatter(
-            x=tenors_list,
-            y=protection_levels,
-            mode='lines+markers',
-            name='Poziom ochrony',
-            line=dict(color='blue', width=3),
-            marker=dict(size=8),
-            hovertemplate='<b>%{x}</b><br>Ochrona: %{y}%<extra></extra>'
-        ),
-        row=2, col=1
-    )
-    
-    # 4. Recommended Portfolio Split
-    if risk_appetite == "Konserwatywne":
-        hedge_ratio = 80
-        spot_ratio = 20
-    elif risk_appetite == "Zrównoważone":
-        hedge_ratio = 60
-        spot_ratio = 40
-    else:  # Oportunistyczne
-        hedge_ratio = 40
-        spot_ratio = 60
-    
-    fig_hedging.add_trace(
-        go.Pie(
-            labels=['Zabezpieczenie terminowe', 'Pozostaw na spot'],
-            values=[hedge_ratio, spot_ratio],
-            name="Podział portfela",
-            marker_colors=['lightgreen', 'lightcoral'],
-            hovertemplate='<b>%{label}</b><br>%{value}% ekspozycji<br>€%{customdata:,.0f}<extra></extra>',
-            customdata=[exposure_amount * hedge_ratio / 100, exposure_amount * spot_ratio / 100]
-        ),
-        row=2, col=2
-    )
-    
-    # Update layout
-    fig_hedging.update_layout(
-        height=700,
-        showlegend=True,
-        title_text=f"Strategia zabezpieczenia dla €{exposure_amount:,} EUR"
-    )
-    
-    # Update axes
-    fig_hedging.update_xaxes(title_text="Tenor", row=1, col=1)
-    fig_hedging.update_yaxes(title_text="Kurs EUR/PLN", row=1, col=1)
-    fig_hedging.update_xaxes(title_text="Tenor", row=1, col=2)
-    fig_hedging.update_yaxes(title_text="Dodatkowe PLN", row=1, col=2)
-    fig_hedging.update_xaxes(title_text="Tenor", row=2, col=1)
-    fig_hedging.update_yaxes(title_text="Poziom ochrony (%)", row=2, col=1)
-    
-    st.plotly_chart(fig_hedging, use_container_width=True)
-    
-    # ============================================================================
-    # SPERSONALIZOWANE REKOMENDACJE
-    # ============================================================================
-    
-    st.markdown("---")
-    st.subheader("🎯 Twoje Spersonalizowane Rekomendacje")
-    
-    # Calculate best options
     best_rates = df_client_rates[df_client_rates['Rekomendacja'].str.contains('🟢|🟡')].head(3)
     
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.markdown("**📋 Rekomendowana Strategia:**")
-        
-        if risk_appetite == "Konserwatywne":
-            strategy_text = f"""
-            **Podejście konserwatywne dla €{exposure_amount:,}:**
-            
-            🛡️ **Zabezpiecz {hedge_ratio}% natychmiast** (€{exposure_amount * hedge_ratio // 100:,})
-            - Użyj kontraktów {best_rates.iloc[0]['Tenor'] if len(best_rates) > 0 else '6 miesięcy'} dla podstawowej ochrony
-            - Kurs: {best_rates.iloc[0]['Kurs terminowy'] if len(best_rates) > 0 else 'N/A'}
-            - Korzyść: {best_rates.iloc[0]['vs Dzisiaj'] if len(best_rates) > 0 else 'N/A'}
-            
-            ⏳ **Zachowaj {spot_ratio}% elastycznie** (€{exposure_amount * spot_ratio // 100:,})
-            - Monitoruj rynek dla lepszych okazji
-            - Używaj do potrzeb krótkoterminowych
-            
-            💰 **Oczekiwane dodatkowe PLN:** {best_rates.iloc[0]['Dodatkowe PLN'] if len(best_rates) > 0 else 'N/A'}
-            """
-        elif risk_appetite == "Zrównoważone":
-            strategy_text = f"""
-            **Podejście zrównoważone dla €{exposure_amount:,}:**
-            
-            🎯 **Strategia podzielonego zabezpieczenia:**
-            - 30% w kontraktach {best_rates.iloc[0]['Tenor'] if len(best_rates) > 0 else '3 miesiące'} (€{exposure_amount * 30 // 100:,})
-            - 30% w kontraktach {best_rates.iloc[1]['Tenor'] if len(best_rates) > 1 else '6 miesięcy'} (€{exposure_amount * 30 // 100:,})
-            - 40% zachowaj elastycznie (€{exposure_amount * 40 // 100:,})
-            
-            📈 **Zdywersyfikowana ochrona** na różnych terminach
-            
-            💰 **Mieszana korzyść:** Kombinacja kursów i terminów
-            """
-        else:  # Oportunistyczne
-            strategy_text = f"""
-            **Podejście oportunistyczne dla €{exposure_amount:,}:**
-            
-            🎲 **Selektywne zabezpieczenie:**
-            - Zabezpiecz tylko {hedge_ratio}% (€{exposure_amount * hedge_ratio // 100:,})
-            - Skupić się na najlepszej wartości: {best_rates.iloc[0]['Tenor'] if len(best_rates) > 0 else '6 miesięcy'}
-            - Zachowaj {spot_ratio}% na okazje rynkowe
-            
-            🚀 **Wyższe ryzyko, wyższy potencjał zysku**
-            
-            ⚠️ **Ściśle monitoruj rynek** dla optymalnego timingu
-            """
-        
-        st.markdown(strategy_text)
-    
-    with col2:
-        # Risk metrics
-        st.markdown("**📊 Metryki Strategii:**")
-        
-        # Calculate portfolio metrics
-        if len(best_rates) > 0:
-            avg_benefit = df_client_rates['vs Dzisiaj'].str.replace('%', '').str.replace('+', '').astype(float).mean()
-            total_extra_pln = df_client_rates['Dodatkowe PLN'].str.replace(',', '').str.replace('+', '').astype(float).sum()
-            
-            st.metric("Średnia korzyść kursu", f"{avg_benefit:.2f}%")
-            st.metric("Łączne dodatkowe PLN", f"{total_extra_pln:,.0f}")
-            st.metric("Poziom ryzyka", risk_appetite)
-            
-            # Risk warning
-            if avg_benefit < 0:
-                st.warning("⚠️ Aktualne terminowe poniżej spot - rozważ czekanie")
-            elif avg_benefit > 0.5:
-                st.success("✅ Doskonała okazja do zabezpieczenia")
-            else:
-                st.info("ℹ️ Umiarkowana korzyść z zabezpieczenia")
+    if len(best_rates) > 0:
+        st.markdown("**📋 Najlepsze opcje:**")
+        for idx, row in best_rates.iterrows():
+            with st.container():
+                col1, col2, col3 = st.columns([2, 1, 1])
+                with col1:
+                    st.write(f"**{row['Tenor']}** ({row['Okno od']} - {row['Rozliczenie do']})")
+                with col2:
+                    st.write(f"Kurs: **{row['Kurs terminowy']}**")
+                with col3:
+                    st.write(f"Korzyść: **{row['vs Dzisiaj']}**")
     
     # Call to action
     st.markdown("---")
@@ -1617,7 +1424,7 @@ def create_client_hedging_advisor():
         st.markdown("""
         <div class="metric-card" style="text-align: center;">
             <h4>Gotowy chronić swój biznes?</h4>
-            <p>Skontaktuj się z naszymi specjalistami FX, aby wdrożyć strategię zabezpieczenia</p>
+            <p>Skontaktuj się z naszymi specjalistami FX</p>
             <p><strong>📞 +48 22 XXX XXXX | 📧 zabezpieczenia.fx@bank.pl</strong></p>
         </div>
         """, unsafe_allow_html=True)ening"
