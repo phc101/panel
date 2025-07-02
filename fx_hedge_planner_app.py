@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 # ============================================================================
 
 # FRED API Configuration - PLACE YOUR API KEY HERE
-FRED_API_KEY = st.secrets.get("FRED_API_KEY", "f65897ba8bbc5c387dc26081d5b66edf")  # Uses Streamlit secrets or demo
+FRED_API_KEY = st.secrets.get("FRED_API_KEY", "f04a11751a8bb9fed2e9e321aa76e783")  # Uses Streamlit secrets or demo
 
 # Page config
 st.set_page_config(
@@ -1132,11 +1132,422 @@ Avg: {portfolio_avg_profit:.4f} PLN/EUR
             """, unsafe_allow_html=True)
 
 # ============================================================================
-# MAIN APPLICATION ENTRY POINT
+# CLIENT-FACING HEDGING ADVISOR
+# ============================================================================
+
+def create_client_hedging_advisor():
+    """Create simplified client-facing hedging advisor"""
+    
+    st.header("🛡️ EUR/PLN Hedging Advisor")
+    st.markdown("*Protect your business from currency risk with professional forward contracts*")
+    
+    # Load market data
+    with st.spinner("📡 Loading current market rates..."):
+        bond_data = get_fred_bond_data()
+        forex_data = get_eur_pln_rate()
+    
+    # Initialize calculator
+    calculator = APIIntegratedForwardCalculator(FREDAPIClient())
+    
+    # Current market display
+    st.subheader("📊 Current Market Situation")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        spot_rate = forex_data['rate']
+        st.metric(
+            "EUR/PLN Today",
+            f"{spot_rate:.4f}",
+            help="Current exchange rate"
+        )
+    
+    with col2:
+        pl_yield = bond_data['Poland_10Y']['value'] if 'Poland_10Y' in bond_data else 5.70
+        de_yield = bond_data['Germany_9M']['value'] if 'Germany_9M' in bond_data else 2.35
+        spread = pl_yield - de_yield
+        
+        if spread > 3.0:
+            trend_emoji = "📈"
+            trend_text = "PLN strengthening"
+        elif spread > 2.0:
+            trend_emoji = "➡️"
+            trend_text = "Stable trend"
+        else:
+            trend_emoji = "📉"
+            trend_text = "PLN weakening"
+            
+        st.metric(
+            "Market Trend",
+            f"{trend_emoji} {trend_text}",
+            help=f"Based on yield spread: {spread:.1f}pp"
+        )
+    
+    with col3:
+        # Calculate 6M forward as reference
+        forward_6m = calculator.calculate_theoretical_forward_points(spot_rate, pl_yield, de_yield, 180)
+        direction = "stronger" if forward_6m['forward_rate'] > spot_rate else "weaker"
+        
+        st.metric(
+            "6M Outlook",
+            f"PLN {direction}",
+            delta=f"{((forward_6m['forward_rate']/spot_rate - 1) * 100):+.2f}%",
+            help="Expected PLN direction in 6 months"
+        )
+    
+    # Client configuration
+    st.markdown("---")
+    st.subheader("⚙️ Your Hedging Needs")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        exposure_amount = st.number_input(
+            "EUR Amount to Hedge:",
+            value=1_000_000,
+            min_value=100_000,
+            max_value=50_000_000,
+            step=100_000,
+            format="%d",
+            help="Amount of EUR exposure you want to protect"
+        )
+    
+    with col2:
+        hedging_horizon = st.selectbox(
+            "Hedging Period:",
+            ["3 Months", "6 Months", "9 Months", "12 Months", "Custom"],
+            index=1,
+            help="How long do you need protection?"
+        )
+        
+        if hedging_horizon == "Custom":
+            custom_months = st.slider("Months:", 1, 24, 6)
+            horizon_months = custom_months
+        else:
+            horizon_map = {"3 Months": 3, "6 Months": 6, "9 Months": 9, "12 Months": 12}
+            horizon_months = horizon_map[hedging_horizon]
+    
+    with col3:
+        risk_appetite = st.selectbox(
+            "Risk Preference:",
+            ["Conservative", "Balanced", "Opportunistic"],
+            index=1,
+            help="How much risk are you comfortable with?"
+        )
+    
+    # Generate forward curve
+    forward_curve = calculator.generate_api_forward_points_curve(
+        spot_rate, pl_yield, de_yield, 0.002
+    )
+    
+    # ============================================================================
+    # CLIENT FORWARD RATES TABLE
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("💱 Available Forward Rates")
+    st.markdown("*Lock in these rates today for future EUR sales*")
+    
+    # Calculate client rates
+    client_rates_data = []
+    recommended_tenors = []
+    
+    for tenor, curve_data in forward_curve.items():
+        if curve_data["months"] <= horizon_months + 3:  # Show relevant tenors
+            tenor_points = curve_data["mid"]
+            tenor_days = curve_data["days"]
+            
+            # Calculate client rate (simplified - no swap risk complexity for client view)
+            client_swap_risk = calculator.calculate_swap_risk(tenor_days, tenor_points)
+            client_rates = calculator.calculate_professional_rates(
+                spot_rate, tenor_points, client_swap_risk, 0.0
+            )
+            
+            client_rate = client_rates['fwd_client']
+            
+            # Calculate benefit vs spot
+            rate_advantage = ((client_rate - spot_rate) / spot_rate) * 100
+            
+            # Determine recommendation
+            if rate_advantage > 0.5:
+                recommendation = "🟢 Excellent"
+                recommended_tenors.append(tenor)
+            elif rate_advantage > 0.2:
+                recommendation = "🟡 Good"
+            elif rate_advantage > 0:
+                recommendation = "🟠 Fair"
+            else:
+                recommendation = "🔴 Consider spot"
+            
+            # Calculate PLN amount client would receive
+            pln_amount = client_rate * exposure_amount
+            spot_pln_amount = spot_rate * exposure_amount
+            additional_pln = pln_amount - spot_pln_amount
+            
+            client_rates_data.append({
+                "Tenor": tenor,
+                "Period": f"{curve_data['months']} months",
+                "Forward Rate": f"{client_rate:.4f}",
+                "vs Today": f"{rate_advantage:+.2f}%",
+                "PLN Amount": f"{pln_amount:,.0f}",
+                "Extra PLN": f"{additional_pln:+,.0f}" if additional_pln != 0 else "0",
+                "Recommendation": recommendation,
+                "Sort_Order": curve_data['months']
+            })
+    
+    # Create DataFrame and sort by months
+    df_client_rates = pd.DataFrame(client_rates_data)
+    df_client_rates = df_client_rates.sort_values('Sort_Order').drop('Sort_Order', axis=1)
+    
+    # Style the table
+    def highlight_recommendations(row):
+        if "🟢" in str(row['Recommendation']):
+            return ['background-color: #d4edda'] * len(row)  # Green
+        elif "🟡" in str(row['Recommendation']):
+            return ['background-color: #fff3cd'] * len(row)  # Yellow
+        elif "🟠" in str(row['Recommendation']):
+            return ['background-color: #ffeaa7'] * len(row)  # Orange
+        else:
+            return ['background-color: #f8d7da'] * len(row)  # Red
+    
+    st.dataframe(
+        df_client_rates.style.apply(highlight_recommendations, axis=1),
+        use_container_width=True,
+        height=350,
+        hide_index=True
+    )
+    
+    # ============================================================================
+    # HEDGING STRATEGY VISUALIZATION
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("📈 Proposed Hedging Strategy")
+    
+    # Create hedging visualization
+    fig_hedging = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            'Forward Rates vs Spot Rate',
+            'Your Hedging Benefit',
+            'Risk Protection Over Time',
+            'Recommended Portfolio Split'
+        ),
+        specs=[[{"secondary_y": False}, {"secondary_y": False}],
+               [{"secondary_y": False}, {"type": "pie"}]]
+    )
+    
+    # Extract data for charts
+    tenors_list = [data["Tenor"] for data in client_rates_data]
+    months_list = [data["Period"].replace(" months", "M") for data in client_rates_data]
+    forward_rates = [float(data["Forward Rate"]) for data in client_rates_data]
+    rate_advantages = [float(data["vs Today"].replace("%", "").replace("+", "")) for data in client_rates_data]
+    extra_pln = [float(data["Extra PLN"].replace(",", "").replace("+", "")) for data in client_rates_data]
+    
+    # 1. Forward Rates vs Spot
+    fig_hedging.add_trace(
+        go.Scatter(
+            x=months_list,
+            y=[spot_rate] * len(months_list),
+            mode='lines',
+            name='Today\'s Rate',
+            line=dict(color='red', width=3, dash='dash'),
+            hovertemplate='Today\'s Rate: %{y:.4f}<extra></extra>'
+        ),
+        row=1, col=1
+    )
+    
+    fig_hedging.add_trace(
+        go.Scatter(
+            x=months_list,
+            y=forward_rates,
+            mode='lines+markers',
+            name='Forward Rates',
+            line=dict(color='green', width=3),
+            marker=dict(size=10, color='green'),
+            hovertemplate='<b>%{x}</b><br>Forward Rate: %{y:.4f}<br>Benefit: %{customdata:.2f}%<extra></extra>',
+            customdata=rate_advantages
+        ),
+        row=1, col=1
+    )
+    
+    # 2. Hedging Benefit
+    colors = ['green' if x > 0 else 'red' for x in extra_pln]
+    fig_hedging.add_trace(
+        go.Bar(
+            x=months_list,
+            y=extra_pln,
+            name='Additional PLN',
+            marker_color=colors,
+            hovertemplate='<b>%{x}</b><br>Extra PLN: %{y:,.0f}<extra></extra>'
+        ),
+        row=1, col=2
+    )
+    
+    # 3. Risk Protection Over Time
+    protection_levels = []
+    for i, advantage in enumerate(rate_advantages):
+        if advantage > 0.5:
+            protection_levels.append(95)
+        elif advantage > 0.2:
+            protection_levels.append(80)
+        elif advantage > 0:
+            protection_levels.append(60)
+        else:
+            protection_levels.append(30)
+    
+    fig_hedging.add_trace(
+        go.Scatter(
+            x=months_list,
+            y=protection_levels,
+            mode='lines+markers',
+            name='Protection Level',
+            line=dict(color='blue', width=3),
+            marker=dict(size=8),
+            hovertemplate='<b>%{x}</b><br>Protection: %{y}%<extra></extra>'
+        ),
+        row=2, col=1
+    )
+    
+    # 4. Recommended Portfolio Split
+    if risk_appetite == "Conservative":
+        hedge_ratio = 80
+        spot_ratio = 20
+    elif risk_appetite == "Balanced":
+        hedge_ratio = 60
+        spot_ratio = 40
+    else:  # Opportunistic
+        hedge_ratio = 40
+        spot_ratio = 60
+    
+    fig_hedging.add_trace(
+        go.Pie(
+            labels=['Hedge with Forwards', 'Keep at Spot'],
+            values=[hedge_ratio, spot_ratio],
+            name="Portfolio Split",
+            marker_colors=['lightgreen', 'lightcoral'],
+            hovertemplate='<b>%{label}</b><br>%{value}% of exposure<br>€%{customdata:,.0f}<extra></extra>',
+            customdata=[exposure_amount * hedge_ratio / 100, exposure_amount * spot_ratio / 100]
+        ),
+        row=2, col=2
+    )
+    
+    # Update layout
+    fig_hedging.update_layout(
+        height=700,
+        showlegend=True,
+        title_text=f"Hedging Strategy for €{exposure_amount:,} EUR Exposure"
+    )
+    
+    # Update axes
+    fig_hedging.update_xaxes(title_text="Maturity", row=1, col=1)
+    fig_hedging.update_yaxes(title_text="EUR/PLN Rate", row=1, col=1)
+    fig_hedging.update_xaxes(title_text="Maturity", row=1, col=2)
+    fig_hedging.update_yaxes(title_text="Additional PLN", row=1, col=2)
+    fig_hedging.update_xaxes(title_text="Maturity", row=2, col=1)
+    fig_hedging.update_yaxes(title_text="Protection Level (%)", row=2, col=1)
+    
+    st.plotly_chart(fig_hedging, use_container_width=True)
+    
+    # ============================================================================
+    # PERSONALIZED RECOMMENDATIONS
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("🎯 Your Personalized Recommendations")
+    
+    # Calculate best options
+    best_rates = df_client_rates[df_client_rates['Recommendation'].str.contains('🟢|🟡')].head(3)
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("**📋 Recommended Strategy:**")
+        
+        if risk_appetite == "Conservative":
+            strategy_text = f"""
+            **Conservative Approach for €{exposure_amount:,}:**
+            
+            🛡️ **Hedge {hedge_ratio}% immediately** (€{exposure_amount * hedge_ratio // 100:,})
+            - Use {best_rates.iloc[0]['Tenor'] if len(best_rates) > 0 else '6M'} forwards for core protection
+            - Rate: {best_rates.iloc[0]['Forward Rate'] if len(best_rates) > 0 else 'N/A'}
+            - Benefit: {best_rates.iloc[0]['vs Today'] if len(best_rates) > 0 else 'N/A'}
+            
+            ⏳ **Keep {spot_ratio}% flexible** (€{exposure_amount * spot_ratio // 100:,})
+            - Monitor market for better opportunities
+            - Use for short-term needs
+            
+            💰 **Expected Additional PLN:** {best_rates.iloc[0]['Extra PLN'] if len(best_rates) > 0 else 'N/A'}
+            """
+        elif risk_appetite == "Balanced":
+            strategy_text = f"""
+            **Balanced Approach for €{exposure_amount:,}:**
+            
+            🎯 **Split hedging strategy:**
+            - 30% in {best_rates.iloc[0]['Tenor'] if len(best_rates) > 0 else '3M'} forwards (€{exposure_amount * 30 // 100:,})
+            - 30% in {best_rates.iloc[1]['Tenor'] if len(best_rates) > 1 else '6M'} forwards (€{exposure_amount * 30 // 100:,})
+            - 40% keep flexible (€{exposure_amount * 40 // 100:,})
+            
+            📈 **Diversified protection** across multiple maturities
+            
+            💰 **Blended benefit:** Mix of rates and timing
+            """
+        else:  # Opportunistic
+            strategy_text = f"""
+            **Opportunistic Approach for €{exposure_amount:,}:**
+            
+            🎲 **Selective hedging:**
+            - Hedge only {hedge_ratio}% (€{exposure_amount * hedge_ratio // 100:,})
+            - Focus on best value: {best_rates.iloc[0]['Tenor'] if len(best_rates) > 0 else '6M'}
+            - Keep {spot_ratio}% for market opportunities
+            
+            🚀 **Higher risk, higher reward potential**
+            
+            ⚠️ **Monitor market closely** for optimal timing
+            """
+        
+        st.markdown(strategy_text)
+    
+    with col2:
+        # Risk metrics
+        st.markdown("**📊 Strategy Metrics:**")
+        
+        # Calculate portfolio metrics
+        if len(best_rates) > 0:
+            avg_benefit = df_client_rates['vs Today'].str.replace('%', '').str.replace('+', '').astype(float).mean()
+            total_extra_pln = df_client_rates['Extra PLN'].str.replace(',', '').str.replace('+', '').astype(float).sum()
+            
+            st.metric("Avg Rate Benefit", f"{avg_benefit:.2f}%")
+            st.metric("Total Extra PLN", f"{total_extra_pln:,.0f}")
+            st.metric("Risk Level", risk_appetite)
+            
+            # Risk warning
+            if avg_benefit < 0:
+                st.warning("⚠️ Current forwards below spot - consider waiting")
+            elif avg_benefit > 0.5:
+                st.success("✅ Excellent hedging opportunity")
+            else:
+                st.info("ℹ️ Moderate hedging benefit available")
+    
+    # Call to action
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("""
+        <div class="metric-card" style="text-align: center;">
+            <h4>Ready to Protect Your Business?</h4>
+            <p>Contact our FX specialists to implement your hedging strategy</p>
+            <p><strong>📞 +48 22 XXX XXXX | 📧 fx.hedging@bank.pl</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
+
+# ============================================================================
+# MAIN APPLICATION WITH TABS
 # ============================================================================
 
 def main():
-    """Main application entry point"""
+    """Main application entry point with tabs"""
     
     # Header
     st.markdown("""
@@ -1144,14 +1555,20 @@ def main():
         <div style="background: linear-gradient(45deg, #667eea, #764ba2); width: 60px; height: 60px; border-radius: 10px; margin-right: 1rem; display: flex; align-items: center; justify-content: center;">
             <span style="font-size: 2rem;">🚀</span>
         </div>
-        <h1 style="margin: 0; color: #2c3e50;">Professional FX Trading Calculator</h1>
+        <h1 style="margin: 0; color: #2c3e50;">Professional FX Trading Platform</h1>
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown("*Advanced Window Forward Pricing with Real-Time API Integration*")
+    st.markdown("*Advanced Window Forward Pricing & Client Hedging Solutions*")
     
-    # Run the main calculator
-    create_professional_window_forward_tab()
+    # Create tabs
+    tab1, tab2 = st.tabs(["🔧 Professional Trading Dashboard", "🛡️ Client Hedging Advisor"])
+    
+    with tab1:
+        create_professional_window_forward_tab()
+    
+    with tab2:
+        create_client_hedging_advisor()
 
 # ============================================================================
 # RUN APPLICATION
