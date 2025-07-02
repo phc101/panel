@@ -679,6 +679,40 @@ def create_dealer_panel():
         
         st.subheader("📊 Podsumowanie Portfolio")
         
+        # First row - PLN amounts
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "Portfolio Min Zysk", 
+                f"{portfolio_totals['total_min_profit']:,.0f} PLN",
+                help="Suma wszystkich gwarantowanych bank spreads"
+            )
+        
+        with col2:
+            st.metric(
+                "Portfolio Oczekiwany", 
+                f"{portfolio_totals['total_expected_profit']:,.0f} PLN",
+                help="Średnia scenariuszy min/max"
+            )
+        
+        with col3:
+            st.metric(
+                "Portfolio Max Zysk", 
+                f"{portfolio_totals['total_max_profit']:,.0f} PLN",
+                help="Suma bank spreads + oszczędności hedging"
+            )
+        
+        with col4:
+            st.metric(
+                "Zakres Zysku", 
+                f"{portfolio_totals['total_max_profit'] - portfolio_totals['total_min_profit']:,.0f} PLN",
+                help="Zmienność całego portfolio"
+            )
+        
+        # Second row - percentage metrics
+        st.markdown("### 📊 Marże Procentowe")
+        
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
@@ -686,7 +720,7 @@ def create_dealer_panel():
             <div class="profit-metric">
                 <h4 style="margin: 0; color: white;">Min Marża</h4>
                 <h2 style="margin: 0; color: white;">{min_profit_pct:.3f}%</h2>
-                <p style="margin: 0; color: #f8f9fa;">{portfolio_totals['total_min_profit']:,.0f} PLN</p>
+                <p style="margin: 0; color: #f8f9fa;">vs całkowita ekspozycja</p>
             </div>
             """, unsafe_allow_html=True)
         
@@ -695,7 +729,7 @@ def create_dealer_panel():
             <div class="profit-metric" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
                 <h4 style="margin: 0; color: white;">Oczekiwana Marża</h4>
                 <h2 style="margin: 0; color: white;">{expected_profit_pct:.3f}%</h2>
-                <p style="margin: 0; color: #f8f9fa;">{portfolio_totals['total_expected_profit']:,.0f} PLN</p>
+                <p style="margin: 0; color: #f8f9fa;">realistyczny scenariusz</p>
             </div>
             """, unsafe_allow_html=True)
         
@@ -704,7 +738,7 @@ def create_dealer_panel():
             <div class="profit-metric" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
                 <h4 style="margin: 0; color: white;">Max Marża</h4>
                 <h2 style="margin: 0; color: white;">{max_profit_pct:.3f}%</h2>
-                <p style="margin: 0; color: #f8f9fa;">{portfolio_totals['total_max_profit']:,.0f} PLN</p>
+                <p style="margin: 0; color: #f8f9fa;">optymistyczny scenariusz</p>
             </div>
             """, unsafe_allow_html=True)
         
@@ -717,6 +751,76 @@ def create_dealer_panel():
                 <p style="margin: 0;">zakres zmienności</p>
             </div>
             """, unsafe_allow_html=True)
+        
+        # Additional portfolio metrics
+        st.markdown("### ⚙️ Parametry Portfolio")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        portfolio_avg_points = portfolio_totals['total_points_to_window'] / portfolio_totals['total_notional']
+        portfolio_avg_swap_risk = portfolio_totals['total_swap_risk'] / portfolio_totals['total_notional']
+        portfolio_avg_client_rate = spot_rate + portfolio_avg_points * points_factor - portfolio_avg_swap_risk * risk_factor
+        
+        with col1:
+            st.metric(
+                "Średnie Punkty", 
+                f"{portfolio_avg_points:.4f}",
+                help="Średnia ważona punktów terminowych"
+            )
+        
+        with col2:
+            st.metric(
+                "Średnie Ryzyko Swap", 
+                f"{portfolio_avg_swap_risk:.4f}",
+                help=f"Średnie ryzyko swap dla {window_days}-dniowych okien"
+            )
+        
+        with col3:
+            st.metric(
+                "Średni Kurs Klienta", 
+                f"{portfolio_avg_client_rate:.4f}",
+                help="Średni kurs klienta w portfolio"
+            )
+        
+        with col4:
+            risk_reward_ratio = portfolio_totals['total_max_profit'] / portfolio_totals['total_min_profit'] if portfolio_totals['total_min_profit'] > 0 else float('inf')
+            st.metric(
+                "Risk/Reward", 
+                f"{risk_reward_ratio:.1f}x",
+                help="Stosunek max/min zysku"
+            )
+        
+        # Deal summary
+        st.markdown("---")
+        st.subheader("📋 Podsumowanie Transakcji")
+        
+        with st.container():
+            summary_col1, summary_col2 = st.columns([1, 1])
+            
+            with summary_col1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>💼 Strategia Portfolio Window Forward</h4>
+                    <p><strong>Strategia:</strong> 12 Window Forwards z {window_days}-dniową elastycznością</p>
+                    <p><strong>Całkowity Nominał:</strong> €{portfolio_totals['total_notional']:,}</p>
+                    <p><strong>Kurs Spot:</strong> {spot_rate:.4f} ({spot_source})</p>
+                    <p><strong>Średni Kurs Klienta:</strong> {portfolio_avg_client_rate:.4f}</p>
+                    <p><strong>Points Factor:</strong> {points_factor:.1%}</p>
+                    <p><strong>Risk Factor:</strong> {risk_factor:.1%}</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with summary_col2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>💰 Podsumowanie Finansowe</h4>
+                    <p><strong>Oczekiwany Zysk:</strong> {portfolio_totals['total_expected_profit']:,.0f} PLN ({expected_profit_pct:.3f}%)</p>
+                    <p><strong>Portfolio Minimum:</strong> {portfolio_totals['total_min_profit']:,.0f} PLN ({min_profit_pct:.3f}%)</p>
+                    <p><strong>Portfolio Maximum:</strong> {portfolio_totals['total_max_profit']:,.0f} PLN ({max_profit_pct:.3f}%)</p>
+                    <p><strong>Współczynnik Zmienności:</strong> {volatility_factor:.2f}</p>
+                    <p><strong>Oszczędności Hedging:</strong> {hedging_savings_pct:.0%}</p>
+                    <p><strong>Dźwignia:</strong> {leverage}x</p>
+                </div>
+                """, unsafe_allow_html=True)
     
     else:
         st.info("👆 Kliknij 'Zaktualizuj Wycenę' aby wygenerować kursy dla klientów")
