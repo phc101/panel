@@ -34,6 +34,14 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] {
         gap: 24px;
     }
+    .profit-metric {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 0.5rem 0;
+        text-align: center;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -368,6 +376,39 @@ def create_client_hedging_advisor():
         bond_data = get_fred_bond_data()
         forex_data = get_eur_pln_rate()
     
+    # ============================================================================
+    # MANUAL SPOT RATE CONTROL FOR CLIENT ADVISOR
+    # ============================================================================
+    st.subheader("⚙️ Konfiguracja Kursu")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        use_manual_spot_client = st.checkbox(
+            "Ustaw kurs ręcznie", 
+            value=False,
+            key="client_manual_spot",
+            help="Odznacz aby używać automatycznego kursu z NBP"
+        )
+    
+    with col2:
+        if use_manual_spot_client:
+            spot_rate_client = st.number_input(
+                "Kurs EUR/PLN:",
+                value=forex_data['rate'],
+                min_value=3.50,
+                max_value=6.00,
+                step=0.0001,
+                format="%.4f",
+                key="client_spot_input",
+                help="Wprowadź własny kurs spot do wyceny"
+            )
+            spot_source_client = "Manual"
+        else:
+            spot_rate_client = forex_data['rate']
+            spot_source_client = forex_data['source']
+            st.info(f"Automatyczny kurs: {spot_rate_client:.4f} (źródło: {spot_source_client})")
+    
     # Initialize calculator
     calculator = APIIntegratedForwardCalculator(FREDAPIClient())
     
@@ -377,11 +418,10 @@ def create_client_hedging_advisor():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        spot_rate = forex_data['rate']
         st.metric(
-            "EUR/PLN Dzisiaj",
-            f"{spot_rate:.4f}",
-            help="Aktualny kurs wymiany"
+            "EUR/PLN Spot",
+            f"{spot_rate_client:.4f}",
+            help=f"Źródło: {spot_source_client}"
         )
     
     with col2:
@@ -407,13 +447,13 @@ def create_client_hedging_advisor():
     
     with col3:
         # Calculate 6M forward as reference
-        forward_6m = calculator.calculate_theoretical_forward_points(spot_rate, pl_yield, de_yield, 180)
-        direction = "silniejszy" if forward_6m['forward_rate'] > spot_rate else "słabszy"
+        forward_6m = calculator.calculate_theoretical_forward_points(spot_rate_client, pl_yield, de_yield, 180)
+        direction = "silniejszy" if forward_6m['forward_rate'] > spot_rate_client else "słabszy"
         
         st.metric(
             "Prognoza 6M",
             f"PLN {direction}",
-            delta=f"{((forward_6m['forward_rate']/spot_rate - 1) * 100):+.2f}%",
+            delta=f"{((forward_6m['forward_rate']/spot_rate_client - 1) * 100):+.2f}%",
             help="Oczekiwany kierunek PLN w 6 miesięcy"
         )
     
@@ -427,9 +467,9 @@ def create_client_hedging_advisor():
         exposure_amount = st.number_input(
             "Kwota EUR do zabezpieczenia:",
             value=1_000_000,
-            min_value=10_000,  # Zmienione z 100_000 na 10_000
+            min_value=10_000,
             max_value=50_000_000,
-            step=10_000,  # Zmniejszony step
+            step=10_000,
             format="%d",
             help="Kwota ekspozycji EUR, którą chcesz zabezpieczyć"
         )
@@ -459,7 +499,7 @@ def create_client_hedging_advisor():
     
     # Generate forward curve
     forward_curve = calculator.generate_api_forward_points_curve(
-        spot_rate, pl_yield, de_yield, 0.002
+        spot_rate_client, pl_yield, de_yield, 0.002
     )
     
     # ============================================================================
@@ -474,20 +514,19 @@ def create_client_hedging_advisor():
     client_rates_data = []
     
     for tenor_key, curve_data in forward_curve.items():
-        # Show ALL tenors regardless of horizon (remove filter)
         tenor_points = curve_data["mid"]
         tenor_days = curve_data["days"]
         
         # Calculate client rate (simplified - no swap risk complexity for client view)
         client_swap_risk = calculator.calculate_swap_risk(tenor_days, tenor_points)
         client_rates = calculator.calculate_professional_rates(
-            spot_rate, tenor_points, client_swap_risk, 0.0
+            spot_rate_client, tenor_points, client_swap_risk, 0.0
         )
         
         client_rate = client_rates['fwd_client']
         
         # Calculate benefit vs spot
-        rate_advantage = ((client_rate - spot_rate) / spot_rate) * 100
+        rate_advantage = ((client_rate - spot_rate_client) / spot_rate_client) * 100
         
         # Determine recommendation
         if rate_advantage > 0.5:
@@ -501,7 +540,7 @@ def create_client_hedging_advisor():
         
         # Calculate PLN amount client would receive
         pln_amount = client_rate * exposure_amount
-        spot_pln_amount = spot_rate * exposure_amount
+        spot_pln_amount = spot_rate_client * exposure_amount
         additional_pln = pln_amount - spot_pln_amount
         
         client_rates_data.append({
@@ -509,7 +548,7 @@ def create_client_hedging_advisor():
             "Okno od": curve_data["okno_od"],
             "Rozliczenie do": curve_data["rozliczenie_do"],
             "Kurs terminowy": f"{client_rate:.4f}",
-            "vs Dzisiaj": f"{rate_advantage:+.2f}%",
+            "vs Spot": f"{rate_advantage:+.2f}%",
             "Kwota PLN": f"{pln_amount:,.0f}",
             "Dodatkowe PLN": f"{additional_pln:+,.0f}" if additional_pln != 0 else "0",
             "Rekomendacja": recommendation,
@@ -552,9 +591,9 @@ def create_client_hedging_advisor():
     fig.add_trace(
         go.Scatter(
             x=tenors_list,
-            y=[spot_rate] * len(tenors_list),
+            y=[spot_rate_client] * len(tenors_list),
             mode='lines',
-            name='Kurs dzisiejszy',
+            name='Kurs spot',
             line=dict(color='red', width=3, dash='dash')
         )
     )
@@ -572,7 +611,7 @@ def create_client_hedging_advisor():
     )
     
     fig.update_layout(
-        title="Kursy terminowe vs kurs dzisiejszy",
+        title="Kursy terminowe vs kurs spot",
         xaxis_title="Tenor",
         yaxis_title="Kurs EUR/PLN",
         height=400
@@ -596,7 +635,7 @@ def create_client_hedging_advisor():
                 with col2:
                     st.write(f"Kurs: **{row['Kurs terminowy']}**")
                 with col3:
-                    st.write(f"Korzyść: **{row['vs Dzisiaj']}**")
+                    st.write(f"Korzyść: **{row['vs Spot']}**")
     
     # Call to action
     st.markdown("---")
@@ -642,6 +681,39 @@ def create_dealer_panel():
         bond_data = get_fred_bond_data()
         forex_data = get_eur_pln_rate()
     
+    # ============================================================================
+    # MANUAL SPOT RATE CONTROL FOR DEALER PANEL
+    # ============================================================================
+    st.subheader("⚙️ Kontrola Kursu Spot")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        use_manual_spot = st.checkbox(
+            "Ustaw kurs ręcznie", 
+            value=False,
+            key="dealer_manual_spot",
+            help="Odznacz aby używać automatycznego kursu z NBP"
+        )
+    
+    with col2:
+        if use_manual_spot:
+            spot_rate = st.number_input(
+                "Kurs EUR/PLN:",
+                value=forex_data['rate'],
+                min_value=3.50,
+                max_value=6.00,
+                step=0.0001,
+                format="%.4f",
+                key="dealer_spot_input",
+                help="Wprowadź własny kurs spot do wyceny"
+            )
+            spot_source = "Manual"
+        else:
+            spot_rate = forex_data['rate']
+            spot_source = forex_data['source']
+            st.info(f"Automatyczny kurs: {spot_rate:.4f} (źródło: {spot_source})")
+    
     # Initialize calculator
     calculator = APIIntegratedForwardCalculator(FREDAPIClient())
     
@@ -653,11 +725,10 @@ def create_dealer_panel():
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        spot_rate = forex_data['rate']
         st.metric(
             "EUR/PLN Spot",
             f"{spot_rate:.4f}",
-            help=f"Źródło: {forex_data['source']} | Aktualizacja: {forex_data['date']}"
+            help=f"Źródło: {spot_source} | Aktualizacja: {forex_data['date']}"
         )
     
     with col2:
@@ -890,13 +961,19 @@ def create_dealer_panel():
     )
     
     # ============================================================================
-    # PORTFOLIO SUMMARY
+    # ENHANCED PORTFOLIO SUMMARY WITH PERCENTAGE METRICS
     # ============================================================================
     
     st.markdown("---")
     st.subheader("💼 Podsumowanie Portfolio")
     
-    # Portfolio summary metrics
+    # Calculate percentage metrics relative to spot
+    total_exposure_pln = spot_rate * portfolio_totals['total_notional']
+    min_profit_pct = (portfolio_totals['total_min_profit'] / total_exposure_pln) * 100
+    expected_profit_pct = (portfolio_totals['total_expected_profit'] / total_exposure_pln) * 100
+    max_profit_pct = (portfolio_totals['total_max_profit'] / total_exposure_pln) * 100
+    
+    # Portfolio summary metrics - First row with PLN amounts
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -908,16 +985,16 @@ def create_dealer_panel():
     
     with col2:
         st.metric(
-            "Portfolio Max Zysk", 
-            f"{portfolio_totals['total_max_profit']:,.0f} PLN",
-            help="Suma bank spreads + oszczędności hedging"
+            "Portfolio Oczekiwany", 
+            f"{portfolio_totals['total_expected_profit']:,.0f} PLN",
+            help="Średnia scenariuszy min/max"
         )
     
     with col3:
         st.metric(
-            "Portfolio Oczekiwany", 
-            f"{portfolio_totals['total_expected_profit']:,.0f} PLN",
-            help="Średnia scenariuszy min/max"
+            "Portfolio Max Zysk", 
+            f"{portfolio_totals['total_max_profit']:,.0f} PLN",
+            help="Suma bank spreads + oszczędności hedging"
         )
     
     with col4:
@@ -927,7 +1004,50 @@ def create_dealer_panel():
             help="Zmienność całego portfolio"
         )
     
+    # Second row with percentage metrics
+    st.markdown("### 📊 Marże Procentowe")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="profit-metric">
+            <h4 style="margin: 0; color: white;">Min Marża</h4>
+            <h2 style="margin: 0; color: white;">{min_profit_pct:.3f}%</h2>
+            <p style="margin: 0; color: #f8f9fa;">vs całkowita ekspozycja</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="profit-metric" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+            <h4 style="margin: 0; color: white;">Oczekiwana Marża</h4>
+            <h2 style="margin: 0; color: white;">{expected_profit_pct:.3f}%</h2>
+            <p style="margin: 0; color: #f8f9fa;">realistyczny scenariusz</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown(f"""
+        <div class="profit-metric" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <h4 style="margin: 0; color: white;">Max Marża</h4>
+            <h2 style="margin: 0; color: white;">{max_profit_pct:.3f}%</h2>
+            <p style="margin: 0; color: #f8f9fa;">optymistyczny scenariusz</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        margin_volatility = max_profit_pct - min_profit_pct
+        st.markdown(f"""
+        <div class="profit-metric" style="background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%); color: #2d3436;">
+            <h4 style="margin: 0;">Volatility Marży</h4>
+            <h2 style="margin: 0;">{margin_volatility:.3f}pp</h2>
+            <p style="margin: 0;">zakres zmienności</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
     # Additional portfolio metrics
+    st.markdown("### ⚙️ Parametry Portfolio")
     col1, col2, col3, col4 = st.columns(4)
     
     portfolio_avg_points = portfolio_totals['total_points_to_window'] / portfolio_totals['total_notional']
@@ -976,7 +1096,7 @@ def create_dealer_panel():
                 <h4>💼 Strategia Portfolio Window Forward</h4>
                 <p><strong>Strategia:</strong> 12 Window Forwards z {window_days}-dniową elastycznością</p>
                 <p><strong>Całkowity Nominał:</strong> €{portfolio_totals['total_notional']:,}</p>
-                <p><strong>Kurs Spot:</strong> {spot_rate:.4f}</p>
+                <p><strong>Kurs Spot:</strong> {spot_rate:.4f} ({spot_source})</p>
                 <p><strong>Średni Kurs Klienta:</strong> {portfolio_avg_client_rate:.4f}</p>
                 <p><strong>Points Factor:</strong> {points_factor:.1%}</p>
                 <p><strong>Risk Factor:</strong> {risk_factor:.1%}</p>
@@ -987,9 +1107,9 @@ def create_dealer_panel():
             st.markdown(f"""
             <div class="metric-card">
                 <h4>💰 Podsumowanie Finansowe</h4>
-                <p><strong>Oczekiwany Zysk:</strong> {portfolio_totals['total_expected_profit']:,.0f} PLN</p>
-                <p><strong>Portfolio Minimum:</strong> {portfolio_totals['total_min_profit']:,.0f} PLN</p>
-                <p><strong>Portfolio Maximum:</strong> {portfolio_totals['total_max_profit']:,.0f} PLN</p>
+                <p><strong>Oczekiwany Zysk:</strong> {portfolio_totals['total_expected_profit']:,.0f} PLN ({expected_profit_pct:.3f}%)</p>
+                <p><strong>Portfolio Minimum:</strong> {portfolio_totals['total_min_profit']:,.0f} PLN ({min_profit_pct:.3f}%)</p>
+                <p><strong>Portfolio Maximum:</strong> {portfolio_totals['total_max_profit']:,.0f} PLN ({max_profit_pct:.3f}%)</p>
                 <p><strong>Współczynnik Zmienności:</strong> {volatility_factor:.2f}</p>
                 <p><strong>Oszczędności Hedging:</strong> {hedging_savings_pct:.0%}</p>
                 <p><strong>Dźwignia:</strong> {leverage}x</p>
