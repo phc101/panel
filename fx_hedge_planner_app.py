@@ -223,98 +223,30 @@ class APIIntegratedForwardCalculator:
     def __init__(self, fred_client):
         self.fred_client = fred_client
         
-        # Polskie nazwy tenorów z datami
-        today = datetime.now()
-        self.tenors = {
-            "1M": {
-                "name": "1 miesiąc",
-                "months": 1,
-                "days": 30,
-                "okno_od": (today + timedelta(days=30)).strftime("%d.%m.%Y"),
-                "rozliczenie_do": (today + timedelta(days=60)).strftime("%d.%m.%Y")
-            },
-            "2M": {
-                "name": "2 miesiące", 
-                "months": 2,
-                "days": 60,
-                "okno_od": (today + timedelta(days=60)).strftime("%d.%m.%Y"),
-                "rozliczenie_do": (today + timedelta(days=90)).strftime("%d.%m.%Y")
-            },
-            "3M": {
-                "name": "3 miesiące",
-                "months": 3, 
-                "days": 90,
-                "okno_od": (today + timedelta(days=90)).strftime("%d.%m.%Y"),
-                "rozliczenie_do": (today + timedelta(days=120)).strftime("%d.%m.%Y")
-            },
-            "4M": {
-                "name": "4 miesiące",
-                "months": 4,
-                "days": 120,
-                "okno_od": (today + timedelta(days=120)).strftime("%d.%m.%Y"),
-                "rozliczenie_do": (today + timedelta(days=150)).strftime("%d.%m.%Y")
-            },
-            "5M": {
-                "name": "5 miesięcy",
-                "months": 5,
-                "days": 150,
-                "okno_od": (today + timedelta(days=150)).strftime("%d.%m.%Y"),
-                "rozliczenie_do": (today + timedelta(days=180)).strftime("%d.%m.%Y")
-            },
-            "6M": {
-                "name": "6 miesięcy",
-                "months": 6,
-                "days": 180,
-                "okno_od": (today + timedelta(days=180)).strftime("%d.%m.%Y"),
-                "rozliczenie_do": (today + timedelta(days=210)).strftime("%d.%m.%Y")
-            },
-            "7M": {
-                "name": "7 miesięcy",
-                "months": 7,
-                "days": 210,
-                "okno_od": (today + timedelta(days=210)).strftime("%d.%m.%Y"),
-                "rozliczenie_do": (today + timedelta(days=240)).strftime("%d.%m.%Y")
-            },
-            "8M": {
-                "name": "8 miesięcy",
-                "months": 8,
-                "days": 240,
-                "okno_od": (today + timedelta(days=240)).strftime("%d.%m.%Y"),
-                "rozliczenie_do": (today + timedelta(days=270)).strftime("%d.%m.%Y")
-            },
-            "9M": {
-                "name": "9 miesięcy",
-                "months": 9,
-                "days": 270,
-                "okno_od": (today + timedelta(days=270)).strftime("%d.%m.%Y"),
-                "rozliczenie_do": (today + timedelta(days=300)).strftime("%d.%m.%Y")
-            },
-            "10M": {
-                "name": "10 miesięcy",
-                "months": 10,
-                "days": 300,
-                "okno_od": (today + timedelta(days=300)).strftime("%d.%m.%Y"),
-                "rozliczenie_do": (today + timedelta(days=330)).strftime("%d.%m.%Y")
-            },
-            "11M": {
-                "name": "11 miesięcy", 
-                "months": 11,
-                "days": 330,
-                "okno_od": (today + timedelta(days=330)).strftime("%d.%m.%Y"),
-                "rozliczenie_do": (today + timedelta(days=360)).strftime("%d.%m.%Y")
-            },
-            "12M": {
-                "name": "12 miesięcy",
-                "months": 12,
-                "days": 360,
-                "okno_od": (today + timedelta(days=360)).strftime("%d.%m.%Y"),
-                "rozliczenie_do": (today + timedelta(days=390)).strftime("%d.%m.%Y")
-            }
-        }
-        
         # Professional pricing parameters
         self.points_factor = 0.70  # Client gets 70% of forward points
         self.risk_factor = 0.40    # Bank charges 40% of swap risk
+    
+    def get_tenors_with_window(self, window_days):
+        """Generate tenors with proper window calculation"""
+        today = datetime.now()
+        tenors = {}
+        
+        for i in range(1, 13):  # 1-12 months
+            tenor_key = f"{i}M"
+            tenor_start = today + timedelta(days=i*30)  # Start of tenor
+            window_start = tenor_start  # Window starts at tenor start
+            window_end = tenor_start + timedelta(days=window_days)  # Window ends after window_days
+            
+            tenors[tenor_key] = {
+                "name": f"{i} {'miesiąc' if i == 1 else 'miesiące' if i <= 4 else 'miesięcy'}",
+                "months": i,
+                "days": i * 30,
+                "okno_od": window_start.strftime("%d.%m.%Y"),
+                "rozliczenie_do": window_end.strftime("%d.%m.%Y")
+            }
+        
+        return tenors
     
     def calculate_theoretical_forward_points(self, spot_rate, pl_yield, de_yield, days):
         """Calculate theoretical forward points using bond yield spreads"""
