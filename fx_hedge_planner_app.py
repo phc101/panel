@@ -994,9 +994,9 @@ def create_client_hedging_advisor():
         with col3:
             st.markdown(f"""
             <div class="client-summary client-summary-purple">
-                <h4 style="margin: 0;">Nominalna Wartość Zabezpieczenia</h4>
-                <h2 style="margin: 0;">{portfolio_hedged_pln:,.0f}</h2>
-                <p style="margin: 0;">PLN z {exposure_amount:,} EUR</p>
+                <h4 style="margin: 0;">Zysk Nominalny vs Spot</h4>
+                <h2 style="margin: 0;">{portfolio_total_benefit:+,.0f}</h2>
+                <p style="margin: 0;">PLN z całego zabezpieczenia</p>
             </div>
             """, unsafe_allow_html=True)
         
