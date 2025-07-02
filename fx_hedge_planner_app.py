@@ -634,7 +634,10 @@ def create_dealer_panel():
             'total_min_profit': 0,
             'total_max_profit': 0,
             'total_expected_profit': 0,
-            'total_notional': 0
+            'total_notional': 0,
+            'total_points_to_window': 0,
+            'total_swap_risk': 0,
+            'total_client_premium': 0
         }
         
         for pricing in st.session_state.dealer_pricing_data:
@@ -651,6 +654,9 @@ def create_dealer_panel():
             portfolio_totals['total_max_profit'] += window_max_profit_total
             portfolio_totals['total_expected_profit'] += window_expected_profit_total
             portfolio_totals['total_notional'] += nominal_amount
+            portfolio_totals['total_points_to_window'] += pricing['forward_points'] * nominal_amount
+            portfolio_totals['total_swap_risk'] += pricing['swap_risk'] * nominal_amount
+            portfolio_totals['total_client_premium'] += (pricing['client_rate'] - spot_rate) * nominal_amount
             
             pricing_df_data.append({
                 "Tenor": pricing['tenor_name'],
