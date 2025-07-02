@@ -427,9 +427,9 @@ def create_client_hedging_advisor():
         exposure_amount = st.number_input(
             "Kwota EUR do zabezpieczenia:",
             value=1_000_000,
-            min_value=100_000,
+            min_value=10_000,  # Zmienione z 100_000 na 10_000
             max_value=50_000_000,
-            step=100_000,
+            step=10_000,  # Zmniejszony step
             format="%d",
             help="Kwota ekspozycji EUR, którą chcesz zabezpieczyć"
         )
