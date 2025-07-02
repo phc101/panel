@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 # ============================================================================
 
 # FRED API Configuration - PLACE YOUR API KEY HERE
-FRED_API_KEY = st.secrets.get("FRED_API_KEY", "f04a11751a8bb9fed2e9e321aa76e783")  # Uses Streamlit secrets or demo
+FRED_API_KEY = st.secrets.get("FRED_API_KEY", "7d6068b2f97447600407dbca2836043c")  # Uses Streamlit secrets or demo
 
 # Page config
 st.set_page_config(
@@ -43,13 +43,29 @@ st.markdown("""
         text-align: center;
     }
     .client-summary {
-        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         padding: 1.5rem;
         border-radius: 1rem;
         margin: 1rem 0;
         text-align: center;
         box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .client-summary-green {
+        background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+        color: #2c3e50;
+    }
+    .client-summary-blue {
+        background: linear-gradient(135deg, #3a7bd5 0%, #95c7f3 100%);
+        color: white;
+    }
+    .client-summary-purple {
+        background: linear-gradient(135deg, #8360c3 0%, #c5a6f5 100%);
+        color: white;
+    }
+    .client-summary-orange {
+        background: linear-gradient(135deg, #ff7b7b 0%, #ffb3ba 100%);
+        color: #2c3e50;
     }
     .pricing-sync {
         background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
@@ -913,7 +929,6 @@ def create_client_hedging_advisor():
             row_data.update({
                 "Okno od": pricing['okno_od'],
                 "Rozliczenie do": pricing['rozliczenie_do'],
-                "Forward Points": f"{pricing['forward_points']:.4f}",
                 "Spread vs Teor.": f"{(pricing['theoretical_rate'] - client_rate):.4f}"
             })
         
@@ -960,7 +975,7 @@ def create_client_hedging_advisor():
         
         with col1:
             st.markdown(f"""
-            <div class="client-summary">
+            <div class="client-summary client-summary-blue">
                 <h4 style="margin: 0;">Średni Kurs Zabezpieczenia</h4>
                 <h2 style="margin: 0;">{avg_client_rate:.4f}</h2>
                 <p style="margin: 0;">vs spot {config['spot_rate']:.4f}</p>
@@ -969,7 +984,7 @@ def create_client_hedging_advisor():
         
         with col2:
             st.markdown(f"""
-            <div class="client-summary" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+            <div class="client-summary client-summary-green">
                 <h4 style="margin: 0;">Korzyść vs Spot</h4>
                 <h2 style="margin: 0;">{avg_benefit_pct:+.2f}%</h2>
                 <p style="margin: 0;">średnia wszystkich opcji</p>
@@ -978,17 +993,17 @@ def create_client_hedging_advisor():
         
         with col3:
             st.markdown(f"""
-            <div class="client-summary" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
-                <h4 style="margin: 0;">Nominalna Korzyść</h4>
-                <h2 style="margin: 0;">{portfolio_total_benefit:+,.0f}</h2>
-                <p style="margin: 0;">PLN vs pozostanie na spot</p>
+            <div class="client-summary client-summary-purple">
+                <h4 style="margin: 0;">Nominalna Wartość Zabezpieczenia</h4>
+                <h2 style="margin: 0;">{portfolio_hedged_pln:,.0f}</h2>
+                <p style="margin: 0;">PLN z {exposure_amount:,} EUR</p>
             </div>
             """, unsafe_allow_html=True)
         
         with col4:
             best_option = max(client_rates_data, key=lambda x: float(x['vs Spot'].rstrip('%')))
             st.markdown(f"""
-            <div class="client-summary" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+            <div class="client-summary client-summary-orange">
                 <h4 style="margin: 0;">Najlepsza Opcja</h4>
                 <h2 style="margin: 0;">{best_option['Tenor']}</h2>
                 <p style="margin: 0;">korzyść {best_option['vs Spot']}</p>
