@@ -172,17 +172,94 @@ class APIIntegratedForwardCalculator:
     
     def __init__(self, fred_client):
         self.fred_client = fred_client
-        self.tenors = [
-            "One Month", "Two Month", "Three Month", "Four Month", 
-            "Five Month", "Six Month", "Seven Month", "Eight Month",
-            "Nine Month", "Ten Month", "Eleven Month", "One Year"
-        ]
         
-        # Tenor mapping to months
-        self.tenor_months = {
-            "One Month": 1, "Two Month": 2, "Three Month": 3, "Four Month": 4,
-            "Five Month": 5, "Six Month": 6, "Seven Month": 7, "Eight Month": 8,
-            "Nine Month": 9, "Ten Month": 10, "Eleven Month": 11, "One Year": 12
+        # Polskie nazwy tenorów z datami
+        today = datetime.now()
+        self.tenors = {
+            "1M": {
+                "name": "1 miesiąc",
+                "months": 1,
+                "days": 30,
+                "okno_od": (today + timedelta(days=30)).strftime("%d.%m.%Y"),
+                "rozliczenie_do": (today + timedelta(days=60)).strftime("%d.%m.%Y")
+            },
+            "2M": {
+                "name": "2 miesiące", 
+                "months": 2,
+                "days": 60,
+                "okno_od": (today + timedelta(days=60)).strftime("%d.%m.%Y"),
+                "rozliczenie_do": (today + timedelta(days=90)).strftime("%d.%m.%Y")
+            },
+            "3M": {
+                "name": "3 miesiące",
+                "months": 3, 
+                "days": 90,
+                "okno_od": (today + timedelta(days=90)).strftime("%d.%m.%Y"),
+                "rozliczenie_do": (today + timedelta(days=120)).strftime("%d.%m.%Y")
+            },
+            "4M": {
+                "name": "4 miesiące",
+                "months": 4,
+                "days": 120,
+                "okno_od": (today + timedelta(days=120)).strftime("%d.%m.%Y"),
+                "rozliczenie_do": (today + timedelta(days=150)).strftime("%d.%m.%Y")
+            },
+            "5M": {
+                "name": "5 miesięcy",
+                "months": 5,
+                "days": 150,
+                "okno_od": (today + timedelta(days=150)).strftime("%d.%m.%Y"),
+                "rozliczenie_do": (today + timedelta(days=180)).strftime("%d.%m.%Y")
+            },
+            "6M": {
+                "name": "6 miesięcy",
+                "months": 6,
+                "days": 180,
+                "okno_od": (today + timedelta(days=180)).strftime("%d.%m.%Y"),
+                "rozliczenie_do": (today + timedelta(days=210)).strftime("%d.%m.%Y")
+            },
+            "7M": {
+                "name": "7 miesięcy",
+                "months": 7,
+                "days": 210,
+                "okno_od": (today + timedelta(days=210)).strftime("%d.%m.%Y"),
+                "rozliczenie_do": (today + timedelta(days=240)).strftime("%d.%m.%Y")
+            },
+            "8M": {
+                "name": "8 miesięcy",
+                "months": 8,
+                "days": 240,
+                "okno_od": (today + timedelta(days=240)).strftime("%d.%m.%Y"),
+                "rozliczenie_do": (today + timedelta(days=270)).strftime("%d.%m.%Y")
+            },
+            "9M": {
+                "name": "9 miesięcy",
+                "months": 9,
+                "days": 270,
+                "okno_od": (today + timedelta(days=270)).strftime("%d.%m.%Y"),
+                "rozliczenie_do": (today + timedelta(days=300)).strftime("%d.%m.%Y")
+            },
+            "10M": {
+                "name": "10 miesięcy",
+                "months": 10,
+                "days": 300,
+                "okno_od": (today + timedelta(days=300)).strftime("%d.%m.%Y"),
+                "rozliczenie_do": (today + timedelta(days=330)).strftime("%d.%m.%Y")
+            },
+            "11M": {
+                "name": "11 miesięcy", 
+                "months": 11,
+                "days": 330,
+                "okno_od": (today + timedelta(days=330)).strftime("%d.%m.%Y"),
+                "rozliczenie_do": (today + timedelta(days=360)).strftime("%d.%m.%Y")
+            },
+            "12M": {
+                "name": "12 miesięcy",
+                "months": 12,
+                "days": 360,
+                "okno_od": (today + timedelta(days=360)).strftime("%d.%m.%Y"),
+                "rozliczenie_do": (today + timedelta(days=390)).strftime("%d.%m.%Y")
+            }
         }
         
         # Professional pricing parameters (based on CSV analysis)
@@ -209,9 +286,9 @@ class APIIntegratedForwardCalculator:
         """Generate complete forward points curve from API bond data"""
         curve_data = {}
         
-        for tenor in self.tenors:
-            months = self.tenor_months[tenor]
-            days = months * 30  # Approximate days
+        for tenor_key, tenor_info in self.tenors.items():
+            months = tenor_info["months"]
+            days = tenor_info["days"]
             
             # Calculate theoretical forward points
             theoretical = self.calculate_theoretical_forward_points(spot_rate, pl_yield, de_yield, days)
@@ -222,9 +299,12 @@ class APIIntegratedForwardCalculator:
             ask_points = forward_points + (bid_ask_spread / 2)
             mid_points = forward_points
             
-            curve_data[tenor] = {
+            curve_data[tenor_key] = {
+                "name": tenor_info["name"],
                 "days": days,
                 "months": months,
+                "okno_od": tenor_info["okno_od"],
+                "rozliczenie_do": tenor_info["rozliczenie_do"],
                 "bid": bid_points,
                 "ask": ask_points,
                 "mid": mid_points,
@@ -1136,13 +1216,13 @@ Avg: {portfolio_avg_profit:.4f} PLN/EUR
 # ============================================================================
 
 def create_client_hedging_advisor():
-    """Create simplified client-facing hedging advisor"""
+    """Doradca zabezpieczeń walutowych dla klientów"""
     
-    st.header("🛡️ EUR/PLN Hedging Advisor")
-    st.markdown("*Protect your business from currency risk with professional forward contracts*")
+    st.header("🛡️ Doradca Zabezpieczeń EUR/PLN")
+    st.markdown("*Chroń swój biznes przed ryzykiem walutowym dzięki profesjonalnym kontraktom terminowym*")
     
     # Load market data
-    with st.spinner("📡 Loading current market rates..."):
+    with st.spinner("📡 Ładowanie aktualnych kursów rynkowych..."):
         bond_data = get_fred_bond_data()
         forex_data = get_eur_pln_rate()
     
@@ -1150,16 +1230,16 @@ def create_client_hedging_advisor():
     calculator = APIIntegratedForwardCalculator(FREDAPIClient())
     
     # Current market display
-    st.subheader("📊 Current Market Situation")
+    st.subheader("📊 Aktualna Sytuacja Rynkowa")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
         spot_rate = forex_data['rate']
         st.metric(
-            "EUR/PLN Today",
+            "EUR/PLN Dzisiaj",
             f"{spot_rate:.4f}",
-            help="Current exchange rate"
+            help="Aktualny kurs wymiany"
         )
     
     with col2:
@@ -1169,13 +1249,378 @@ def create_client_hedging_advisor():
         
         if spread > 3.0:
             trend_emoji = "📈"
-            trend_text = "PLN strengthening"
+            trend_text = "PLN umacnia się"
         elif spread > 2.0:
             trend_emoji = "➡️"
-            trend_text = "Stable trend"
+            trend_text = "Stabilny trend"
         else:
             trend_emoji = "📉"
-            trend_text = "PLN weakening"
+            trend_text = "PLN słabnie"
+            
+        st.metric(
+            "Trend Rynkowy",
+            f"{trend_emoji} {trend_text}",
+            help=f"Na podstawie spreadu: {spread:.1f}pp"
+        )
+    
+    with col3:
+        # Calculate 6M forward as reference
+        forward_6m = calculator.calculate_theoretical_forward_points(spot_rate, pl_yield, de_yield, 180)
+        direction = "silniejszy" if forward_6m['forward_rate'] > spot_rate else "słabszy"
+        
+        st.metric(
+            "Prognoza 6M",
+            f"PLN {direction}",
+            delta=f"{((forward_6m['forward_rate']/spot_rate - 1) * 100):+.2f}%",
+            help="Oczekiwany kierunek PLN w 6 miesięcy"
+        )
+    
+    # Client configuration
+    st.markdown("---")
+    st.subheader("⚙️ Twoje Potrzeby Zabezpieczeniowe")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        exposure_amount = st.number_input(
+            "Kwota EUR do zabezpieczenia:",
+            value=1_000_000,
+            min_value=100_000,
+            max_value=50_000_000,
+            step=100_000,
+            format="%d",
+            help="Kwota ekspozycji EUR, którą chcesz zabezpieczyć"
+        )
+    
+    with col2:
+        hedging_horizon = st.selectbox(
+            "Okres zabezpieczenia:",
+            ["3 miesiące", "6 miesięcy", "9 miesięcy", "12 miesięcy", "Niestandardowy"],
+            index=1,
+            help="Na jak długo potrzebujesz ochrony?"
+        )
+        
+        if hedging_horizon == "Niestandardowy":
+            custom_months = st.slider("Miesiące:", 1, 24, 6)
+            horizon_months = custom_months
+        else:
+            horizon_map = {"3 miesiące": 3, "6 miesięcy": 6, "9 miesięcy": 9, "12 miesięcy": 12}
+            horizon_months = horizon_map[hedging_horizon]
+    
+    with col3:
+        risk_appetite = st.selectbox(
+            "Preferencje ryzyka:",
+            ["Konserwatywne", "Zrównoważone", "Oportunistyczne"],
+            index=1,
+            help="Jak wysokie ryzyko jesteś gotów zaakceptować?"
+        )
+    
+    # Generate forward curve
+    forward_curve = calculator.generate_api_forward_points_curve(
+        spot_rate, pl_yield, de_yield, 0.002
+    )
+    
+    # ============================================================================
+    # TABELA KURSÓW TERMINOWYCH DLA KLIENTA
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("💱 Dostępne Kursy Terminowe")
+    st.markdown("*Zablokuj te kursy dzisiaj na przyszłe sprzedaże EUR*")
+    
+    # Calculate client rates
+    client_rates_data = []
+    recommended_tenors = []
+    
+    for tenor_key, curve_data in forward_curve.items():
+        if curve_data["months"] <= horizon_months + 3:  # Show relevant tenors
+            tenor_points = curve_data["mid"]
+            tenor_days = curve_data["days"]
+            
+            # Calculate client rate (simplified - no swap risk complexity for client view)
+            client_swap_risk = calculator.calculate_swap_risk(tenor_days, tenor_points)
+            client_rates = calculator.calculate_professional_rates(
+                spot_rate, tenor_points, client_swap_risk, 0.0
+            )
+            
+            client_rate = client_rates['fwd_client']
+            
+            # Calculate benefit vs spot
+            rate_advantage = ((client_rate - spot_rate) / spot_rate) * 100
+            
+            # Determine recommendation
+            if rate_advantage > 0.5:
+                recommendation = "🟢 Doskonały"
+                recommended_tenors.append(tenor_key)
+            elif rate_advantage > 0.2:
+                recommendation = "🟡 Dobry"
+            elif rate_advantage > 0:
+                recommendation = "🟠 Akceptowalny"
+            else:
+                recommendation = "🔴 Rozważ spot"
+            
+            # Calculate PLN amount client would receive
+            pln_amount = client_rate * exposure_amount
+            spot_pln_amount = spot_rate * exposure_amount
+            additional_pln = pln_amount - spot_pln_amount
+            
+            client_rates_data.append({
+                "Tenor": curve_data["name"],
+                "Okno od": curve_data["okno_od"],
+                "Rozliczenie do": curve_data["rozliczenie_do"],
+                "Kurs terminowy": f"{client_rate:.4f}",
+                "vs Dzisiaj": f"{rate_advantage:+.2f}%",
+                "Kwota PLN": f"{pln_amount:,.0f}",
+                "Dodatkowe PLN": f"{additional_pln:+,.0f}" if additional_pln != 0 else "0",
+                "Rekomendacja": recommendation,
+                "Sort_Order": curve_data['months']
+            })
+    
+    # Create DataFrame and sort by months
+    df_client_rates = pd.DataFrame(client_rates_data)
+    df_client_rates = df_client_rates.sort_values('Sort_Order').drop('Sort_Order', axis=1)
+    
+    # Style the table
+    def highlight_recommendations(row):
+        if "🟢" in str(row['Rekomendacja']):
+            return ['background-color: #d4edda'] * len(row)  # Green
+        elif "🟡" in str(row['Rekomendacja']):
+            return ['background-color: #fff3cd'] * len(row)  # Yellow
+        elif "🟠" in str(row['Rekomendacja']):
+            return ['background-color: #ffeaa7'] * len(row)  # Orange
+        else:
+            return ['background-color: #f8d7da'] * len(row)  # Red
+    
+    st.dataframe(
+        df_client_rates.style.apply(highlight_recommendations, axis=1),
+        use_container_width=True,
+        height=400,
+        hide_index=True
+    )
+    
+    # ============================================================================
+    # WIZUALIZACJA STRATEGII ZABEZPIECZENIA
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("📈 Proponowana Strategia Zabezpieczenia")
+    
+    # Create hedging visualization
+    fig_hedging = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            'Kursy Terminowe vs Kurs Spot',
+            'Twoja Korzyść z Zabezpieczenia',
+            'Ochrona przed Ryzykiem w Czasie',
+            'Rekomendowany Podział Portfela'
+        ),
+        specs=[[{"secondary_y": False}, {"secondary_y": False}],
+               [{"secondary_y": False}, {"type": "pie"}]]
+    )
+    
+    # Extract data for charts
+    tenors_list = [data["Tenor"] for data in client_rates_data]
+    forward_rates = [float(data["Kurs terminowy"]) for data in client_rates_data]
+    rate_advantages = [float(data["vs Dzisiaj"].replace("%", "").replace("+", "")) for data in client_rates_data]
+    extra_pln = [float(data["Dodatkowe PLN"].replace(",", "").replace("+", "")) for data in client_rates_data]
+    
+    # 1. Forward Rates vs Spot
+    fig_hedging.add_trace(
+        go.Scatter(
+            x=tenors_list,
+            y=[spot_rate] * len(tenors_list),
+            mode='lines',
+            name='Kurs dzisiejszy',
+            line=dict(color='red', width=3, dash='dash'),
+            hovertemplate='Kurs dzisiejszy: %{y:.4f}<extra></extra>'
+        ),
+        row=1, col=1
+    )
+    
+    fig_hedging.add_trace(
+        go.Scatter(
+            x=tenors_list,
+            y=forward_rates,
+            mode='lines+markers',
+            name='Kursy terminowe',
+            line=dict(color='green', width=3),
+            marker=dict(size=10, color='green'),
+            hovertemplate='<b>%{x}</b><br>Kurs terminowy: %{y:.4f}<br>Korzyść: %{customdata:.2f}%<extra></extra>',
+            customdata=rate_advantages
+        ),
+        row=1, col=1
+    )
+    
+    # 2. Hedging Benefit
+    colors = ['green' if x > 0 else 'red' for x in extra_pln]
+    fig_hedging.add_trace(
+        go.Bar(
+            x=tenors_list,
+            y=extra_pln,
+            name='Dodatkowe PLN',
+            marker_color=colors,
+            hovertemplate='<b>%{x}</b><br>Dodatkowe PLN: %{y:,.0f}<extra></extra>'
+        ),
+        row=1, col=2
+    )
+    
+    # 3. Risk Protection Over Time
+    protection_levels = []
+    for i, advantage in enumerate(rate_advantages):
+        if advantage > 0.5:
+            protection_levels.append(95)
+        elif advantage > 0.2:
+            protection_levels.append(80)
+        elif advantage > 0:
+            protection_levels.append(60)
+        else:
+            protection_levels.append(30)
+    
+    fig_hedging.add_trace(
+        go.Scatter(
+            x=tenors_list,
+            y=protection_levels,
+            mode='lines+markers',
+            name='Poziom ochrony',
+            line=dict(color='blue', width=3),
+            marker=dict(size=8),
+            hovertemplate='<b>%{x}</b><br>Ochrona: %{y}%<extra></extra>'
+        ),
+        row=2, col=1
+    )
+    
+    # 4. Recommended Portfolio Split
+    if risk_appetite == "Konserwatywne":
+        hedge_ratio = 80
+        spot_ratio = 20
+    elif risk_appetite == "Zrównoważone":
+        hedge_ratio = 60
+        spot_ratio = 40
+    else:  # Oportunistyczne
+        hedge_ratio = 40
+        spot_ratio = 60
+    
+    fig_hedging.add_trace(
+        go.Pie(
+            labels=['Zabezpieczenie terminowe', 'Pozostaw na spot'],
+            values=[hedge_ratio, spot_ratio],
+            name="Podział portfela",
+            marker_colors=['lightgreen', 'lightcoral'],
+            hovertemplate='<b>%{label}</b><br>%{value}% ekspozycji<br>€%{customdata:,.0f}<extra></extra>',
+            customdata=[exposure_amount * hedge_ratio / 100, exposure_amount * spot_ratio / 100]
+        ),
+        row=2, col=2
+    )
+    
+    # Update layout
+    fig_hedging.update_layout(
+        height=700,
+        showlegend=True,
+        title_text=f"Strategia zabezpieczenia dla €{exposure_amount:,} EUR"
+    )
+    
+    # Update axes
+    fig_hedging.update_xaxes(title_text="Tenor", row=1, col=1)
+    fig_hedging.update_yaxes(title_text="Kurs EUR/PLN", row=1, col=1)
+    fig_hedging.update_xaxes(title_text="Tenor", row=1, col=2)
+    fig_hedging.update_yaxes(title_text="Dodatkowe PLN", row=1, col=2)
+    fig_hedging.update_xaxes(title_text="Tenor", row=2, col=1)
+    fig_hedging.update_yaxes(title_text="Poziom ochrony (%)", row=2, col=1)
+    
+    st.plotly_chart(fig_hedging, use_container_width=True)
+    
+    # ============================================================================
+    # SPERSONALIZOWANE REKOMENDACJE
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("🎯 Twoje Spersonalizowane Rekomendacje")
+    
+    # Calculate best options
+    best_rates = df_client_rates[df_client_rates['Rekomendacja'].str.contains('🟢|🟡')].head(3)
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("**📋 Rekomendowana Strategia:**")
+        
+        if risk_appetite == "Konserwatywne":
+            strategy_text = f"""
+            **Podejście konserwatywne dla €{exposure_amount:,}:**
+            
+            🛡️ **Zabezpiecz {hedge_ratio}% natychmiast** (€{exposure_amount * hedge_ratio // 100:,})
+            - Użyj kontraktów {best_rates.iloc[0]['Tenor'] if len(best_rates) > 0 else '6 miesięcy'} dla podstawowej ochrony
+            - Kurs: {best_rates.iloc[0]['Kurs terminowy'] if len(best_rates) > 0 else 'N/A'}
+            - Korzyść: {best_rates.iloc[0]['vs Dzisiaj'] if len(best_rates) > 0 else 'N/A'}
+            
+            ⏳ **Zachowaj {spot_ratio}% elastycznie** (€{exposure_amount * spot_ratio // 100:,})
+            - Monitoruj rynek dla lepszych okazji
+            - Używaj do potrzeb krótkoterminowych
+            
+            💰 **Oczekiwane dodatkowe PLN:** {best_rates.iloc[0]['Dodatkowe PLN'] if len(best_rates) > 0 else 'N/A'}
+            """
+        elif risk_appetite == "Zrównoważone":
+            strategy_text = f"""
+            **Podejście zrównoważone dla €{exposure_amount:,}:**
+            
+            🎯 **Strategia podzielonego zabezpieczenia:**
+            - 30% w kontraktach {best_rates.iloc[0]['Tenor'] if len(best_rates) > 0 else '3 miesiące'} (€{exposure_amount * 30 // 100:,})
+            - 30% w kontraktach {best_rates.iloc[1]['Tenor'] if len(best_rates) > 1 else '6 miesięcy'} (€{exposure_amount * 30 // 100:,})
+            - 40% zachowaj elastycznie (€{exposure_amount * 40 // 100:,})
+            
+            📈 **Zdywersyfikowana ochrona** na różnych terminach
+            
+            💰 **Mieszana korzyść:** Kombinacja kursów i terminów
+            """
+        else:  # Oportunistyczne
+            strategy_text = f"""
+            **Podejście oportunistyczne dla €{exposure_amount:,}:**
+            
+            🎲 **Selektywne zabezpieczenie:**
+            - Zabezpiecz tylko {hedge_ratio}% (€{exposure_amount * hedge_ratio // 100:,})
+            - Skupić się na najlepszej wartości: {best_rates.iloc[0]['Tenor'] if len(best_rates) > 0 else '6 miesięcy'}
+            - Zachowaj {spot_ratio}% na okazje rynkowe
+            
+            🚀 **Wyższe ryzyko, wyższy potencjał zysku**
+            
+            ⚠️ **Ściśle monitoruj rynek** dla optymalnego timingu
+            """
+        
+        st.markdown(strategy_text)
+    
+    with col2:
+        # Risk metrics
+        st.markdown("**📊 Metryki Strategii:**")
+        
+        # Calculate portfolio metrics
+        if len(best_rates) > 0:
+            avg_benefit = df_client_rates['vs Dzisiaj'].str.replace('%', '').str.replace('+', '').astype(float).mean()
+            total_extra_pln = df_client_rates['Dodatkowe PLN'].str.replace(',', '').str.replace('+', '').astype(float).sum()
+            
+            st.metric("Średnia korzyść kursu", f"{avg_benefit:.2f}%")
+            st.metric("Łączne dodatkowe PLN", f"{total_extra_pln:,.0f}")
+            st.metric("Poziom ryzyka", risk_appetite)
+            
+            # Risk warning
+            if avg_benefit < 0:
+                st.warning("⚠️ Aktualne terminowe poniżej spot - rozważ czekanie")
+            elif avg_benefit > 0.5:
+                st.success("✅ Doskonała okazja do zabezpieczenia")
+            else:
+                st.info("ℹ️ Umiarkowana korzyść z zabezpieczenia")
+    
+    # Call to action
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("""
+        <div class="metric-card" style="text-align: center;">
+            <h4>Gotowy chronić swój biznes?</h4>
+            <p>Skontaktuj się z naszymi specjalistami FX, aby wdrożyć strategię zabezpieczenia</p>
+            <p><strong>📞 +48 22 XXX XXXX | 📧 zabezpieczenia.fx@bank.pl</strong></p>
+        </div>
+        """, unsafe_allow_html=True)ening"
             
         st.metric(
             "Market Trend",
@@ -1543,11 +1988,11 @@ def create_client_hedging_advisor():
         """, unsafe_allow_html=True)
 
 # ============================================================================
-# MAIN APPLICATION WITH TABS
+# GŁÓWNA APLIKACJA Z ZAKŁADKAMI
 # ============================================================================
 
 def main():
-    """Main application entry point with tabs"""
+    """Główny punkt wejścia aplikacji z zakładkami"""
     
     # Header
     st.markdown("""
@@ -1555,17 +2000,232 @@ def main():
         <div style="background: linear-gradient(45deg, #667eea, #764ba2); width: 60px; height: 60px; border-radius: 10px; margin-right: 1rem; display: flex; align-items: center; justify-content: center;">
             <span style="font-size: 2rem;">🚀</span>
         </div>
-        <h1 style="margin: 0; color: #2c3e50;">Professional FX Trading Platform</h1>
+        <h1 style="margin: 0; color: #2c3e50;">Profesjonalna Platforma FX</h1>
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown("*Advanced Window Forward Pricing & Client Hedging Solutions*")
+    st.markdown("*Zaawansowane wyceny kontraktów terminowych i rozwiązania zabezpieczeniowe dla klientów*")
     
     # Create tabs
-    tab1, tab2 = st.tabs(["🔧 Professional Trading Dashboard", "🛡️ Client Hedging Advisor"])
+    tab1, tab2 = st.tabs(["🔧 Panel Dealerski", "🛡️ Doradca Zabezpieczeń"])
     
     with tab1:
-        create_professional_window_forward_tab()
+        st.header("🚀 Profesjonalny Panel Window Forward")
+        st.markdown("*Dane w czasie rzeczywistym z profesjonalną logiką wyceny*")
+        
+        # API Key Configuration Section
+        with st.expander("🔧 Konfiguracja API", expanded=False):
+            st.markdown("""
+            **Konfiguracja klucza FRED API:**
+            1. Pobierz darmowy klucz API z: https://fred.stlouisfed.org/docs/api/api_key.html
+            2. Dodaj do Streamlit secrets.toml: `FRED_API_KEY = "twoj_klucz_tutaj"`
+            3. Lub zmodyfikuj kod bezpośrednio aby zawrzeć klucz
+            
+            **Aktualny status:**
+            """)
+            
+            if FRED_API_KEY == "demo":
+                st.warning("⚠️ Używam trybu demo - ograniczony dostęp do API")
+            else:
+                st.success("✅ Klucz FRED API skonfigurowany")
+        
+        # Load real market data
+        with st.spinner("📡 Ładowanie danych rynkowych w czasie rzeczywistym..."):
+            bond_data = get_fred_bond_data()
+            forex_data = get_eur_pln_rate()
+        
+        # Initialize calculator
+        calculator = APIIntegratedForwardCalculator(FREDAPIClient())
+        
+        # ============================================================================
+        # WYŚWIETLANIE DANYCH RYNKOWYCH
+        # ============================================================================
+        
+        st.subheader("📊 Dane Rynkowe na Żywo")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            spot_rate = forex_data['rate']
+            st.metric(
+                "EUR/PLN Spot",
+                f"{spot_rate:.4f}",
+                help=f"Źródło: {forex_data['source']} | Aktualizacja: {forex_data['date']}"
+            )
+        
+        with col2:
+            pl_yield = bond_data['Poland_10Y']['value'] if 'Poland_10Y' in bond_data else 5.70
+            st.metric(
+                "Rentowność PL 10Y",
+                f"{pl_yield:.2f}%",
+                help=f"Źródło: {bond_data.get('Poland_10Y', {}).get('source', 'Fallback')}"
+            )
+        
+        with col3:
+            de_yield = bond_data['Germany_9M']['value'] if 'Germany_9M' in bond_data else 2.35
+            st.metric(
+                "Rentowność DE",
+                f"{de_yield:.2f}%", 
+                help=f"Źródło: {bond_data.get('Germany_9M', {}).get('source', 'Fallback')}"
+            )
+        
+        with col4:
+            spread = pl_yield - de_yield
+            st.metric(
+                "Spread PL-DE",
+                f"{spread:.2f}pp",
+                help="Różnica rentowności napędzająca punkty terminowe"
+            )
+        
+        # ============================================================================
+        # PARAMETRY KONFIGURACYJNE
+        # ============================================================================
+        
+        st.markdown("---")
+        st.subheader("⚙️ Konfiguracja Transakcji")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            window_days = st.number_input(
+                "Długość okna (dni):",
+                value=90,
+                min_value=30,
+                max_value=365,
+                step=5,
+                help="Długość okresu window forward"
+            )
+        
+        with col2:
+            nominal_amount = st.number_input(
+                "Kwota nominalna (EUR):",
+                value=2_500_000,
+                min_value=100_000,
+                max_value=100_000_000,
+                step=100_000,
+                format="%d",
+                help="Kwota nominalna transakcji"
+            )
+        
+        with col3:
+            leverage = st.number_input(
+                "Współczynnik dźwigni:",
+                value=1.0,
+                min_value=1.0,
+                max_value=3.0,
+                step=0.1,
+                help="Dźwignia ryzyka dla kalkulacji P&L"
+            )
+        
+        # Advanced parameters
+        with st.expander("🔧 Zaawansowane Parametry Wyceny"):
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                points_factor = st.slider(
+                    "Współczynnik punktów (% dla klienta):",
+                    min_value=0.60,
+                    max_value=0.85,
+                    value=0.70,
+                    step=0.01,
+                    help="Procent punktów terminowych przekazywanych klientowi"
+                )
+            
+            with col2:
+                risk_factor = st.slider(
+                    "Współczynnik ryzyka (% obciążenia):",
+                    min_value=0.30,
+                    max_value=0.60,
+                    value=0.40,
+                    step=0.01,
+                    help="Procent ryzyka swap obciążanego klientowi"
+                )
+            
+            with col3:
+                bid_ask_spread = st.number_input(
+                    "Spread bid-ask:",
+                    value=0.002,
+                    min_value=0.001,
+                    max_value=0.005,
+                    step=0.0005,
+                    format="%.4f",
+                    help="Rynkowy spread bid-ask w punktach terminowych"
+                )
+            
+            # Additional parameters row
+            col4, col5, col6 = st.columns(3)
+            
+            with col4:
+                minimum_profit_floor = st.number_input(
+                    "Min próg zysku (PLN/EUR):",
+                    value=0.000,
+                    min_value=-0.020,
+                    max_value=0.020,
+                    step=0.001,
+                    format="%.4f",
+                    help="Minimalny gwarantowany zysk na EUR (0 = naturalny zakres)"
+                )
+        
+        # Update calculator parameters
+        calculator.points_factor = points_factor
+        calculator.risk_factor = risk_factor
+        
+        # Generate forward curve
+        forward_curve = calculator.generate_api_forward_points_curve(
+            spot_rate, pl_yield, de_yield, bid_ask_spread
+        )
+        
+        # ============================================================================
+        # UPROSZCZONA TABELA PORTFOLIO (przykład dla dealerów)
+        # ============================================================================
+        
+        st.markdown("---")
+        st.subheader("📋 Portfolio Kontraktów Window Forward")
+        st.markdown(f"*Wszystkie 12 tenorów z {window_days}-dniową elastycznością okna*")
+        
+        # Generate portfolio data with Polish dates
+        portfolio_data = []
+        for tenor_key, curve_data in forward_curve.items():
+            tenor_points = curve_data["mid"]
+            tenor_window_swap_risk = calculator.calculate_swap_risk(window_days, tenor_points)
+            tenor_rates = calculator.calculate_professional_rates(
+                spot_rate, tenor_points, tenor_window_swap_risk, minimum_profit_floor
+            )
+            
+            # Calculate min/max profits using bank spread logic
+            window_min_profit_per_eur = tenor_rates['fwd_to_open'] - tenor_rates['fwd_client']  # Bank spread
+            window_max_profit_per_eur = window_min_profit_per_eur + (tenor_window_swap_risk * 0.6)
+            
+            portfolio_data.append({
+                "Tenor": curve_data["name"],
+                "Okno od": curve_data["okno_od"],
+                "Rozliczenie do": curve_data["rozliczenie_do"],
+                "Punkty terminowe": f"{tenor_points:.4f}",
+                "Ryzyko swap": f"{tenor_window_swap_risk:.4f}",
+                "Kurs klienta": f"{tenor_rates['fwd_client']:.4f}",
+                "Kurs teoretyczny": f"{tenor_rates['fwd_to_open']:.4f}",
+                "Min zysk/EUR": f"{window_min_profit_per_eur:.4f}",
+                "Max zysk/EUR": f"{window_max_profit_per_eur:.4f}",
+                "Min zysk total": f"{window_min_profit_per_eur * nominal_amount:,.0f} PLN",
+                "Max zysk total": f"{window_max_profit_per_eur * nominal_amount:,.0f} PLN"
+            })
+        
+        df_portfolio = pd.DataFrame(portfolio_data)
+        st.dataframe(df_portfolio, use_container_width=True, height=400)
+        
+        # Summary metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        total_min = sum([float(row["Min zysk total"].replace(" PLN", "").replace(",", "")) for row in portfolio_data])
+        total_max = sum([float(row["Max zysk total"].replace(" PLN", "").replace(",", "")) for row in portfolio_data])
+        
+        with col1:
+            st.metric("Portfolio Min Zysk", f"{total_min:,.0f} PLN")
+        with col2:
+            st.metric("Portfolio Max Zysk", f"{total_max:,.0f} PLN")
+        with col3:
+            st.metric("Oczekiwany Zysk", f"{(total_min + total_max)/2:,.0f} PLN")
+        with col4:
+            st.metric("Zakres Zysku", f"{total_max - total_min:,.0f} PLN")
     
     with tab2:
         create_client_hedging_advisor()
