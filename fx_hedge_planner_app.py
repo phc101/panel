@@ -264,11 +264,12 @@ class APIIntegratedForwardCalculator:
             'time_factor': T
         }
     
-    def generate_api_forward_points_curve(self, spot_rate, pl_yield, de_yield, bid_ask_spread=0.002):
-        """Generate complete forward points curve from API bond data"""
+    def generate_api_forward_points_curve(self, spot_rate, pl_yield, de_yield, bid_ask_spread=0.002, window_days=90):
+        """Generate complete forward points curve from API bond data with proper window calculation"""
         curve_data = {}
+        tenors = self.get_tenors_with_window(window_days)
         
-        for tenor_key, tenor_info in self.tenors.items():
+        for tenor_key, tenor_info in tenors.items():
             months = tenor_info["months"]
             days = tenor_info["days"]
             
@@ -366,7 +367,8 @@ def calculate_dealer_pricing(config):
         config['spot_rate'], 
         config['pl_yield'], 
         config['de_yield'], 
-        config['bid_ask_spread']
+        config['bid_ask_spread'],
+        config['window_days']
     )
     
     # Calculate pricing for all tenors
@@ -780,26 +782,17 @@ def create_client_hedging_advisor():
         )
     
     with col2:
-        hedging_horizon = st.selectbox(
-            "Preferowany okres:",
-            ["3 miesiące", "6 miesięcy", "9 miesięcy", "12 miesięcy", "Wszystkie opcje"],
-            index=4,
-            help="Który okres Cię najbardziej interesuje?"
+        show_details = st.checkbox(
+            "Pokaż szczegóły transakcji",
+            value=False,
+            help="Wyświetl dodatkowe informacje o okresach rozliczenia"
         )
     
     with col3:
-        show_details = st.checkbox(
-            "Pokaż szczegóły",
-            value=True,
-            help="Wyświetl dodatkowe informacje o transakcjach"
-        )
+        st.info(f"💼 Okno elastyczności: **{config['window_days']} dni**\n\n(zgodne z wyceną dealerską)")
     
-    # Filter pricing data based on horizon
+    # All pricing data (no filtering by horizon)
     filtered_pricing = st.session_state.dealer_pricing_data
-    if hedging_horizon != "Wszystkie opcje":
-        horizon_map = {"3 miesiące": 3, "6 miesięcy": 6, "9 miesięcy": 9, "12 miesięcy": 12}
-        target_months = horizon_map[hedging_horizon]
-        filtered_pricing = [p for p in filtered_pricing if abs(p['tenor_months'] - target_months) <= 2]
     
     # ============================================================================
     # TABELA KURSÓW DLA KLIENTA
