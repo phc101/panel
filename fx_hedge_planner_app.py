@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 # ============================================================================
 
 # FRED API Configuration - PLACE YOUR API KEY HERE
-FRED_API_KEY = st.secrets.get("FRED_API_KEY", "7d6068b2f97447600407dbca2836043c")  # Uses Streamlit secrets or demo
+FRED_API_KEY = st.secrets.get("FRED_API_KEY", "ffab40f7d067bf4c8790559a7d3fe68b")  # Uses Streamlit secrets or demo
 
 # Page config
 st.set_page_config(
@@ -528,9 +528,9 @@ def create_dealer_panel():
         nominal_amount = st.number_input(
             "Kwota nominalna (EUR):",
             value=2_500_000,
-            min_value=100_000,
+            min_value=10_000,
             max_value=100_000_000,
-            step=100_000,
+            step=10_000,
             format="%d",
             help="Kwota nominalna transakcji"
         )
