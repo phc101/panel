@@ -933,9 +933,9 @@ def create_client_hedging_advisor():
         # Calculate benefits vs spot
         rate_advantage = ((client_rate - spot_rate) / spot_rate) * 100
         
-        # Calculate PLN amounts - SINGLE FORWARD TRANSACTION
-        pln_amount_forward = client_rate * exposure_amount  # PLN from this single forward
-        pln_amount_spot = spot_rate * exposure_amount       # PLN if stayed on spot
+        # Calculate PLN amounts - SINGLE FORWARD TRANSACTION with correct exposure_amount
+        pln_amount_forward = client_rate * exposure_amount  # PLN from this single forward with actual exposure
+        pln_amount_spot = spot_rate * exposure_amount       # PLN if stayed on spot with actual exposure
         additional_pln = pln_amount_forward - pln_amount_spot  # Benefit from this forward
         
         # Add to portfolio totals
