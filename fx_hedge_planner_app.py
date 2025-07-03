@@ -43,8 +43,9 @@ st.markdown("""
         text-align: center;
     }
     .client-summary {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+        background: white;
+        color: #2c3e50;
+        border: 3px solid #2e68a5;
         padding: 1.5rem;
         border-radius: 1rem;
         margin: 1rem 0;
@@ -52,20 +53,24 @@ st.markdown("""
         box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
     .client-summary-green {
-        background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+        background: white;
         color: #2c3e50;
+        border: 3px solid #2e68a5;
     }
     .client-summary-blue {
-        background: linear-gradient(135deg, #3a7bd5 0%, #95c7f3 100%);
-        color: white;
+        background: white;
+        color: #2c3e50;
+        border: 3px solid #2e68a5;
     }
     .client-summary-purple {
-        background: linear-gradient(135deg, #8360c3 0%, #c5a6f5 100%);
-        color: white;
+        background: white;
+        color: #2c3e50;
+        border: 3px solid #2e68a5;
     }
     .client-summary-orange {
-        background: linear-gradient(135deg, #ff7b7b 0%, #ffb3ba 100%);
+        background: white;
         color: #2c3e50;
+        border: 3px solid #2e68a5;
     }
     .compact-table {
         font-size: 0.85rem;
@@ -1011,42 +1016,32 @@ def create_client_hedging_advisor():
         # Portfolio vs spot calculation - use sum of all forwards vs sum of all spots
         portfolio_total_benefit_pln = total_pln_from_forwards - total_pln_from_spot
         
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             st.markdown(f"""
             <div class="client-summary client-summary-blue">
-                <h4 style="margin: 0;">Średni Kurs Zabezpieczenia</h4>
-                <h2 style="margin: 0;">{avg_client_rate:.4f}</h2>
-                <p style="margin: 0;">vs spot {config['spot_rate']:.4f}</p>
+                <h4 style="margin: 0; color: #2e68a5;">Średni Kurs Zabezpieczenia</h4>
+                <h2 style="margin: 0; color: #2c3e50;">{avg_client_rate:.4f}</h2>
+                <p style="margin: 0; color: #666;">vs spot {config['spot_rate']:.4f}</p>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
             st.markdown(f"""
             <div class="client-summary client-summary-green">
-                <h4 style="margin: 0;">Korzyść vs Spot</h4>
-                <h2 style="margin: 0;">{avg_benefit_pct:+.2f}%</h2>
-                <p style="margin: 0;">średnia wszystkich opcji</p>
+                <h4 style="margin: 0; color: #2e68a5;">Dodatkowa Marża z Zabezpieczenia</h4>
+                <h2 style="margin: 0; color: #2c3e50;">{avg_benefit_pct:+.2f}%</h2>
+                <p style="margin: 0; color: #666;">średnia wszystkich opcji</p>
             </div>
             """, unsafe_allow_html=True)
         
         with col3:
             st.markdown(f"""
             <div class="client-summary client-summary-purple">
-                <h4 style="margin: 0;">Zysk Nominalny vs Spot</h4>
-                <h2 style="margin: 0;">{portfolio_total_benefit_pln:+,.0f}</h2>
-                <p style="margin: 0;">PLN z całego portfolio</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            best_option = max(client_rates_data, key=lambda x: float(x['vs Spot'].rstrip('%')))
-            st.markdown(f"""
-            <div class="client-summary client-summary-orange">
-                <h4 style="margin: 0;">Najlepsza Opcja</h4>
-                <h2 style="margin: 0;">{best_option['Tenor']}</h2>
-                <p style="margin: 0;">korzyść {best_option['vs Spot']}</p>
+                <h4 style="margin: 0; color: #2e68a5;">Nominalna Marża z Zabezpieczenia</h4>
+                <h2 style="margin: 0; color: #2c3e50;">{portfolio_total_benefit_pln:+,.0f}</h2>
+                <p style="margin: 0; color: #666;">PLN z całego portfolio</p>
             </div>
             """, unsafe_allow_html=True)
         
