@@ -67,6 +67,17 @@ st.markdown("""
         background: linear-gradient(135deg, #ff7b7b 0%, #ffb3ba 100%);
         color: #2c3e50;
     }
+    .compact-table {
+        font-size: 0.85rem;
+    }
+    .compact-table th {
+        padding: 0.3rem 0.5rem !important;
+        font-size: 0.8rem !important;
+    }
+    .compact-table td {
+        padding: 0.3rem 0.5rem !important;
+        font-size: 0.85rem !important;
+    }
     .pricing-sync {
         background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
         color: white;
@@ -1084,7 +1095,7 @@ def create_client_hedging_advisor():
         )
         
         # Calculate and add benefit bars
-        benefits = [(fwd - config['spot_rate']) * exposure_amount for fwd in forward_rates]
+        benefits = [(float(data["Kurs terminowy"]) - config['spot_rate']) * exposure_amount for data in client_rates_data]
         
         fig.add_trace(
             go.Bar(
