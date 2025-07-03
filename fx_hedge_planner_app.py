@@ -1100,21 +1100,14 @@ def create_client_hedging_advisor():
             title="Kursy terminowe vs kurs spot + korzyść w PLN",
             xaxis_title="Tenor",
             yaxis_title="Kurs EUR/PLN",
+            yaxis2=dict(
+                title="Korzyść (PLN)",
+                overlaying='y',
+                side='right',
+                showgrid=False
+            ),
             height=500,
             hovermode='x unified'
-        )
-        
-        # Update axis colors separately
-        fig.update_xaxes(titlefont=dict(color='#2e68a5'), tickfont=dict(color='#2e68a5'))
-        fig.update_yaxes(titlefont=dict(color='#2e68a5'), tickfont=dict(color='#2e68a5'), secondary_y=False)
-        fig.update_yaxes(
-            title_text="Korzyść (PLN)",
-            titlefont=dict(color='#2e68a5'), 
-            tickfont=dict(color='#2e68a5'),
-            overlaying='y',
-            side='right',
-            showgrid=False,
-            secondary_y=True
         )
         
         st.plotly_chart(fig, use_container_width=True)
