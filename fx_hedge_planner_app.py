@@ -915,7 +915,8 @@ def create_client_hedging_advisor():
     # Calculate client summary metrics
     total_weighted_rate = 0
     total_benefit_vs_spot = 0
-    total_additional_pln = 0
+    total_pln_from_forwards = 0
+    total_pln_from_spot = 0
     
     client_rates_data = []
     
@@ -926,15 +927,16 @@ def create_client_hedging_advisor():
         # Calculate benefits vs spot
         rate_advantage = ((client_rate - spot_rate) / spot_rate) * 100
         
-        # Calculate PLN amounts
-        pln_amount = client_rate * exposure_amount
-        spot_pln_amount = spot_rate * exposure_amount
-        additional_pln = pln_amount - spot_pln_amount
+        # Calculate PLN amounts - SINGLE FORWARD TRANSACTION
+        pln_amount_forward = client_rate * exposure_amount  # PLN from this single forward
+        pln_amount_spot = spot_rate * exposure_amount       # PLN if stayed on spot
+        additional_pln = pln_amount_forward - pln_amount_spot  # Benefit from this forward
         
-        # Add to summary calculations
+        # Add to portfolio totals
         total_weighted_rate += client_rate
         total_benefit_vs_spot += rate_advantage
-        total_additional_pln += additional_pln
+        total_pln_from_forwards += pln_amount_forward
+        total_pln_from_spot += pln_amount_spot
         
         # Determine recommendation
         if rate_advantage > 0.5:
@@ -954,7 +956,7 @@ def create_client_hedging_advisor():
             "Tenor": pricing['tenor_name'],
             "Kurs terminowy": f"{client_rate:.4f}",
             "vs Spot": f"{rate_advantage:+.2f}%",
-            "Kwota PLN": f"{pln_amount:,.0f}",
+            "Kwota PLN": f"{pln_amount_forward:,.0f}",  # PLN from single forward
             "Dodatkowy PLN": f"{additional_pln:+,.0f}" if additional_pln != 0 else "0",
             "Rekomendacja": recommendation,
             "rec_color": rec_color
@@ -999,12 +1001,9 @@ def create_client_hedging_advisor():
         num_forwards = len(client_rates_data)
         avg_client_rate = total_weighted_rate / num_forwards if num_forwards > 0 else config['spot_rate']
         avg_benefit_pct = total_benefit_vs_spot / num_forwards if num_forwards > 0 else 0
-        total_avg_additional_pln = total_additional_pln / num_forwards if num_forwards > 0 else 0
         
-        # Portfolio benefit vs all spot
-        portfolio_hedged_pln = avg_client_rate * exposure_amount
-        portfolio_spot_pln = config['spot_rate'] * exposure_amount
-        portfolio_total_benefit = portfolio_hedged_pln - portfolio_spot_pln
+        # Portfolio vs spot calculation - use sum of all forwards vs sum of all spots
+        portfolio_total_benefit_pln = total_pln_from_forwards - total_pln_from_spot
         
         col1, col2, col3, col4 = st.columns(4)
         
@@ -1030,8 +1029,8 @@ def create_client_hedging_advisor():
             st.markdown(f"""
             <div class="client-summary client-summary-purple">
                 <h4 style="margin: 0;">Zysk Nominalny vs Spot</h4>
-                <h2 style="margin: 0;">{portfolio_total_benefit:+,.0f}</h2>
-                <p style="margin: 0;">PLN z całego zabezpieczenia</p>
+                <h2 style="margin: 0;">{portfolio_total_benefit_pln:+,.0f}</h2>
+                <p style="margin: 0;">PLN z całego portfolio</p>
             </div>
             """, unsafe_allow_html=True)
         
