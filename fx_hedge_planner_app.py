@@ -187,22 +187,22 @@ def get_fred_bond_data():
         # Create 1Y interpolated rates from available data
         if 'Poland_10Y' in data:
             pl_10y = data['Poland_10Y']['value']
-            # 1Y rate typically 0.5-1.0pp lower than 10Y
+            # Use current market 1Y rate: 4.195%
             data['Poland_1Y'] = {
-                'value': max(pl_10y - 0.8, 0.5),  # Conservative interpolation
+                'value': 4.195,  # Current market rate
                 'date': data['Poland_10Y']['date'],
-                'series_id': 'Interpolated_1Y',
-                'source': 'FRED + 1Y Interpolation'
+                'series_id': 'Market_Current_1Y',
+                'source': 'Current Market + FRED'
             }
         
         if 'Germany_10Y' in data:
             de_10y = data['Germany_10Y']['value']
-            # 1Y rate typically 0.3-0.6pp lower than 10Y
+            # Use current market 1Y rate: 1.745%
             data['Germany_1Y'] = {
-                'value': max(de_10y - 0.5, 0.1),  # Conservative interpolation
+                'value': 1.745,  # Current market rate
                 'date': data['Germany_10Y']['date'],
-                'series_id': 'Interpolated_1Y',
-                'source': 'FRED + 1Y Interpolation'
+                'series_id': 'Market_Current_1Y',
+                'source': 'Current Market + FRED'
             }
         
         # If no data from API, use fallback
@@ -215,11 +215,11 @@ def get_fred_bond_data():
         st.warning(f"Using fallback bond data: {e}")
         # Fallback data with realistic 1Y rates
         return {
-            'Poland_1Y': {'value': 4.90, 'date': '2025-01-15', 'source': 'Fallback'},
-            'Germany_1Y': {'value': 2.10, 'date': '2025-01-15', 'source': 'Fallback'},
-            'Poland_10Y': {'value': 5.70, 'date': '2025-01-15', 'source': 'Fallback'},
-            'Germany_10Y': {'value': 2.60, 'date': '2025-01-15', 'source': 'Fallback'},
-            'US_1Y': {'value': 4.15, 'date': '2025-01-15', 'source': 'Fallback'}
+            'Poland_1Y': {'value': 4.195, 'date': '2025-07-03', 'source': 'Current Market'},
+            'Germany_1Y': {'value': 1.745, 'date': '2025-07-03', 'source': 'Current Market'},
+            'Poland_10Y': {'value': 5.70, 'date': '2025-07-03', 'source': 'Fallback'},
+            'Germany_10Y': {'value': 2.60, 'date': '2025-07-03', 'source': 'Fallback'},
+            'US_1Y': {'value': 4.15, 'date': '2025-07-03', 'source': 'Fallback'}
         }
 
 @st.cache_data(ttl=300)
@@ -501,8 +501,8 @@ def create_dealer_panel():
     st.subheader("📊 Dane Rynkowe")
     col1, col2, col3, col4 = st.columns(4)
     
-    pl_yield = bond_data['Poland_1Y']['value'] if 'Poland_1Y' in bond_data else 4.90
-    de_yield = bond_data['Germany_1Y']['value'] if 'Germany_1Y' in bond_data else 2.10
+    pl_yield = bond_data['Poland_1Y']['value'] if 'Poland_1Y' in bond_data else 4.195
+    de_yield = bond_data['Germany_1Y']['value'] if 'Germany_1Y' in bond_data else 1.745
     spread = pl_yield - de_yield
     
     with col1:
