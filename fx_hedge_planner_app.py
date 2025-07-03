@@ -1066,7 +1066,7 @@ def create_client_hedging_advisor():
                 y=spot_rates,
                 mode='lines',
                 name=f'Kurs spot ({config["spot_rate"]:.4f})',
-                line=dict(color='red', width=3, dash='dash'),
+                line=dict(color='red', width=1.5, dash='dash'),  # Zmniejszone z 3 na 1.5
                 hovertemplate='Spot: %{y:.4f}<extra></extra>'
             )
         )
@@ -1078,8 +1078,8 @@ def create_client_hedging_advisor():
                 y=forward_rates,
                 mode='lines+markers',
                 name='Kursy terminowe',
-                line=dict(color='green', width=3),
-                marker=dict(size=12, color='green'),
+                line=dict(color='#2e68a5', width=1.5),  # Zmniejszone z 3 na 1.5
+                marker=dict(size=8, color='#2e68a5'),    # Zmniejszone z 12 na 8
                 hovertemplate='%{x}: %{y:.4f}<extra></extra>'
             )
         )
@@ -1093,7 +1093,7 @@ def create_client_hedging_advisor():
                 y=benefits,
                 name='Korzyść PLN vs Spot',
                 yaxis='y2',
-                marker_color='lightblue',
+                marker_color='#2e68a5',  # Zmienione z lightblue na #2e68a5
                 opacity=0.7,
                 hovertemplate='%{x}: %{y:,.0f} PLN<extra></extra>'
             )
@@ -1103,11 +1103,21 @@ def create_client_hedging_advisor():
             title="Kursy terminowe vs kurs spot + korzyść w PLN",
             xaxis_title="Tenor",
             yaxis_title="Kurs EUR/PLN",
+            yaxis=dict(
+                titlefont=dict(color='#2e68a5'),  # Niebieski kolor osi Y
+                tickfont=dict(color='#2e68a5')
+            ),
             yaxis2=dict(
                 title="Korzyść (PLN)",
+                titlefont=dict(color='#2e68a5'),  # Niebieski kolor osi Y2
+                tickfont=dict(color='#2e68a5'),
                 overlaying='y',
                 side='right',
                 showgrid=False
+            ),
+            xaxis=dict(
+                titlefont=dict(color='#2e68a5'),  # Niebieski kolor osi X
+                tickfont=dict(color='#2e68a5')
             ),
             height=500,
             hovermode='x unified'
