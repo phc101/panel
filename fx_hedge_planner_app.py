@@ -1023,7 +1023,6 @@ def create_client_hedging_advisor():
             <div class="client-summary client-summary-blue">
                 <h4 style="margin: 0; color: #2e68a5;">Średni Kurs Zabezpieczenia</h4>
                 <h2 style="margin: 0; color: #2c3e50;">{avg_client_rate:.4f}</h2>
-                <p style="margin: 0; color: #666;">vs spot {config['spot_rate']:.4f}</p>
             </div>
             """, unsafe_allow_html=True)
         
@@ -1032,7 +1031,6 @@ def create_client_hedging_advisor():
             <div class="client-summary client-summary-green">
                 <h4 style="margin: 0; color: #2e68a5;">Dodatkowa Marża z Zabezpieczenia</h4>
                 <h2 style="margin: 0; color: #2c3e50;">{avg_benefit_pct:+.2f}%</h2>
-                <p style="margin: 0; color: #666;">średnia wszystkich opcji</p>
             </div>
             """, unsafe_allow_html=True)
         
@@ -1040,8 +1038,7 @@ def create_client_hedging_advisor():
             st.markdown(f"""
             <div class="client-summary client-summary-purple">
                 <h4 style="margin: 0; color: #2e68a5;">Nominalna Marża z Zabezpieczenia</h4>
-                <h2 style="margin: 0; color: #2c3e50;">{portfolio_total_benefit_pln:+,.0f}</h2>
-                <p style="margin: 0; color: #666;">PLN z całego portfolio</p>
+                <h2 style="margin: 0; color: #2c3e50;">{portfolio_total_benefit_pln:+,.0f} zł</h2>
             </div>
             """, unsafe_allow_html=True)
         
@@ -1103,24 +1100,21 @@ def create_client_hedging_advisor():
             title="Kursy terminowe vs kurs spot + korzyść w PLN",
             xaxis_title="Tenor",
             yaxis_title="Kurs EUR/PLN",
-            yaxis=dict(
-                titlefont=dict(color='#2e68a5'),  # Niebieski kolor osi Y
-                tickfont=dict(color='#2e68a5')
-            ),
-            yaxis2=dict(
-                title="Korzyść (PLN)",
-                titlefont=dict(color='#2e68a5'),  # Niebieski kolor osi Y2
-                tickfont=dict(color='#2e68a5'),
-                overlaying='y',
-                side='right',
-                showgrid=False
-            ),
-            xaxis=dict(
-                titlefont=dict(color='#2e68a5'),  # Niebieski kolor osi X
-                tickfont=dict(color='#2e68a5')
-            ),
             height=500,
             hovermode='x unified'
+        )
+        
+        # Update axis colors separately
+        fig.update_xaxes(titlefont=dict(color='#2e68a5'), tickfont=dict(color='#2e68a5'))
+        fig.update_yaxes(titlefont=dict(color='#2e68a5'), tickfont=dict(color='#2e68a5'), secondary_y=False)
+        fig.update_yaxes(
+            title_text="Korzyść (PLN)",
+            titlefont=dict(color='#2e68a5'), 
+            tickfont=dict(color='#2e68a5'),
+            overlaying='y',
+            side='right',
+            showgrid=False,
+            secondary_y=True
         )
         
         st.plotly_chart(fig, use_container_width=True)
