@@ -172,38 +172,15 @@ def get_fred_bond_data():
     """Get government bond yields from FRED with fallback data"""
     fred_client = FREDAPIClient()
     bond_series = {
-        'Poland_1Y': 'IRLTLT01PLM156N',  # Will try to get 1Y, fallback to interpolated
-        'Germany_1Y': 'IRLTLT01DEM156N', # Will try to get 1Y, fallback to interpolated
-        'Poland_10Y': 'IRLTLT01PLM156N', # Backup for interpolation
-        'Germany_10Y': 'IRLTLT01DEM156N', # Backup for interpolation
-        'US_1Y': 'DGS1',
+        'Poland_10Y': 'IRLTLT01PLM156N',
+        'Germany_10Y': 'IRLTLT01DEM156N',
+        'US_10Y': 'DGS10',
         'US_2Y': 'DGS2',
         'Euro_Area_10Y': 'IRLTLT01EZM156N'
     }
     
     try:
         data = fred_client.get_multiple_series(bond_series)
-        
-        # Create 1Y interpolated rates from available data
-        if 'Poland_10Y' in data:
-            pl_10y = data['Poland_10Y']['value']
-            # Use current market 1Y rate: 4.195%
-            data['Poland_1Y'] = {
-                'value': 4.195,  # Current market rate
-                'date': data['Poland_10Y']['date'],
-                'series_id': 'Market_Current_1Y',
-                'source': 'Current Market + FRED'
-            }
-        
-        if 'Germany_10Y' in data:
-            de_10y = data['Germany_10Y']['value']
-            # Use current market 1Y rate: 1.745%
-            data['Germany_1Y'] = {
-                'value': 1.745,  # Current market rate
-                'date': data['Germany_10Y']['date'],
-                'series_id': 'Market_Current_1Y',
-                'source': 'Current Market + FRED'
-            }
         
         # If no data from API, use fallback
         if not data:
@@ -213,13 +190,12 @@ def get_fred_bond_data():
         
     except Exception as e:
         st.warning(f"Using fallback bond data: {e}")
-        # Fallback data with realistic 1Y rates
+        # Fallback data with current 10Y rates
         return {
-            'Poland_1Y': {'value': 4.195, 'date': '2025-07-03', 'source': 'Current Market'},
-            'Germany_1Y': {'value': 1.745, 'date': '2025-07-03', 'source': 'Current Market'},
-            'Poland_10Y': {'value': 5.70, 'date': '2025-07-03', 'source': 'Fallback'},
-            'Germany_10Y': {'value': 2.60, 'date': '2025-07-03', 'source': 'Fallback'},
-            'US_1Y': {'value': 4.15, 'date': '2025-07-03', 'source': 'Fallback'}
+            'Poland_10Y': {'value': 5.42, 'date': '2025-07-03', 'source': 'Current Market'},
+            'Germany_10Y': {'value': 2.63, 'date': '2025-07-03', 'source': 'Current Market'},
+            'US_10Y': {'value': 4.28, 'date': '2025-07-03', 'source': 'Current Market'},
+            'Euro_Area_10Y': {'value': 3.15, 'date': '2025-07-03', 'source': 'Current Market'}
         }
 
 @st.cache_data(ttl=300)
@@ -501,8 +477,8 @@ def create_dealer_panel():
     st.subheader("📊 Dane Rynkowe")
     col1, col2, col3, col4 = st.columns(4)
     
-    pl_yield = bond_data['Poland_1Y']['value'] if 'Poland_1Y' in bond_data else 4.195
-    de_yield = bond_data['Germany_1Y']['value'] if 'Germany_1Y' in bond_data else 1.745
+    pl_yield = bond_data['Poland_10Y']['value'] if 'Poland_10Y' in bond_data else 5.42
+    de_yield = bond_data['Germany_10Y']['value'] if 'Germany_10Y' in bond_data else 2.63
     spread = pl_yield - de_yield
     
     with col1:
@@ -514,23 +490,23 @@ def create_dealer_panel():
     
     with col2:
         st.metric(
-            "Rentowność PL 1Y",
+            "Rentowność PL 10Y",
             f"{pl_yield:.2f}%",
-            help=f"Źródło: {bond_data.get('Poland_1Y', {}).get('source', 'Fallback')}"
+            help=f"Źródło: {bond_data.get('Poland_10Y', {}).get('source', 'Current Market')}"
         )
     
     with col3:
         st.metric(
-            "Rentowność DE 1Y",
+            "Rentowność DE 10Y",
             f"{de_yield:.2f}%", 
-            help=f"Źródło: {bond_data.get('Germany_1Y', {}).get('source', 'Fallback')}"
+            help=f"Źródło: {bond_data.get('Germany_10Y', {}).get('source', 'Current Market')}"
         )
     
     with col4:
         st.metric(
-            "Spread PL-DE 1Y",
+            "Spread PL-DE 10Y",
             f"{spread:.2f}pp",
-            help="Różnica rentowności 1Y napędzająca punkty terminowe"
+            help="Różnica rentowności 10Y napędzająca punkty terminowe"
         )
     
     # Transaction configuration
