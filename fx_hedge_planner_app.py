@@ -1,597 +1,4 @@
-# ============================================================================
-        # PODSUMOWANIE STRATEGII ZABEZPIECZENIA + ENHANCED INFO
-        # ============================================================================
-        
-        st.markdown("---")
-        st.subheader("📊 Podsumowanie Strategii (Enhanced)")
-        
-        # Calculate summary metrics
-        num_forwards = len(client_rates_data)
-        avg_client_rate = total_weighted_rate / num_forwards if num_forwards > 0 else config['spot_rate']
-        avg_benefit_pct = total_benefit_vs_spot / num_forwards if num_forwards > 0 else 0
-        
-        # Portfolio vs spot calculation - use sum of all forwards vs sum of all spots
-        portfolio_total_benefit_pln = total_pln_from_forwards - total_pln_from_spot
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="client-summary client-summary-blue">
-                <h4 style="margin: 0; color: #2e68a5;">Średni Kurs Zabezpieczenia</h4>
-                <h2 style="margin: 0; color: #2c3e50;">{avg_client_rate:.4f}</h2>
-                <p style="margin: 0; color: #666; font-size: 0.85em;">Enhanced APIs</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="client-summary client-summary-green">
-                <h4 style="margin: 0; color: #2e68a5;">Dodatkowa Marża z Zabezpieczenia</h4>
-                <h2 style="margin: 0; color: #2c3e50;">{avg_benefit_pct:+.2f}%</h2>
-                <p style="margin: 0; color: #666; font-size: 0.85em;">vs Enhanced Spot</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="client-summary client-summary-purple">
-                <h4 style="margin: 0; color: #2e68a5;">Nominalna Marża z Zabezpieczenia</h4>
-                <h2 style="margin: 0; color: #2c3e50;">{portfolio_total_benefit_pln:+,.0f} zł</h2>
-                <p style="margin: 0; color: #666; font-size: 0.85em;">Enhanced Calculation</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # ============================================================================
-        # CHART COMPARISON + ENHANCED INFO
-        # ============================================================================
-        
-        st.markdown("---")
-        st.subheader("📈 Porównanie Wizualne (Enhanced APIs)")
-        
-        # Create comparison chart
-        tenors_list = [data["Tenor"] for data in client_rates_data]
-        forward_rates = [float(data["Kurs terminowy"]) for data in client_rates_data]
-        spot_rates = [config['spot_rate']] * len(tenors_list)
-        
-        fig = go.Figure()
-        
-        # Add spot rate line
-        fig.add_trace(
-            go.Scatter(
-                x=tenors_list,
-                y=spot_rates,
-                mode='lines',
-                name=f'Enhanced Spot ({config["spot_rate"]:.4f})',
-                line=dict(color='red', width=1.5, dash='dash'),
-                hovertemplate='Enhanced Spot: %{y:.4f}<extra></extra>'
-            )
-        )
-        
-        # Add forward rates
-        fig.add_trace(
-            go.Scatter(
-                x=tenors_list,
-                y=forward_rates,
-                mode='lines+markers',
-                name='Enhanced Kursy terminowe',
-                line=dict(color='#2e68a5', width=1.5),
-                marker=dict(size=8, color='#2e68a5'),
-                hovertemplate='%{x}: %{y:.4f}<extra></extra>'
-            )
-        )
-        
-        # Calculate and add benefit bars
-        benefits = [(float(data["Kurs terminowy"]) - config['spot_rate']) * exposure_amount for data in client_rates_data]
-        
-        fig.add_trace(
-            go.Bar(
-                x=tenors_list,
-                y=benefits,
-                name='Enhanced Korzyść PLN vs Spot',
-                yaxis='y2',
-                marker_color='#2e68a5',
-                opacity=0.7,
-                hovertemplate='%{x}: %{y:,.0f} PLN<extra></extra>'
-            )
-        )
-        
-        fig.update_layout(
-            title="Enhanced API: Kursy terminowe vs spot + korzyść w PLN",
-            xaxis_title="Tenor",
-            yaxis_title="Kurs EUR/PLN",
-            yaxis2=dict(
-                title="Korzyść (PLN)",
-                overlaying='y',
-                side='right',
-                showgrid=False
-            ),
-            height=500,
-            hovermode='x unified'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # ============================================================================
-        # REKOMENDACJE + ENHANCED INFO
-        # ============================================================================
-        
-        st.markdown("---")
-        st.subheader("🎯 Rekomendacje Zabezpieczeń (Enhanced)")
-        
-        # Filter best recommendations
-        best_rates = [rate for rate in client_rates_data if '🟢' in rate['Rekomendacja'] or '🟡' in rate['Rekomendacja']]
-        best_rates = sorted(best_rates, key=lambda x: float(x['vs Spot'].rstrip('%')), reverse=True)[:3]
-        
-        if best_rates:
-            st.markdown("**📋 Top 3 rekomendacje (Enhanced APIs):**")
-            
-            for i, rate in enumerate(best_rates, 1):
-                col1, col2, col3, col4 = st.columns([1, 2, 1, 1])
-                
-                with col1:
-                    st.write(f"**#{i}** {rate['Rekomendacja']}")
-                
-                with col2:
-                    st.write(f"**{rate['Tenor']}** - kurs {rate['Kurs terminowy']}")
-                
-                with col3:
-                    st.write(f"Korzyść: **{rate['vs Spot']}**")
-                
-                with col4:
-                    st.write(f"**{rate['Dodatkowy PLN']} PLN**")
-        
-        else:
-            st.info("💡 W obecnych warunkach rynkowych (Enhanced APIs) rozważ pozostanie na kursie spot lub poczekaj na lepsze warunki.")
-    
-    else:
-        st.warning("Brak dostępnych opcji dla wybranego okresu zabezpieczenia.")
-    
-    # Enhanced call to action
-    st.markdown("---")
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        st.markdown(f"""
-        <div class="metric-card" style="text-align: center;">
-            <h4>💼 Gotowy do zabezpieczenia {exposure_amount:,} EUR z Enhanced APIs?</h4>
-            <p>Skontaktuj się z dealerami FX aby sfinalizować transakcję</p>
-            <p><strong>📞 +48 22 XXX XXXX | 📧 fx.trading@bank.pl</strong></p>
-            <p style="font-size: 0.9em; color: #666;">Enhanced kursy ważne przez 15 minut | Multiple API sources dla lepszej dostępności</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-# ============================================================================
-# GŁÓWNA APLIKACJA Z ENHANCED MODEL DWUMIANOWYM
-# ============================================================================
-
-def main():
-    """Główny punkt wejścia aplikacji z Enhanced APIs"""
-    
-    # Initialize session state
-    initialize_session_state()
-    
-    # Enhanced header
-    st.markdown("""
-    <div style="display: flex; align-items: center; margin-bottom: 2rem;">
-        <div style="background: linear-gradient(45deg, #667eea, #764ba2); width: 60px; height: 60px; border-radius: 10px; margin-right: 1rem; display: flex; align-items: center; justify-content: center;">
-            <span style="font-size: 2rem;">🚀</span>
-        </div>
-        <h1 style="margin: 0; color: #2c3e50;">Enhanced Zintegrowana Platforma FX</h1>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("*Enhanced APIs: ExchangeRate-API ⭐ | Trading Economics 📈 | Multiple Fallbacks 🛡️*")
-    
-    # Enhanced sync status in header
-    if st.session_state.dealer_pricing_data:
-        config = st.session_state.dealer_config
-        st.success(f"✅ Enhanced System zsynchronizowany | Spot: {config['spot_rate']:.4f} ({config['spot_source']}) | Window: {config['window_days']} dni | Kursy: {len(st.session_state.dealer_pricing_data)} tenorów")
-    else:
-        st.info("🔄 Oczekiwanie na Enhanced wycenę dealerską...")
-    
-    # Create tabs with enhanced binomial model
-    tab1, tab2, tab3 = st.tabs(["🔧 Panel Dealerski (Enhanced)", "🛡️ Panel Zabezpieczeń (Enhanced)", "📊 Enhanced Model Dwumianowy"])
-    
-    with tab1:
-        create_dealer_panel()
-    
-    with tab2:
-        create_client_hedging_advisor()
-    
-    with tab3:
-        # ENHANCED 7-DAY BINOMIAL TREE MODEL
-        st.header("📊 Enhanced Drzewo Dwumianowe - 7 Dni")
-        st.markdown("*Krótkoterminowa prognoza EUR/PLN z Enhanced APIs i dziennymi zakresami*")
-        
-        # Enhanced volatility calculation using multiple sources
-        try:
-            # First try Enhanced APIs for historical data
-            enhanced_forex = ImprovedForexAPI()
-            current_rate_info = enhanced_forex.get_eur_pln_rate()
-            current_spot = current_rate_info['rate']
-            
-            # Try to get historical volatility from NBP backup
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=30)
-            start_str = start_date.strftime('%Y-%m-%d')
-            end_str = end_date.strftime('%Y-%m-%d')
-            
-            url = f"https://api.nbp.pl/api/exchangerates/rates/a/eur/{start_str}/{end_str}/"
-            response = requests.get(url, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                rates = [rate_data['mid'] for rate_data in data['rates']]
-                
-                if len(rates) >= 20:
-                    recent_rates = rates[-20:]
-                    returns = np.diff(np.log(recent_rates))
-                    rolling_vol = np.std(returns) * np.sqrt(252)
-                    data_count = len(recent_rates)
-                    st.success(f"✅ Enhanced volatility z ostatnich {data_count} dni: {rolling_vol*100:.2f}% rocznie | Current spot z Enhanced API: {current_spot:.4f}")
-                else:
-                    raise Exception(f"Only {len(rates)} days available")
-            else:
-                raise Exception("NBP backup failed")
-                
-        except Exception as e:
-            rolling_vol = 0.12
-            current_spot = current_rate_info['rate'] if 'current_rate_info' in locals() else 4.25
-            st.warning(f"⚠️ Używam Enhanced fallback volatility (12%) | Current Enhanced spot: {current_spot:.4f}")
-        
-        # Enhanced model parameters
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            spot_rate = st.number_input(
-                "Enhanced Kurs spot EUR/PLN:",
-                value=current_spot,
-                min_value=3.50,
-                max_value=6.00,
-                step=0.0001,
-                format="%.4f",
-                help="Z Enhanced APIs: ExchangeRate-API lub fallback"
-            )
-        
-        with col2:
-            st.metric("Enhanced Horyzont", "5 dni roboczych", help="Poniedziałek - Piątek, Enhanced calculation")
-            days = 5
-        
-        with col3:
-            daily_vol = st.slider(
-                "Enhanced Zmienność dzienna (%):",
-                min_value=0.1,
-                max_value=2.0,
-                value=rolling_vol/np.sqrt(252)*100,
-                step=0.05,
-                help="Enhanced zmienność na jeden dzień roboczy"
-            ) / 100
-        
-        # Enhanced binomial tree calculation
-        dt = 1/252
-        u = np.exp(daily_vol * np.sqrt(dt))
-        d = 1/u
-        r = 0.02/252
-        p = (np.exp(r * dt) - d) / (u - d)
-        
-        # Create enhanced 5-day business tree
-        tree = {}
-        
-        for day in range(6):
-            tree[day] = {}
-            
-            if day == 0:
-                tree[day][0] = spot_rate
-            else:
-                for j in range(day + 1):
-                    ups = j
-                    downs = day - j
-                    rate = spot_rate * (u ** ups) * (d ** downs)
-                    tree[day][j] = rate
-        
-        # Enhanced business daily ranges
-        st.subheader("📅 Enhanced Dzienne Zakresy Kursów (Dni Robocze)")
-        
-        today = datetime.now()
-        business_days = []
-        current_date = today
-        
-        while len(business_days) < 5:
-            current_date += timedelta(days=1)
-            if current_date.weekday() < 5:
-                business_days.append(current_date)
-        
-        weekdays = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek"]
-        
-        daily_ranges = []
-        
-        for day in range(1, 6):
-            day_rates = [tree[day][j] for j in range(day + 1)]
-            min_rate = min(day_rates)
-            max_rate = max(day_rates)
-            
-            business_date = business_days[day-1]
-            weekday_name = weekdays[business_date.weekday()]
-            date_str = business_date.strftime("%d.%m")
-            
-            daily_ranges.append({
-                "Dzień": f"Enhanced Dzień {day}",
-                "Data": f"{weekday_name} {date_str}",
-                "Min kurs": f"{min_rate:.4f}",
-                "Max kurs": f"{max_rate:.4f}",
-                "Zakres": f"{min_rate:.4f} - {max_rate:.4f}",
-                "Enhanced Rozpiętość": f"{((max_rate - min_rate) / min_rate * 10000):.0f} pkt"
-            })
-        
-        df_ranges = pd.DataFrame(daily_ranges)
-        
-        # Enhanced color coding
-        def highlight_enhanced_ranges(row):
-            spread_pkt = float(row['Enhanced Rozpiętość'].split()[0])
-            if spread_pkt > 200:
-                return ['background-color: #f8d7da'] * len(row)  # Red
-            elif spread_pkt > 100:
-                return ['background-color: #fff3cd'] * len(row)  # Yellow  
-            else:
-                return ['background-color: #d4edda'] * len(row)  # Green
-        
-        st.dataframe(
-            df_ranges.style.apply(highlight_enhanced_ranges, axis=1),
-            use_container_width=True,
-            hide_index=True
-        )
-        
-        # Enhanced tree visualization
-        st.subheader("🌳 Enhanced Drzewo Dwumianowe z Najczęściej Prawdopodobną Ścieżką")
-        
-        # Calculate enhanced most probable path
-        most_probable_path = []
-        for day in range(6):
-            if day == 0:
-                most_probable_path.append(0)
-            else:
-                expected_ups = day * p
-                closest_j = round(expected_ups)
-                closest_j = max(0, min(closest_j, day))
-                most_probable_path.append(closest_j)
-        
-        # Enhanced tree visualization
-        fig = go.Figure()
-        
-        # Plot enhanced tree nodes
-        for day in range(6):
-            for j in range(day + 1):
-                rate = tree[day][j]
-                x = day
-                y = j - day/2
-                
-                is_most_probable = (j == most_probable_path[day])
-                
-                fig.add_trace(
-                    go.Scatter(
-                        x=[x],
-                        y=[y],
-                        mode='markers',
-                        marker=dict(
-                            size=20 if is_most_probable else 15,
-                            color='#ff6b35' if is_most_probable else '#2e68a5',
-                            line=dict(width=3 if is_most_probable else 2, color='white')
-                        ),
-                        showlegend=False,
-                        hovertemplate=f"Enhanced Dzień {day}<br>Kurs: {rate:.4f}<br>{'🎯 Enhanced najczęstsza ścieżka' if is_most_probable else ''}<extra></extra>"
-                    )
-                )
-                
-                # Enhanced text labels
-                fig.add_trace(
-                    go.Scatter(
-                        x=[x],
-                        y=[y + 0.25],
-                        mode='text',
-                        text=f"{rate:.4f}",
-                        textposition="middle center",
-                        textfont=dict(
-                            color='#ff6b35' if is_most_probable else '#2e68a5',
-                            size=12 if is_most_probable else 10,
-                            family="Arial Black" if is_most_probable else "Arial"
-                        ),
-                        showlegend=False,
-                        hoverinfo='skip'
-                    )
-                )
-                
-                # Enhanced connecting lines
-                if day < 5:
-                    # Up movement
-                    if j < day + 1:
-                        next_y_up = (j + 1) - (day + 1)/2
-                        is_prob_connection = (j == most_probable_path[day] and (j + 1) == most_probable_path[day + 1])
-                        
-                        fig.add_trace(
-                            go.Scatter(
-                                x=[x, x + 1],
-                                y=[y, next_y_up],
-                                mode='lines',
-                                line=dict(
-                                    color='#ff6b35' if is_prob_connection else 'lightgray',
-                                    width=4 if is_prob_connection else 1
-                                ),
-                                showlegend=False,
-                                hoverinfo='skip'
-                            )
-                        )
-                    
-                    # Down movement
-                    if j >= 0:
-                        next_y_down = j - (day + 1)/2
-                        is_prob_connection = (j == most_probable_path[day] and j == most_probable_path[day + 1])
-                        
-                        fig.add_trace(
-                            go.Scatter(
-                                x=[x, x + 1],
-                                y=[y, next_y_down],
-                                mode='lines',
-                                line=dict(
-                                    color='#ff6b35' if is_prob_connection else 'lightgray',
-                                    width=4 if is_prob_connection else 1
-                                ),
-                                showlegend=False,
-                                hoverinfo='skip'
-                            )
-                        )
-        
-        # Enhanced legend
-        fig.add_trace(
-            go.Scatter(
-                x=[None], y=[None],
-                mode='markers',
-                marker=dict(size=20, color='#ff6b35'),
-                name='🎯 Enhanced najczęstsza ścieżka',
-                showlegend=True
-            )
-        )
-        
-        fig.add_trace(
-            go.Scatter(
-                x=[None], y=[None],
-                mode='markers',
-                marker=dict(size=15, color='#2e68a5'),
-                name='Enhanced inne możliwe kursy',
-                showlegend=True
-            )
-        )
-        
-        # Enhanced layout
-        fig.update_layout(
-            title="Enhanced Drzewo dwumianowe EUR/PLN - 5 dni roboczych",
-            xaxis_title="Enhanced Dzień roboczy",
-            yaxis_title="Enhanced Poziom w drzewie",
-            height=500,
-            xaxis=dict(
-                tickmode='array',
-                tickvals=list(range(6)),
-                ticktext=[f"Enhanced Dzień {i}" if i == 0 else f"Enhanced Dzień {i}\n({weekdays[(business_days[i-1].weekday())][:3]})" for i in range(6)]
-            ),
-            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Enhanced path details
-        st.subheader("🎯 Enhanced Najczęstsza Prognozowana Ścieżka")
-        
-        path_details = []
-        for day in range(1, 6):
-            j = most_probable_path[day]
-            rate = tree[day][j]
-            business_date = business_days[day-1]
-            weekday_name = weekdays[business_date.weekday()]
-            
-            # Enhanced probability calculation
-            binom_coeff = 1
-            for i in range(min(j, day-j)):
-                binom_coeff = binom_coeff * (day - i) // (i + 1)
-            node_prob = binom_coeff * (p ** j) * ((1 - p) ** (day - j))
-            
-            path_details.append({
-                "Enhanced Dzień": f"{weekday_name}",
-                "Data": business_date.strftime("%d.%m"),
-                "Enhanced Prognozowany kurs": f"{rate:.4f}",
-                "Enhanced Zmiana vs dziś": f"{((rate/spot_rate - 1) * 100):+.2f}%",
-                "Enhanced Prawdopodobieństwo": f"{node_prob*100:.1f}%"
-            })
-        
-        df_path = pd.DataFrame(path_details)
-        st.dataframe(df_path, use_container_width=True, hide_index=True)
-        
-        # Enhanced statistical summary
-        st.subheader("📊 Enhanced Podsumowanie Statystyczne")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        # Enhanced final day statistics
-        final_rates = [tree[5][j] for j in range(6)]
-        final_probs = []
-        
-        for j in range(6):
-            binom_coeff = 1
-            for i in range(min(j, 5-j)):
-                binom_coeff = binom_coeff * (5 - i) // (i + 1)
-            prob = binom_coeff * (p ** j) * ((1 - p) ** (5 - j))
-            final_probs.append(prob)
-        
-        total_prob = sum(final_probs)
-        final_probs = [prob/total_prob for prob in final_probs]
-        
-        expected_rate = sum(rate * prob for rate, prob in zip(final_rates, final_probs))
-        min_final = min(final_rates)
-        max_final = max(final_rates)
-        most_probable_final = tree[5][most_probable_path[5]]
-        
-        prob_below_spot = sum(prob for rate, prob in zip(final_rates, final_probs) if rate < spot_rate) * 100
-        
-        with col1:
-            st.metric(
-                "Enhanced Oczekiwany kurs (5 dni)",
-                f"{expected_rate:.4f}",
-                delta=f"{((expected_rate/spot_rate - 1) * 100):+.2f}%"
-            )
-        
-        with col2:
-            st.metric(
-                "Enhanced Najczęstsza prognoza",
-                f"{most_probable_final:.4f}",
-                delta=f"{((most_probable_final/spot_rate - 1) * 100):+.2f}%",
-                help="Enhanced kurs z najczęstszej ścieżki"
-            )
-        
-        with col3:
-            st.metric(
-                "Enhanced Zakres (min-max)",
-                f"{min_final:.4f} - {max_final:.4f}",
-                help="Enhanced możliwe ekstremalne scenariusze"
-            )
-        
-        with col4:
-            st.metric(
-                "Enhanced Prawdop. umocnienia PLN",
-                f"{prob_below_spot:.1f}%",
-                help="Enhanced prawdopodobieństwo kursu poniżej dzisiejszego"
-            )
-        
-        # Enhanced model parameters
-        st.subheader("📋 Enhanced Parametry Modelu")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown(f"""
-            **Enhanced Dane wejściowe:**
-            - Enhanced Kurs spot: {spot_rate:.4f}
-            - Enhanced Zmienność dzienna: {daily_vol*100:.3f}%
-            - Enhanced Zmienność roczna: {daily_vol*np.sqrt(252)*100:.2f}%
-            - Enhanced Horyzont: 5 dni roboczych (Pn-Pt)
-            - Enhanced Okno zmienności: 20 dni roboczych
-            - Enhanced API Source: Multiple fallbacks
-            """)
-        
-        with col2:
-            st.markdown(f"""
-            **Enhanced Parametry drzewa:**
-            - Enhanced Współczynnik wzrostu (u): {u:.6f}
-            - Enhanced Współczynnik spadku (d): {d:.6f}
-            - Enhanced Prawdop. risk-neutral (p): {p:.4f}
-            - Enhanced Stopa wolna od ryzyka: {r*252*100:.2f}%
-            - Enhanced API Status: ✅ Active
-            """)
-
-# ============================================================================
-# ENHANCED URUCHOMIENIE APLIKACJI
-# ============================================================================
-
-if __name__ == "__main__":
-    main()import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -605,7 +12,7 @@ import math
 # ============================================================================
 
 # FRED API Configuration - PLACE YOUR API KEY HERE
-FRED_API_KEY = st.secrets.get("FRED_API_KEY", "demo")  # Uses Streamlit secrets or demo
+FRED_API_KEY = st.secrets.get("FRED_API_KEY", "124b6e8139672dd8e19c78a1b3a1ff98")  # Uses Streamlit secrets or demo
 
 # Page config
 st.set_page_config(
@@ -1713,10 +1120,6 @@ def create_client_hedging_advisor():
     # All pricing data (no filtering by horizon)
     filtered_pricing = st.session_state.dealer_pricing_data
     
-    # ============================================================================
-    # TABELA KURSÓW DLA KLIENTA + ENHANCED INFO
-    # ============================================================================
-    
     st.markdown("---")
     st.subheader("💱 Dostępne Kursy Terminowe (Enhanced APIs)")
     st.markdown("*Kursy gotowe do zawarcia transakcji z Enhanced market data*")
@@ -1803,3 +1206,586 @@ def create_client_hedging_advisor():
             hide_index=True
         )
         st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown("---")
+        st.subheader("📊 Podsumowanie Strategii (Enhanced)")
+        
+        # Calculate summary metrics
+        num_forwards = len(client_rates_data)
+        avg_client_rate = total_weighted_rate / num_forwards if num_forwards > 0 else config['spot_rate']
+        avg_benefit_pct = total_benefit_vs_spot / num_forwards if num_forwards > 0 else 0
+        
+        # Portfolio vs spot calculation - use sum of all forwards vs sum of all spots
+        portfolio_total_benefit_pln = total_pln_from_forwards - total_pln_from_spot
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="client-summary client-summary-blue">
+                <h4 style="margin: 0; color: #2e68a5;">Średni Kurs Zabezpieczenia</h4>
+                <h2 style="margin: 0; color: #2c3e50;">{avg_client_rate:.4f}</h2>
+                <p style="margin: 0; color: #666; font-size: 0.85em;">Enhanced APIs</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="client-summary client-summary-green">
+                <h4 style="margin: 0; color: #2e68a5;">Dodatkowa Marża z Zabezpieczenia</h4>
+                <h2 style="margin: 0; color: #2c3e50;">{avg_benefit_pct:+.2f}%</h2>
+                <p style="margin: 0; color: #666; font-size: 0.85em;">vs Enhanced Spot</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class="client-summary client-summary-purple">
+                <h4 style="margin: 0; color: #2e68a5;">Nominalna Marża z Zabezpieczenia</h4>
+                <h2 style="margin: 0; color: #2c3e50;">{portfolio_total_benefit_pln:+,.0f} zł</h2>
+                <p style="margin: 0; color: #666; font-size: 0.85em;">Enhanced Calculation</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        st.subheader("📈 Porównanie Wizualne (Enhanced APIs)")
+        
+        # Create comparison chart
+        tenors_list = [data["Tenor"] for data in client_rates_data]
+        forward_rates = [float(data["Kurs terminowy"]) for data in client_rates_data]
+        spot_rates = [config['spot_rate']] * len(tenors_list)
+        
+        fig = go.Figure()
+        
+        # Add spot rate line
+        fig.add_trace(
+            go.Scatter(
+                x=tenors_list,
+                y=spot_rates,
+                mode='lines',
+                name=f'Enhanced Spot ({config["spot_rate"]:.4f})',
+                line=dict(color='red', width=1.5, dash='dash'),
+                hovertemplate='Enhanced Spot: %{y:.4f}<extra></extra>'
+            )
+        )
+        
+        # Add forward rates
+        fig.add_trace(
+            go.Scatter(
+                x=tenors_list,
+                y=forward_rates,
+                mode='lines+markers',
+                name='Enhanced Kursy terminowe',
+                line=dict(color='#2e68a5', width=1.5),
+                marker=dict(size=8, color='#2e68a5'),
+                hovertemplate='%{x}: %{y:.4f}<extra></extra>'
+            )
+        )
+        
+        # Calculate and add benefit bars
+        benefits = [(float(data["Kurs terminowy"]) - config['spot_rate']) * exposure_amount for data in client_rates_data]
+        
+        fig.add_trace(
+            go.Bar(
+                x=tenors_list,
+                y=benefits,
+                name='Enhanced Korzyść PLN vs Spot',
+                yaxis='y2',
+                marker_color='#2e68a5',
+                opacity=0.7,
+                hovertemplate='%{x}: %{y:,.0f} PLN<extra></extra>'
+            )
+        )
+        
+        fig.update_layout(
+            title="Enhanced API: Kursy terminowe vs spot + korzyść w PLN",
+            xaxis_title="Tenor",
+            yaxis_title="Kurs EUR/PLN",
+            yaxis2=dict(
+                title="Korzyść (PLN)",
+                overlaying='y',
+                side='right',
+                showgrid=False
+            ),
+            height=500,
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.markdown("---")
+        st.subheader("🎯 Rekomendacje Zabezpieczeń (Enhanced)")
+        
+        # Filter best recommendations
+        best_rates = [rate for rate in client_rates_data if '🟢' in rate['Rekomendacja'] or '🟡' in rate['Rekomendacja']]
+        best_rates = sorted(best_rates, key=lambda x: float(x['vs Spot'].rstrip('%')), reverse=True)[:3]
+        
+        if best_rates:
+            st.markdown("**📋 Top 3 rekomendacje (Enhanced APIs):**")
+            
+            for i, rate in enumerate(best_rates, 1):
+                col1, col2, col3, col4 = st.columns([1, 2, 1, 1])
+                
+                with col1:
+                    st.write(f"**#{i}** {rate['Rekomendacja']}")
+                
+                with col2:
+                    st.write(f"**{rate['Tenor']}** - kurs {rate['Kurs terminowy']}")
+                
+                with col3:
+                    st.write(f"Korzyść: **{rate['vs Spot']}**")
+                
+                with col4:
+                    st.write(f"**{rate['Dodatkowy PLN']} PLN**")
+        
+        else:
+            st.info("💡 W obecnych warunkach rynkowych (Enhanced APIs) rozważ pozostanie na kursie spot lub poczekaj na lepsze warunki.")
+    
+    else:
+        st.warning("Brak dostępnych opcji dla wybranego okresu zabezpieczenia.")
+    
+    # Enhanced call to action
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card" style="text-align: center;">
+            <h4>💼 Gotowy do zabezpieczenia {exposure_amount:,} EUR z Enhanced APIs?</h4>
+            <p>Skontaktuj się z dealerami FX aby sfinalizować transakcję</p>
+            <p><strong>📞 +48 22 XXX XXXX | 📧 fx.trading@bank.pl</strong></p>
+            <p style="font-size: 0.9em; color: #666;">Enhanced kursy ważne przez 15 minut | Multiple API sources dla lepszej dostępności</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+# ============================================================================
+# GŁÓWNA APLIKACJA Z ENHANCED MODEL DWUMIANOWYM
+# ============================================================================
+
+def main():
+    """Główny punkt wejścia aplikacji z Enhanced APIs"""
+    
+    # Initialize session state
+    initialize_session_state()
+    
+    # Enhanced header
+    st.markdown("""
+    <div style="display: flex; align-items: center; margin-bottom: 2rem;">
+        <div style="background: linear-gradient(45deg, #667eea, #764ba2); width: 60px; height: 60px; border-radius: 10px; margin-right: 1rem; display: flex; align-items: center; justify-content: center;">
+            <span style="font-size: 2rem;">🚀</span>
+        </div>
+        <h1 style="margin: 0; color: #2c3e50;">Enhanced Zintegrowana Platforma FX</h1>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("*Enhanced APIs: ExchangeRate-API ⭐ | Trading Economics 📈 | Multiple Fallbacks 🛡️*")
+    
+    # Enhanced sync status in header
+    if st.session_state.dealer_pricing_data:
+        config = st.session_state.dealer_config
+        st.success(f"✅ Enhanced System zsynchronizowany | Spot: {config['spot_rate']:.4f} ({config['spot_source']}) | Window: {config['window_days']} dni | Kursy: {len(st.session_state.dealer_pricing_data)} tenorów")
+    else:
+        st.info("🔄 Oczekiwanie na Enhanced wycenę dealerską...")
+    
+    # Create tabs with enhanced binomial model
+    tab1, tab2, tab3 = st.tabs(["🔧 Panel Dealerski (Enhanced)", "🛡️ Panel Zabezpieczeń (Enhanced)", "📊 Enhanced Model Dwumianowy"])
+    
+    with tab1:
+        create_dealer_panel()
+    
+    with tab2:
+        create_client_hedging_advisor()
+    
+    with tab3:
+        # ENHANCED 7-DAY BINOMIAL TREE MODEL
+        st.header("📊 Enhanced Drzewo Dwumianowe - 7 Dni")
+        st.markdown("*Krótkoterminowa prognoza EUR/PLN z Enhanced APIs i dziennymi zakresami*")
+        
+        # Enhanced volatility calculation using multiple sources
+        try:
+            # First try Enhanced APIs for historical data
+            enhanced_forex = ImprovedForexAPI()
+            current_rate_info = enhanced_forex.get_eur_pln_rate()
+            current_spot = current_rate_info['rate']
+            
+            # Try to get historical volatility from NBP backup
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=30)
+            start_str = start_date.strftime('%Y-%m-%d')
+            end_str = end_date.strftime('%Y-%m-%d')
+            
+            url = f"https://api.nbp.pl/api/exchangerates/rates/a/eur/{start_str}/{end_str}/"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                rates = [rate_data['mid'] for rate_data in data['rates']]
+                
+                if len(rates) >= 20:
+                    recent_rates = rates[-20:]
+                    returns = np.diff(np.log(recent_rates))
+                    rolling_vol = np.std(returns) * np.sqrt(252)
+                    data_count = len(recent_rates)
+                    st.success(f"✅ Enhanced volatility z ostatnich {data_count} dni: {rolling_vol*100:.2f}% rocznie | Current spot z Enhanced API: {current_spot:.4f}")
+                else:
+                    raise Exception(f"Only {len(rates)} days available")
+            else:
+                raise Exception("NBP backup failed")
+                
+        except Exception as e:
+            rolling_vol = 0.12
+            current_spot = current_rate_info['rate'] if 'current_rate_info' in locals() else 4.25
+            st.warning(f"⚠️ Używam Enhanced fallback volatility (12%) | Current Enhanced spot: {current_spot:.4f}")
+        
+        # Enhanced model parameters
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            spot_rate = st.number_input(
+                "Enhanced Kurs spot EUR/PLN:",
+                value=current_spot,
+                min_value=3.50,
+                max_value=6.00,
+                step=0.0001,
+                format="%.4f",
+                help="Z Enhanced APIs: ExchangeRate-API lub fallback"
+            )
+        
+        with col2:
+            st.metric("Enhanced Horyzont", "5 dni roboczych", help="Poniedziałek - Piątek, Enhanced calculation")
+            days = 5
+        
+        with col3:
+            daily_vol = st.slider(
+                "Enhanced Zmienność dzienna (%):",
+                min_value=0.1,
+                max_value=2.0,
+                value=rolling_vol/np.sqrt(252)*100,
+                step=0.05,
+                help="Enhanced zmienność na jeden dzień roboczy"
+            ) / 100
+        
+        # Enhanced binomial tree calculation
+        dt = 1/252
+        u = np.exp(daily_vol * np.sqrt(dt))
+        d = 1/u
+        r = 0.02/252
+        p = (np.exp(r * dt) - d) / (u - d)
+        
+        # Create enhanced 5-day business tree
+        tree = {}
+        
+        for day in range(6):
+            tree[day] = {}
+            
+            if day == 0:
+                tree[day][0] = spot_rate
+            else:
+                for j in range(day + 1):
+                    ups = j
+                    downs = day - j
+                    rate = spot_rate * (u ** ups) * (d ** downs)
+                    tree[day][j] = rate
+        
+        # Enhanced business daily ranges
+        st.subheader("📅 Enhanced Dzienne Zakresy Kursów (Dni Robocze)")
+        
+        today = datetime.now()
+        business_days = []
+        current_date = today
+        
+        while len(business_days) < 5:
+            current_date += timedelta(days=1)
+            if current_date.weekday() < 5:
+                business_days.append(current_date)
+        
+        weekdays = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek"]
+        
+        daily_ranges = []
+        
+        for day in range(1, 6):
+            day_rates = [tree[day][j] for j in range(day + 1)]
+            min_rate = min(day_rates)
+            max_rate = max(day_rates)
+            
+            business_date = business_days[day-1]
+            weekday_name = weekdays[business_date.weekday()]
+            date_str = business_date.strftime("%d.%m")
+            
+            daily_ranges.append({
+                "Dzień": f"Enhanced Dzień {day}",
+                "Data": f"{weekday_name} {date_str}",
+                "Min kurs": f"{min_rate:.4f}",
+                "Max kurs": f"{max_rate:.4f}",
+                "Zakres": f"{min_rate:.4f} - {max_rate:.4f}",
+                "Enhanced Rozpiętość": f"{((max_rate - min_rate) / min_rate * 10000):.0f} pkt"
+            })
+        
+        df_ranges = pd.DataFrame(daily_ranges)
+        
+        # Enhanced color coding
+        def highlight_enhanced_ranges(row):
+            spread_pkt = float(row['Enhanced Rozpiętość'].split()[0])
+            if spread_pkt > 200:
+                return ['background-color: #f8d7da'] * len(row)  # Red
+            elif spread_pkt > 100:
+                return ['background-color: #fff3cd'] * len(row)  # Yellow  
+            else:
+                return ['background-color: #d4edda'] * len(row)  # Green
+        
+        st.dataframe(
+            df_ranges.style.apply(highlight_enhanced_ranges, axis=1),
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Enhanced tree visualization
+        st.subheader("🌳 Enhanced Drzewo Dwumianowe z Najczęściej Prawdopodobną Ścieżką")
+        
+        # Calculate enhanced most probable path
+        most_probable_path = []
+        for day in range(6):
+            if day == 0:
+                most_probable_path.append(0)
+            else:
+                expected_ups = day * p
+                closest_j = round(expected_ups)
+                closest_j = max(0, min(closest_j, day))
+                most_probable_path.append(closest_j)
+        
+        # Enhanced tree visualization
+        fig = go.Figure()
+        
+        # Plot enhanced tree nodes
+        for day in range(6):
+            for j in range(day + 1):
+                rate = tree[day][j]
+                x = day
+                y = j - day/2
+                
+                is_most_probable = (j == most_probable_path[day])
+                
+                fig.add_trace(
+                    go.Scatter(
+                        x=[x],
+                        y=[y],
+                        mode='markers',
+                        marker=dict(
+                            size=20 if is_most_probable else 15,
+                            color='#ff6b35' if is_most_probable else '#2e68a5',
+                            line=dict(width=3 if is_most_probable else 2, color='white')
+                        ),
+                        showlegend=False,
+                        hovertemplate=f"Enhanced Dzień {day}<br>Kurs: {rate:.4f}<br>{'🎯 Enhanced najczęstsza ścieżka' if is_most_probable else ''}<extra></extra>"
+                    )
+                )
+                
+                # Enhanced text labels
+                fig.add_trace(
+                    go.Scatter(
+                        x=[x],
+                        y=[y + 0.25],
+                        mode='text',
+                        text=f"{rate:.4f}",
+                        textposition="middle center",
+                        textfont=dict(
+                            color='#ff6b35' if is_most_probable else '#2e68a5',
+                            size=12 if is_most_probable else 10,
+                            family="Arial Black" if is_most_probable else "Arial"
+                        ),
+                        showlegend=False,
+                        hoverinfo='skip'
+                    )
+                )
+                
+                # Enhanced connecting lines
+                if day < 5:
+                    # Up movement
+                    if j < day + 1:
+                        next_y_up = (j + 1) - (day + 1)/2
+                        is_prob_connection = (j == most_probable_path[day] and (j + 1) == most_probable_path[day + 1])
+                        
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[x, x + 1],
+                                y=[y, next_y_up],
+                                mode='lines',
+                                line=dict(
+                                    color='#ff6b35' if is_prob_connection else 'lightgray',
+                                    width=4 if is_prob_connection else 1
+                                ),
+                                showlegend=False,
+                                hoverinfo='skip'
+                            )
+                        )
+                    
+                    # Down movement
+                    if j >= 0:
+                        next_y_down = j - (day + 1)/2
+                        is_prob_connection = (j == most_probable_path[day] and j == most_probable_path[day + 1])
+                        
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[x, x + 1],
+                                y=[y, next_y_down],
+                                mode='lines',
+                                line=dict(
+                                    color='#ff6b35' if is_prob_connection else 'lightgray',
+                                    width=4 if is_prob_connection else 1
+                                ),
+                                showlegend=False,
+                                hoverinfo='skip'
+                            )
+                        )
+        
+        # Enhanced legend
+        fig.add_trace(
+            go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(size=20, color='#ff6b35'),
+                name='🎯 Enhanced najczęstsza ścieżka',
+                showlegend=True
+            )
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(size=15, color='#2e68a5'),
+                name='Enhanced inne możliwe kursy',
+                showlegend=True
+            )
+        )
+        
+        # Enhanced layout
+        fig.update_layout(
+            title="Enhanced Drzewo dwumianowe EUR/PLN - 5 dni roboczych",
+            xaxis_title="Enhanced Dzień roboczy",
+            yaxis_title="Enhanced Poziom w drzewie",
+            height=500,
+            xaxis=dict(
+                tickmode='array',
+                tickvals=list(range(6)),
+                ticktext=[f"Enhanced Dzień {i}" if i == 0 else f"Enhanced Dzień {i}\n({weekdays[(business_days[i-1].weekday())][:3]})" for i in range(6)]
+            ),
+            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Enhanced path details
+        st.subheader("🎯 Enhanced Najczęstsza Prognozowana Ścieżka")
+        
+        path_details = []
+        for day in range(1, 6):
+            j = most_probable_path[day]
+            rate = tree[day][j]
+            business_date = business_days[day-1]
+            weekday_name = weekdays[business_date.weekday()]
+            
+            # Enhanced probability calculation
+            binom_coeff = 1
+            for i in range(min(j, day-j)):
+                binom_coeff = binom_coeff * (day - i) // (i + 1)
+            node_prob = binom_coeff * (p ** j) * ((1 - p) ** (day - j))
+            
+            path_details.append({
+                "Enhanced Dzień": f"{weekday_name}",
+                "Data": business_date.strftime("%d.%m"),
+                "Enhanced Prognozowany kurs": f"{rate:.4f}",
+                "Enhanced Zmiana vs dziś": f"{((rate/spot_rate - 1) * 100):+.2f}%",
+                "Enhanced Prawdopodobieństwo": f"{node_prob*100:.1f}%"
+            })
+        
+        df_path = pd.DataFrame(path_details)
+        st.dataframe(df_path, use_container_width=True, hide_index=True)
+        
+        # Enhanced statistical summary
+        st.subheader("📊 Enhanced Podsumowanie Statystyczne")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        # Enhanced final day statistics
+        final_rates = [tree[5][j] for j in range(6)]
+        final_probs = []
+        
+        for j in range(6):
+            binom_coeff = 1
+            for i in range(min(j, 5-j)):
+                binom_coeff = binom_coeff * (5 - i) // (i + 1)
+            prob = binom_coeff * (p ** j) * ((1 - p) ** (5 - j))
+            final_probs.append(prob)
+        
+        total_prob = sum(final_probs)
+        final_probs = [prob/total_prob for prob in final_probs]
+        
+        expected_rate = sum(rate * prob for rate, prob in zip(final_rates, final_probs))
+        min_final = min(final_rates)
+        max_final = max(final_rates)
+        most_probable_final = tree[5][most_probable_path[5]]
+        
+        prob_below_spot = sum(prob for rate, prob in zip(final_rates, final_probs) if rate < spot_rate) * 100
+        
+        with col1:
+            st.metric(
+                "Enhanced Oczekiwany kurs (5 dni)",
+                f"{expected_rate:.4f}",
+                delta=f"{((expected_rate/spot_rate - 1) * 100):+.2f}%"
+            )
+        
+        with col2:
+            st.metric(
+                "Enhanced Najczęstsza prognoza",
+                f"{most_probable_final:.4f}",
+                delta=f"{((most_probable_final/spot_rate - 1) * 100):+.2f}%",
+                help="Enhanced kurs z najczęstszej ścieżki"
+            )
+        
+        with col3:
+            st.metric(
+                "Enhanced Zakres (min-max)",
+                f"{min_final:.4f} - {max_final:.4f}",
+                help="Enhanced możliwe ekstremalne scenariusze"
+            )
+        
+        with col4:
+            st.metric(
+                "Enhanced Prawdop. umocnienia PLN",
+                f"{prob_below_spot:.1f}%",
+                help="Enhanced prawdopodobieństwo kursu poniżej dzisiejszego"
+            )
+        
+        # Enhanced model parameters
+        st.subheader("📋 Enhanced Parametry Modelu")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown(f"""
+            **Enhanced Dane wejściowe:**
+            - Enhanced Kurs spot: {spot_rate:.4f}
+            - Enhanced Zmienność dzienna: {daily_vol*100:.3f}%
+            - Enhanced Zmienność roczna: {daily_vol*np.sqrt(252)*100:.2f}%
+            - Enhanced Horyzont: 5 dni roboczych (Pn-Pt)
+            - Enhanced Okno zmienności: 20 dni roboczych
+            - Enhanced API Source: Multiple fallbacks
+            """)
+        
+        with col2:
+            st.markdown(f"""
+            **Enhanced Parametry drzewa:**
+            - Enhanced Współczynnik wzrostu (u): {u:.6f}
+            - Enhanced Współczynnik spadku (d): {d:.6f}
+            - Enhanced Prawdop. risk-neutral (p): {p:.4f}
+            - Enhanced Stopa wolna od ryzyka: {r*252*100:.2f}%
+            - Enhanced API Status: ✅ Active
+            """)
+
+# ============================================================================
+# ENHANCED URUCHOMIENIE APLIKACJI
+# ============================================================================
+
+if __name__ == "__main__":
+    main()
