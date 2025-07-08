@@ -1250,8 +1250,8 @@ def main():
             )
         
         with col2:
-            st.metric("Horyzont", "7 dni", help="Stały horyzont - 1 tydzień")
-            days = 7
+            st.metric("Horyzont", "5 dni roboczych", help="Poniedziałek - Piątek, pomijając weekendy")
+            days = 5  # Only business days
         
         with col3:
             daily_vol = st.slider(
@@ -1260,21 +1260,21 @@ def main():
                 max_value=2.0,
                 value=rolling_vol/np.sqrt(252)*100,  # Convert to daily
                 step=0.05,
-                help="Zmienność na jeden dzień"
+                help="Zmienność na jeden dzień roboczy"
             ) / 100
         
         # Binomial tree calculation
-        dt = 1/365  # One day
+        dt = 1/252  # One business day (252 trading days per year)
         u = np.exp(daily_vol * np.sqrt(dt))
         d = 1/u
-        r = 0.02/365  # Daily risk-free rate
+        r = 0.02/252  # Daily risk-free rate for business days
         p = (np.exp(r * dt) - d) / (u - d)
         
-        # Create 7-day tree
+        # Create 5-day business tree
         tree = {}
         
-        # Generate all possible paths for 7 days
-        for day in range(8):  # Day 0 to 7
+        # Generate all possible paths for 5 business days
+        for day in range(6):  # Day 0 to 5
             tree[day] = {}
             
             if day == 0:
@@ -1286,24 +1286,33 @@ def main():
                     rate = spot_rate * (u ** ups) * (d ** downs)
                     tree[day][j] = rate
         
-        # Create daily ranges
-        st.subheader("📅 Dzienne Zakresy Kursów")
+        # Create business daily ranges (skip weekends)
+        st.subheader("📅 Dzienne Zakresy Kursów (Dni Robocze)")
         
-        # Get weekday names starting from today
+        # Get next business days
         today = datetime.now()
-        weekdays = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek", "Sobota", "Niedziela"]
+        business_days = []
+        current_date = today
+        
+        while len(business_days) < 5:
+            current_date += timedelta(days=1)
+            # Skip weekends (5=Saturday, 6=Sunday)
+            if current_date.weekday() < 5:
+                business_days.append(current_date)
+        
+        weekdays = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek"]
         
         daily_ranges = []
         
-        for day in range(1, 8):  # Days 1-7
+        for day in range(1, 6):  # Days 1-5 (business days)
             day_rates = [tree[day][j] for j in range(day + 1)]
             min_rate = min(day_rates)
             max_rate = max(day_rates)
             
-            # Get weekday name
-            future_date = today + timedelta(days=day)
-            weekday_name = weekdays[future_date.weekday()]
-            date_str = future_date.strftime("%d.%m")
+            # Get business day info
+            business_date = business_days[day-1]
+            weekday_name = weekdays[business_date.weekday()]
+            date_str = business_date.strftime("%d.%m")
             
             daily_ranges.append({
                 "Dzień": f"Dzień {day}",
@@ -1332,20 +1341,35 @@ def main():
             hide_index=True
         )
         
-        # Tree visualization
-        st.subheader("🌳 Drzewo Dwumianowe")
+        # Tree visualization with most probable path
+        st.subheader("🌳 Drzewo Dwumianowe z Najczęściej Prawdopodobną Ścieżką")
+        
+        # Calculate most probable path (closest to risk-neutral expectation)
+        most_probable_path = []
+        for day in range(6):
+            if day == 0:
+                most_probable_path.append(0)
+            else:
+                # Find the node closest to expected value
+                expected_ups = day * p  # Expected number of up moves
+                closest_j = round(expected_ups)
+                closest_j = max(0, min(closest_j, day))  # Ensure valid range
+                most_probable_path.append(closest_j)
         
         # Create tree visualization
         fig = go.Figure()
         
         # Plot tree nodes
-        for day in range(8):
+        for day in range(6):
             for j in range(day + 1):
                 rate = tree[day][j]
                 
                 # Position calculations
                 x = day
                 y = j - day/2  # Center the nodes vertically
+                
+                # Check if this node is on the most probable path
+                is_most_probable = (j == most_probable_path[day])
                 
                 # Add node
                 fig.add_trace(
@@ -1354,29 +1378,42 @@ def main():
                         y=[y],
                         mode='markers+text',
                         marker=dict(
-                            size=15,
-                            color='#2e68a5',
-                            line=dict(width=2, color='white')
+                            size=20 if is_most_probable else 15,
+                            color='#ff6b35' if is_most_probable else '#2e68a5',
+                            line=dict(width=3 if is_most_probable else 2, 
+                                     color='white')
                         ),
                         text=f"{rate:.3f}",
                         textposition="middle center",
-                        textfont=dict(color='white', size=10),
+                        textfont=dict(
+                            color='white', 
+                            size=12 if is_most_probable else 10,
+                            family="Arial Black" if is_most_probable else "Arial"
+                        ),
                         showlegend=False,
-                        hovertemplate=f"Dzień {day}<br>Kurs: {rate:.4f}<extra></extra>"
+                        hovertemplate=f"Dzień {day}<br>Kurs: {rate:.4f}<br>{'🎯 Najczęstsza ścieżka' if is_most_probable else ''}<extra></extra>"
                     )
                 )
                 
                 # Add connecting lines to next day
-                if day < 7:
+                if day < 5:
                     # Up movement
                     if j < day + 1:
                         next_y_up = (j + 1) - (day + 1)/2
+                        
+                        # Check if this connection is part of most probable path
+                        is_prob_connection = (j == most_probable_path[day] and 
+                                            (j + 1) == most_probable_path[day + 1])
+                        
                         fig.add_trace(
                             go.Scatter(
                                 x=[x, x + 1],
                                 y=[y, next_y_up],
                                 mode='lines',
-                                line=dict(color='gray', width=1),
+                                line=dict(
+                                    color='#ff6b35' if is_prob_connection else 'lightgray',
+                                    width=4 if is_prob_connection else 1
+                                ),
                                 showlegend=False,
                                 hoverinfo='skip'
                             )
@@ -1385,49 +1422,110 @@ def main():
                     # Down movement
                     if j >= 0:
                         next_y_down = j - (day + 1)/2
+                        
+                        # Check if this connection is part of most probable path
+                        is_prob_connection = (j == most_probable_path[day] and 
+                                            j == most_probable_path[day + 1])
+                        
                         fig.add_trace(
                             go.Scatter(
                                 x=[x, x + 1],
                                 y=[y, next_y_down],
                                 mode='lines',
-                                line=dict(color='gray', width=1),
+                                line=dict(
+                                    color='#ff6b35' if is_prob_connection else 'lightgray',
+                                    width=4 if is_prob_connection else 1
+                                ),
                                 showlegend=False,
                                 hoverinfo='skip'
                             )
                         )
         
+        # Add legend manually
+        fig.add_trace(
+            go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(size=20, color='#ff6b35'),
+                name='🎯 Najczęstsza ścieżka',
+                showlegend=True
+            )
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(size=15, color='#2e68a5'),
+                name='Inne możliwe kursy',
+                showlegend=True
+            )
+        )
+        
         # Update layout
         fig.update_layout(
-            title="Drzewo dwumianowe EUR/PLN - 7 dni",
-            xaxis_title="Dzień",
+            title="Drzewo dwumianowe EUR/PLN - 5 dni roboczych",
+            xaxis_title="Dzień roboczy",
             yaxis_title="Poziom w drzewie",
             height=500,
-            showlegend=False,
             xaxis=dict(
                 tickmode='array',
-                tickvals=list(range(8)),
-                ticktext=[f"Dzień {i}" for i in range(8)]
+                tickvals=list(range(6)),
+                ticktext=[f"Dzień {i}" if i == 0 else f"Dzień {i}\n({weekdays[(business_days[i-1].weekday())][:3]})" for i in range(6)]
+            ),
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01
             )
         )
         
         st.plotly_chart(fig, use_container_width=True)
+        
+        # Most probable path details
+        st.subheader("🎯 Najczęstsza Prognozowana Ścieżka")
+        
+        path_details = []
+        for day in range(1, 6):
+            j = most_probable_path[day]
+            rate = tree[day][j]
+            business_date = business_days[day-1]
+            weekday_name = weekdays[business_date.weekday()]
+            
+            # Calculate probability of reaching this specific node
+            binom_coeff = 1
+            for i in range(min(j, day-j)):
+                binom_coeff = binom_coeff * (day - i) // (i + 1)
+            node_prob = binom_coeff * (p ** j) * ((1 - p) ** (day - j))
+            
+            path_details.append({
+                "Dzień": f"{weekday_name}",
+                "Data": business_date.strftime("%d.%m"),
+                "Prognozowany kurs": f"{rate:.4f}",
+                "Zmiana vs dziś": f"{((rate/spot_rate - 1) * 100):+.2f}%",
+                "Prawdopodobieństwo": f"{node_prob*100:.1f}%"
+            })
+        
+        df_path = pd.DataFrame(path_details)
+        st.dataframe(df_path, use_container_width=True, hide_index=True)
         
         # Statistical summary
         st.subheader("📊 Podsumowanie Statystyczne")
         
         col1, col2, col3, col4 = st.columns(4)
         
-        # Calculate final day statistics
-        final_rates = [tree[7][j] for j in range(8)]
+        # Calculate final day statistics (day 5)
+        final_rates = [tree[5][j] for j in range(6)]
         final_probs = []
         
         # Calculate probabilities for final outcomes
-        for j in range(8):
-            # Binomial probability for j ups in 7 days
+        for j in range(6):
+            # Binomial probability for j ups in 5 days
             binom_coeff = 1
-            for i in range(min(j, 7-j)):
-                binom_coeff = binom_coeff * (7 - i) // (i + 1)
-            prob = binom_coeff * (p ** j) * ((1 - p) ** (7 - j))
+            for i in range(min(j, 5-j)):
+                binom_coeff = binom_coeff * (5 - i) // (i + 1)
+            prob = binom_coeff * (p ** j) * ((1 - p) ** (5 - j))
             final_probs.append(prob)
         
         # Normalize probabilities
@@ -1437,28 +1535,30 @@ def main():
         expected_rate = sum(rate * prob for rate, prob in zip(final_rates, final_probs))
         min_final = min(final_rates)
         max_final = max(final_rates)
+        most_probable_final = tree[5][most_probable_path[5]]
         
         prob_below_spot = sum(prob for rate, prob in zip(final_rates, final_probs) if rate < spot_rate) * 100
         
         with col1:
             st.metric(
-                "Oczekiwany kurs (7 dni)",
+                "Oczekiwany kurs (5 dni)",
                 f"{expected_rate:.4f}",
                 delta=f"{((expected_rate/spot_rate - 1) * 100):+.2f}%"
             )
         
         with col2:
             st.metric(
-                "Minimalny możliwy",
-                f"{min_final:.4f}",
-                delta=f"{((min_final/spot_rate - 1) * 100):+.2f}%"
+                "Najczęstsza prognoza",
+                f"{most_probable_final:.4f}",
+                delta=f"{((most_probable_final/spot_rate - 1) * 100):+.2f}%",
+                help="Kurs z najczęstszej ścieżki"
             )
         
         with col3:
             st.metric(
-                "Maksymalny możliwy",
-                f"{max_final:.4f}",
-                delta=f"{((max_final/spot_rate - 1) * 100):+.2f}%"
+                "Zakres (min-max)",
+                f"{min_final:.4f} - {max_final:.4f}",
+                help="Możliwe ekstremalne scenariusze"
             )
         
         with col4:
@@ -1479,7 +1579,7 @@ def main():
             - Kurs spot: {spot_rate:.4f}
             - Zmienność dzienna: {daily_vol*100:.3f}%
             - Zmienność roczna: {daily_vol*np.sqrt(252)*100:.2f}%
-            - Horyzont: 7 dni roboczych
+            - Horyzont: 5 dni roboczych (Pn-Pt)
             """)
         
         with col2:
@@ -1488,7 +1588,7 @@ def main():
             - Współczynnik wzrostu (u): {u:.6f}
             - Współczynnik spadku (d): {d:.6f}
             - Prawdop. risk-neutral (p): {p:.4f}
-            - Stopa wolna od ryzyka: {r*365*100:.2f}%
+            - Stopa wolna od ryzyka: {r*252*100:.2f}%
             """)
 
 # ============================================================================
