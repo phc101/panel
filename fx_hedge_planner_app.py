@@ -1191,7 +1191,7 @@ def main():
     else:
         st.info("🔄 Oczekiwanie na wycenę dealerską...")
     
-    # Create tabs
+    # Create tabs with working binomial model
     tab1, tab2, tab3 = st.tabs(["🔧 Panel Dealerski", "🛡️ Panel Zabezpieczeń", "📊 Model Dwumianowy"])
     
     with tab1:
@@ -1201,7 +1201,7 @@ def main():
         create_client_hedging_advisor()
     
     with tab3:
-        create_binomial_probability_model()
+        simple_binomial_model()
 
 # ============================================================================
 # URUCHOMIENIE APLIKACJI
