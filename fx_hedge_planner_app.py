@@ -1201,78 +1201,295 @@ def main():
         create_client_hedging_advisor()
     
     with tab3:
-        # MINIMAL BINOMIAL MODEL - INLINE TO AVOID FUNCTION ERRORS
-        st.header("📊 Model Dwumianowy - Analiza Prawdopodobieństwa")
-        st.markdown("*Prosty model prawdopodobieństwa dla EUR/PLN*")
+        # 7-DAY BINOMIAL TREE MODEL
+        st.header("📊 Drzewo Dwumianowe - 7 Dni")
+        st.markdown("*Krótkoterminowa prognoza EUR/PLN z dziennymi zakresami*")
         
-        # Basic parameters
+        # Get 3-month historical data for volatility
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=90)
+            start_str = start_date.strftime('%Y-%m-%d')
+            end_str = end_date.strftime('%Y-%m-%d')
+            
+            url = f"https://api.nbp.pl/api/exchangerates/rates/a/eur/{start_str}/{end_str}/"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                rates = [rate_data['mid'] for rate_data in data['rates']]
+                
+                if len(rates) > 20:
+                    # Calculate 3-month rolling volatility
+                    returns = np.diff(np.log(rates))
+                    rolling_vol = np.std(returns) * np.sqrt(252)  # Annualized
+                    current_spot = rates[-1]
+                    data_count = len(rates)
+                    st.success(f"✅ Zmienność z {data_count} dni: {rolling_vol*100:.2f}% rocznie")
+                else:
+                    raise Exception("Not enough data")
+            else:
+                raise Exception("API failed")
+                
+        except Exception as e:
+            rolling_vol = 0.12
+            current_spot = 4.25
+            st.warning(f"⚠️ Używam danych zastępczych. Błąd: {str(e)[:50]}...")
+        
+        # Model parameters
         col1, col2, col3 = st.columns(3)
-        with col1:
-            spot = st.number_input("Kurs EUR/PLN:", value=4.25, format="%.4f")
-        with col2:
-            horizon = st.selectbox("Horyzont:", ["1M", "3M", "6M", "12M"], index=1)
-        with col3:
-            vol = st.slider("Zmienność %:", 5.0, 25.0, 12.0, 0.5) / 100
         
-        # Simple calculation
-        days_map = {"1M": 30, "3M": 90, "6M": 180, "12M": 360}
-        days = days_map[horizon]
-        steps = 10
-        dt = (days/365) / steps
-        u = np.exp(vol * np.sqrt(dt))
+        with col1:
+            spot_rate = st.number_input(
+                "Kurs spot EUR/PLN:",
+                value=current_spot,
+                min_value=3.50,
+                max_value=6.00,
+                step=0.0001,
+                format="%.4f"
+            )
+        
+        with col2:
+            st.metric("Horyzont", "7 dni", help="Stały horyzont - 1 tydzień")
+            days = 7
+        
+        with col3:
+            daily_vol = st.slider(
+                "Zmienność dzienna (%):",
+                min_value=0.1,
+                max_value=2.0,
+                value=rolling_vol/np.sqrt(252)*100,  # Convert to daily
+                step=0.05,
+                help="Zmienność na jeden dzień"
+            ) / 100
+        
+        # Binomial tree calculation
+        dt = 1/365  # One day
+        u = np.exp(daily_vol * np.sqrt(dt))
         d = 1/u
-        r = 0.02
+        r = 0.02/365  # Daily risk-free rate
         p = (np.exp(r * dt) - d) / (u - d)
         
-        # Calculate final outcomes
-        outcomes = []
-        for j in range(steps + 1):
-            rate = spot * (u ** j) * (d ** (steps - j))
-            # Simple binomial probability
-            prob = (1.0 / (2**steps)) * 1.0  # Simplified for now
-            outcomes.append((rate, prob))
+        # Create 7-day tree
+        tree = {}
+        
+        # Generate all possible paths for 7 days
+        for day in range(8):  # Day 0 to 7
+            tree[day] = {}
+            
+            if day == 0:
+                tree[day][0] = spot_rate
+            else:
+                for j in range(day + 1):
+                    ups = j
+                    downs = day - j
+                    rate = spot_rate * (u ** ups) * (d ** downs)
+                    tree[day][j] = rate
+        
+        # Create daily ranges
+        st.subheader("📅 Dzienne Zakresy Kursów")
+        
+        # Get weekday names starting from today
+        today = datetime.now()
+        weekdays = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek", "Sobota", "Niedziela"]
+        
+        daily_ranges = []
+        
+        for day in range(1, 8):  # Days 1-7
+            day_rates = [tree[day][j] for j in range(day + 1)]
+            min_rate = min(day_rates)
+            max_rate = max(day_rates)
+            
+            # Get weekday name
+            future_date = today + timedelta(days=day)
+            weekday_name = weekdays[future_date.weekday()]
+            date_str = future_date.strftime("%d.%m")
+            
+            daily_ranges.append({
+                "Dzień": f"Dzień {day}",
+                "Data": f"{weekday_name} {date_str}",
+                "Min kurs": f"{min_rate:.4f}",
+                "Max kurs": f"{max_rate:.4f}",
+                "Zakres": f"{min_rate:.4f} - {max_rate:.4f}",
+                "Rozpiętość": f"{((max_rate - min_rate) / min_rate * 10000):.0f} pkt"
+            })
+        
+        df_ranges = pd.DataFrame(daily_ranges)
+        
+        # Color coding based on range width
+        def highlight_ranges(row):
+            spread_pkt = float(row['Rozpiętość'].split()[0])
+            if spread_pkt > 200:
+                return ['background-color: #f8d7da'] * len(row)  # Red - high volatility
+            elif spread_pkt > 100:
+                return ['background-color: #fff3cd'] * len(row)  # Yellow - medium
+            else:
+                return ['background-color: #d4edda'] * len(row)  # Green - low volatility
+        
+        st.dataframe(
+            df_ranges.style.apply(highlight_ranges, axis=1),
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Tree visualization
+        st.subheader("🌳 Drzewo Dwumianowe")
+        
+        # Create tree visualization
+        fig = go.Figure()
+        
+        # Plot tree nodes
+        for day in range(8):
+            for j in range(day + 1):
+                rate = tree[day][j]
+                
+                # Position calculations
+                x = day
+                y = j - day/2  # Center the nodes vertically
+                
+                # Add node
+                fig.add_trace(
+                    go.Scatter(
+                        x=[x],
+                        y=[y],
+                        mode='markers+text',
+                        marker=dict(
+                            size=15,
+                            color='#2e68a5',
+                            line=dict(width=2, color='white')
+                        ),
+                        text=f"{rate:.3f}",
+                        textposition="middle center",
+                        textfont=dict(color='white', size=10),
+                        showlegend=False,
+                        hovertemplate=f"Dzień {day}<br>Kurs: {rate:.4f}<extra></extra>"
+                    )
+                )
+                
+                # Add connecting lines to next day
+                if day < 7:
+                    # Up movement
+                    if j < day + 1:
+                        next_y_up = (j + 1) - (day + 1)/2
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[x, x + 1],
+                                y=[y, next_y_up],
+                                mode='lines',
+                                line=dict(color='gray', width=1),
+                                showlegend=False,
+                                hoverinfo='skip'
+                            )
+                        )
+                    
+                    # Down movement
+                    if j >= 0:
+                        next_y_down = j - (day + 1)/2
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[x, x + 1],
+                                y=[y, next_y_down],
+                                mode='lines',
+                                line=dict(color='gray', width=1),
+                                showlegend=False,
+                                hoverinfo='skip'
+                            )
+                        )
+        
+        # Update layout
+        fig.update_layout(
+            title="Drzewo dwumianowe EUR/PLN - 7 dni",
+            xaxis_title="Dzień",
+            yaxis_title="Poziom w drzewie",
+            height=500,
+            showlegend=False,
+            xaxis=dict(
+                tickmode='array',
+                tickvals=list(range(8)),
+                ticktext=[f"Dzień {i}" for i in range(8)]
+            )
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Statistical summary
+        st.subheader("📊 Podsumowanie Statystyczne")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        # Calculate final day statistics
+        final_rates = [tree[7][j] for j in range(8)]
+        final_probs = []
+        
+        # Calculate probabilities for final outcomes
+        for j in range(8):
+            # Binomial probability for j ups in 7 days
+            binom_coeff = 1
+            for i in range(min(j, 7-j)):
+                binom_coeff = binom_coeff * (7 - i) // (i + 1)
+            prob = binom_coeff * (p ** j) * ((1 - p) ** (7 - j))
+            final_probs.append(prob)
         
         # Normalize probabilities
-        total_prob = sum(prob for _, prob in outcomes)
-        outcomes = [(rate, prob/total_prob) for rate, prob in outcomes]
+        total_prob = sum(final_probs)
+        final_probs = [prob/total_prob for prob in final_probs]
         
-        # Basic statistics
-        rates = [rate for rate, _ in outcomes]
-        probs = [prob for _, prob in outcomes]
-        mean_rate = sum(rate * prob for rate, prob in outcomes)
+        expected_rate = sum(rate * prob for rate, prob in zip(final_rates, final_probs))
+        min_final = min(final_rates)
+        max_final = max(final_rates)
         
-        # Results
-        st.subheader("📊 Wyniki")
-        col1, col2, col3 = st.columns(3)
+        prob_below_spot = sum(prob for rate, prob in zip(final_rates, final_probs) if rate < spot_rate) * 100
+        
         with col1:
-            st.metric("Oczekiwany kurs", f"{mean_rate:.4f}")
+            st.metric(
+                "Oczekiwany kurs (7 dni)",
+                f"{expected_rate:.4f}",
+                delta=f"{((expected_rate/spot_rate - 1) * 100):+.2f}%"
+            )
+        
         with col2:
-            below_spot = sum(prob for rate, prob in outcomes if rate < spot) * 100
-            st.metric("Umocnienie PLN", f"{below_spot:.1f}%")
+            st.metric(
+                "Minimalny możliwy",
+                f"{min_final:.4f}",
+                delta=f"{((min_final/spot_rate - 1) * 100):+.2f}%"
+            )
+        
         with col3:
-            st.metric("Osłabienie PLN", f"{100-below_spot:.1f}%")
+            st.metric(
+                "Maksymalny możliwy",
+                f"{max_final:.4f}",
+                delta=f"{((max_final/spot_rate - 1) * 100):+.2f}%"
+            )
         
-        # Simple ranges
-        ranges_data = [
-            {"Przedział": "< 4.00", "Prawdopodobieństwo": "15.2%"},
-            {"Przedział": "4.00-4.10", "Prawdopodobieństwo": "18.7%"},
-            {"Przedział": "4.10-4.20", "Prawdopodobieństwo": "22.4%"},
-            {"Przedział": "4.20-4.30", "Prawdopodobieństwo": "19.8%"},
-            {"Przedział": "4.30-4.40", "Prawdopodobieństwo": "14.6%"},
-            {"Przedział": "4.40-4.50", "Prawdopodobieństwo": "7.8%"},
-            {"Przedział": "> 4.50", "Prawdopodobieństwo": "1.5%"}
-        ]
+        with col4:
+            st.metric(
+                "Prawdop. umocnienia PLN",
+                f"{prob_below_spot:.1f}%",
+                help="Prawdopodobieństwo kursu poniżej dzisiejszego"
+            )
         
-        st.subheader("📈 Przedziały Prawdopodobieństwa")
-        st.dataframe(ranges_data, hide_index=True, use_container_width=True)
+        # Model parameters
+        st.subheader("📋 Parametry Modelu")
         
-        # Simple chart
-        st.subheader("📈 Rozkład")
-        fig = go.Figure()
-        fig.add_bar(x=rates, y=[p*100 for p in probs], marker_color='#2e68a5')
-        fig.add_vline(x=spot, line_color='red', line_dash='dash')
-        fig.update_layout(title="Prawdopodobieństwo EUR/PLN", height=300)
-        st.plotly_chart(fig, use_container_width=True)
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown(f"""
+            **Dane wejściowe:**
+            - Kurs spot: {spot_rate:.4f}
+            - Zmienność dzienna: {daily_vol*100:.3f}%
+            - Zmienność roczna: {daily_vol*np.sqrt(252)*100:.2f}%
+            - Horyzont: 7 dni roboczych
+            """)
+        
+        with col2:
+            st.markdown(f"""
+            **Parametry drzewa:**
+            - Współczynnik wzrostu (u): {u:.6f}
+            - Współczynnik spadku (d): {d:.6f}
+            - Prawdop. risk-neutral (p): {p:.4f}
+            - Stopa wolna od ryzyka: {r*365*100:.2f}%
+            """)
 
 # ============================================================================
 # URUCHOMIENIE APLIKACJI
