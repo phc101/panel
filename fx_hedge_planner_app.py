@@ -5,13 +5,14 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
 from datetime import datetime, timedelta
+import math
 
 # ============================================================================
 # CONFIGURATION & API KEYS
 # ============================================================================
 
 # FRED API Configuration - PLACE YOUR API KEY HERE
-FRED_API_KEY = st.secrets.get("FRED_API_KEY", "ffab40f7d067bf4c8790559a7d3fe68b")  # Uses Streamlit secrets or demo
+FRED_API_KEY = st.secrets.get("FRED_API_KEY", "124b6e8139672dd8e19c78a1b3a1ff98")  # Uses Streamlit secrets or demo
 
 # Page config
 st.set_page_config(
@@ -1191,13 +1192,16 @@ def main():
         st.info("🔄 Oczekiwanie na wycenę dealerską...")
     
     # Create tabs
-    tab1, tab2 = st.tabs(["🔧 Panel Dealerski", "🛡️ Panel Zabezpieczeń"])
+    tab1, tab2, tab3 = st.tabs(["🔧 Panel Dealerski", "🛡️ Panel Zabezpieczeń", "📊 Model Dwumianowy"])
     
     with tab1:
         create_dealer_panel()
     
     with tab2:
         create_client_hedging_advisor()
+    
+    with tab3:
+        create_binomial_probability_model()
 
 # ============================================================================
 # URUCHOMIENIE APLIKACJI
