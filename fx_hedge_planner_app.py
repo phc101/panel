@@ -1392,9 +1392,9 @@ def main():
                 fig.add_trace(
                     go.Scatter(
                         x=[x],
-                        y=[y + 0.15],  # Position above the node
+                        y=[y + 0.25],  # Higher position above the node
                         mode='text',
-                        text=f"{rate:.3f}",
+                        text=f"{rate:.4f}",  # 4 decimal places format
                         textposition="middle center",
                         textfont=dict(
                             color='#ff6b35' if is_most_probable else '#2e68a5',
