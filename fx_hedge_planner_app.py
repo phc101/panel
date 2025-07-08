@@ -1205,10 +1205,10 @@ def main():
         st.header("📊 Drzewo Dwumianowe - 7 Dni")
         st.markdown("*Krótkoterminowa prognoza EUR/PLN z dziennymi zakresami*")
         
-        # Get 3-month historical data for volatility
+        # Get 20-day historical data for volatility calculation
         try:
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=90)
+            start_date = end_date - timedelta(days=30)  # Get 30 calendar days to ensure 20 business days
             start_str = start_date.strftime('%Y-%m-%d')
             end_str = end_date.strftime('%Y-%m-%d')
             
@@ -1219,22 +1219,24 @@ def main():
                 data = response.json()
                 rates = [rate_data['mid'] for rate_data in data['rates']]
                 
-                if len(rates) > 20:
-                    # Calculate 3-month rolling volatility
-                    returns = np.diff(np.log(rates))
+                # Take only last 20 observations for volatility calculation
+                if len(rates) >= 20:
+                    recent_rates = rates[-20:]  # Last 20 business days
+                    # Calculate 20-day rolling volatility
+                    returns = np.diff(np.log(recent_rates))
                     rolling_vol = np.std(returns) * np.sqrt(252)  # Annualized
                     current_spot = rates[-1]
-                    data_count = len(rates)
-                    st.success(f"✅ Zmienność z {data_count} dni: {rolling_vol*100:.2f}% rocznie")
+                    data_count = len(recent_rates)
+                    st.success(f"✅ Zmienność z ostatnich {data_count} dni: {rolling_vol*100:.2f}% rocznie")
                 else:
-                    raise Exception("Not enough data")
+                    raise Exception(f"Only {len(rates)} days available, need 20")
             else:
                 raise Exception("API failed")
                 
         except Exception as e:
             rolling_vol = 0.12
             current_spot = 4.25
-            st.warning(f"⚠️ Używam danych zastępczych. Błąd: {str(e)[:50]}...")
+            st.warning(f"⚠️ Używam danych zastępczych (12%). Błąd: {str(e)[:50]}...")
         
         # Model parameters
         col1, col2, col3 = st.columns(3)
@@ -1591,6 +1593,7 @@ def main():
             - Zmienność dzienna: {daily_vol*100:.3f}%
             - Zmienność roczna: {daily_vol*np.sqrt(252)*100:.2f}%
             - Horyzont: 5 dni roboczych (Pn-Pt)
+            - Okno zmienności: 20 dni roboczych
             """)
         
         with col2:
