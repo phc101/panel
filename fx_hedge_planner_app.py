@@ -1376,22 +1376,33 @@ def main():
                     go.Scatter(
                         x=[x],
                         y=[y],
-                        mode='markers+text',
+                        mode='markers',
                         marker=dict(
                             size=20 if is_most_probable else 15,
                             color='#ff6b35' if is_most_probable else '#2e68a5',
                             line=dict(width=3 if is_most_probable else 2, 
                                      color='white')
                         ),
+                        showlegend=False,
+                        hovertemplate=f"Dzień {day}<br>Kurs: {rate:.4f}<br>{'🎯 Najczęstsza ścieżka' if is_most_probable else ''}<extra></extra>"
+                    )
+                )
+                
+                # Add text label above the node
+                fig.add_trace(
+                    go.Scatter(
+                        x=[x],
+                        y=[y + 0.15],  # Position above the node
+                        mode='text',
                         text=f"{rate:.3f}",
                         textposition="middle center",
                         textfont=dict(
-                            color='white' if is_most_probable else 'black', 
+                            color='#ff6b35' if is_most_probable else '#2e68a5',
                             size=12 if is_most_probable else 10,
                             family="Arial Black" if is_most_probable else "Arial"
                         ),
                         showlegend=False,
-                        hovertemplate=f"Dzień {day}<br>Kurs: {rate:.4f}<br>{'🎯 Najczęstsza ścieżka' if is_most_probable else ''}<extra></extra>"
+                        hoverinfo='skip'
                     )
                 )
                 
