@@ -1386,7 +1386,7 @@ def main():
                         text=f"{rate:.3f}",
                         textposition="middle center",
                         textfont=dict(
-                            color='white', 
+                            color='white' if is_most_probable else 'black', 
                             size=12 if is_most_probable else 10,
                             family="Arial Black" if is_most_probable else "Arial"
                         ),
