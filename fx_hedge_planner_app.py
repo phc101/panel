@@ -1403,7 +1403,7 @@ def create_binomial_model_panel():
         </div>
         """, unsafe_allow_html=True)
     
-    # Calculate volatility from historical data using proper method
+    # Calculate volatility and mean from historical data using your method
     try:
         if historical_data['success'] and len(historical_data['rates']) >= 20:
             rates = historical_data['rates']
@@ -1412,29 +1412,45 @@ def create_binomial_model_panel():
             last_20_rates = rates[-20:] if len(rates) >= 20 else rates
             current_spot = last_20_rates[-1]  # Most recent rate
             
-            # Method: Standard deviation of prices (not returns)
-            # 1. Calculate standard deviation from last 20 days prices
-            price_std = np.std(last_20_rates)
+            # Your methodology: Calculate mean and std dev from last 20 days
+            mean_20_days = np.mean(last_20_rates)
+            std_20_days = np.std(last_20_rates)
             
-            # 2. Divide by current spot rate to get percentage volatility
-            rolling_vol = price_std / current_spot  # This gives us daily volatility as %
+            # Calculate empirical probabilities using normal distribution
+            # p_up = probability that next price will be above current distribution
+            # Using normal CDF: P(X <= current_spot) given mean and std from last 20 days
+            from scipy.stats import norm
+            
+            # P(up) = probability of being above current level based on historical distribution
+            p_up_empirical = 1 - norm.cdf(current_spot, mean_20_days, std_20_days)
+            p_down_empirical = 1 - p_up_empirical
+            
+            # For display, also calculate simple volatility
+            rolling_vol = std_20_days / current_spot
             
             data_count = len(last_20_rates)
             
             if rolling_vol > 0:
-                st.success(f"✅ Zmienność z ostatnich {data_count} dni: Std Dev = {price_std:.4f}, Spot = {current_spot:.4f}, Volatility = {rolling_vol*100:.2f}% dzienna")
+                st.success(f"✅ Empirical Model z ostatnich {data_count} dni:")
+                st.info(f"Mean: {mean_20_days:.4f}, Std: {std_20_days:.4f}, Current: {current_spot:.4f}")
+                st.info(f"Empirical P(up): {p_up_empirical:.3f}, P(down): {p_down_empirical:.3f}")
+                st.info(f"Implied volatility: {rolling_vol*100:.2f}% dzienna")
             else:
                 raise Exception("Zero volatility calculated")
         else:
             raise Exception("Insufficient historical data (need 20 days)")
             
     except Exception as e:
-        # Default daily volatility
-        rolling_vol = 0.0034  # 0.34% daily as example
+        # Default values
+        rolling_vol = 0.0034  # 0.34% daily
         current_spot = current_forex['rate']
-        st.warning(f"⚠️ Używam domyślnej zmienności (0.34% dzienna). Błąd: {str(e)[:50]}...")
+        mean_20_days = current_spot  # Assume mean = current
+        std_20_days = current_spot * 0.0034  # Default std
+        p_up_empirical = 0.5  # Default 50/50
+        p_down_empirical = 0.5
+        st.warning(f"⚠️ Używam domyślnych wartości. Błąd: {str(e)[:50]}...")
     
-    # Model parameters
+    # Model parameters - now using empirical probabilities
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -1452,21 +1468,53 @@ def create_binomial_model_panel():
         days = 5  # Only business days
     
     with col3:
-        daily_vol = st.slider(
-            "Zmienność dzienna (%):",
-            min_value=0.1,
-            max_value=2.0,
-            value=rolling_vol*100,  # Already in daily % format
-            step=0.05,
-            help="Zmienność na jeden dzień roboczy (odch. std. cen / spot rate)"
-        ) / 100
+        # Allow user to override empirical probabilities
+        use_empirical = st.checkbox(
+            "Użyj empirycznych prawdopodobieństw",
+            value=True,
+            help="Użyj prawdopodobieństw z rozkładu normalnego ostatnich 20 dni"
+        )
+        
+        if use_empirical:
+            p_up_display = p_up_empirical
+            p_down_display = p_down_empirical
+            st.success(f"Empirical: P(up)={p_up_display:.3f}")
+        else:
+            # Traditional binomial approach
+            daily_vol = st.slider(
+                "Zmienność dzienna (%):",
+                min_value=0.1,
+                max_value=2.0,
+                value=rolling_vol*100,
+                step=0.05,
+                help="Tradycyjna zmienność binomialna"
+            ) / 100
+            
+            # Traditional binomial parameters
+            dt = 1/252
+            u = np.exp(daily_vol * np.sqrt(dt))
+            d = 1/u
+            r = 0.02/252
+            p_up_display = (np.exp(r * dt) - d) / (u - d)
+            p_down_display = 1 - p_up_display
+            
+            st.info(f"Traditional: P(up)={p_up_display:.3f}")
     
-    # Binomial tree calculation
-    dt = 1/252  # One business day (252 trading days per year)
-    u = np.exp(daily_vol * np.sqrt(dt))
-    d = 1/u
-    r = 0.02/252  # Daily risk-free rate for business days
-    p = (np.exp(r * dt) - d) / (u - d)
+    # Use empirical probabilities for tree calculation
+    if use_empirical:
+        # Your methodology: use empirical probabilities directly
+        p = p_up_empirical
+        # For tree building, we still need u/d factors, but they're less important
+        # since we're using empirical probabilities
+        u = 1 + rolling_vol  # Simple approximation
+        d = 1 - rolling_vol
+    else:
+        # Traditional approach
+        dt = 1/252
+        u = np.exp(daily_vol * np.sqrt(dt))
+        d = 1/u
+        r = 0.02/252
+        p = (np.exp(r * dt) - d) / (u - d)
     
     # Create 5-day business tree
     tree = {}
@@ -1702,11 +1750,16 @@ def create_binomial_model_panel():
         business_date = business_days[day-1]
         weekday_name = weekdays[business_date.weekday()]
         
-        # Calculate probability of reaching this specific node
-        binom_coeff = 1
-        for i in range(min(j, day-j)):
-            binom_coeff = binom_coeff * (day - i) // (i + 1)
-        node_prob = binom_coeff * (p ** j) * ((1 - p) ** (day - j))
+        # Calculate probability of reaching this specific node using your methodology
+        # P(j ups in day steps) = C(day,j) * p_up^j * p_down^(day-j)
+        from math import comb
+        
+        if use_empirical:
+            # Your empirical method
+            node_prob = comb(day, j) * (p_up_empirical ** j) * (p_down_empirical ** (day - j))
+        else:
+            # Traditional binomial
+            node_prob = comb(day, j) * (p ** j) * ((1 - p) ** (day - j))
         
         path_details.append({
             "Dzień": f"{weekday_name}",
@@ -1724,17 +1777,18 @@ def create_binomial_model_panel():
     
     col1, col2, col3, col4 = st.columns(4)
     
-    # Calculate final day statistics (day 5)
+    # Calculate final day statistics (day 5) using your methodology
     final_rates = [tree[5][j] for j in range(6)]
     final_probs = []
     
-    # Calculate probabilities for final outcomes
+    # Calculate probabilities for final outcomes using your method
     for j in range(6):
-        # Binomial probability for j ups in 5 days
-        binom_coeff = 1
-        for i in range(min(j, 5-j)):
-            binom_coeff = binom_coeff * (5 - i) // (i + 1)
-        prob = binom_coeff * (p ** j) * ((1 - p) ** (5 - j))
+        if use_empirical:
+            # Your empirical method for final probabilities
+            prob = comb(5, j) * (p_up_empirical ** j) * (p_down_empirical ** (5 - j))
+        else:
+            # Traditional binomial probability
+            prob = comb(5, j) * (p ** j) * ((1 - p) ** (5 - j))
         final_probs.append(prob)
     
     # Normalize probabilities
@@ -1783,23 +1837,43 @@ def create_binomial_model_panel():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown(f"""
-        **Dane wejściowe (Alpha Vantage):**
-        - Kurs spot: {spot_rate:.4f}
-        - Zmienność dzienna: {daily_vol*100:.3f}%
-        - Metoda: Std Dev(20 dni) / Spot Rate
-        - Horyzont: 5 dni roboczych (Pn-Pt)
-        - Dane historyczne: {historical_data['count']} punktów
-        """)
+        if use_empirical:
+            st.markdown(f"""
+            **Dane wejściowe (Empirical Method):**
+            - Kurs spot: {spot_rate:.4f}
+            - Mean (20 dni): {mean_20_days:.4f}
+            - Std Dev (20 dni): {std_20_days:.4f}
+            - P(up): {p_up_empirical:.3f}, P(down): {p_down_empirical:.3f}
+            - Horyzont: 5 dni roboczych (Pn-Pt)
+            - Dane historyczne: {historical_data['count']} punktów
+            """)
+        else:
+            st.markdown(f"""
+            **Dane wejściowe (Traditional Binomial):**
+            - Kurs spot: {spot_rate:.4f}
+            - Zmienność dzienna: {daily_vol*100:.3f}%
+            - Metoda: Traditional Risk-Neutral
+            - Horyzont: 5 dni roboczych (Pn-Pt)
+            - Dane historyczne: {historical_data['count']} punktów
+            """)
     
     with col2:
-        st.markdown(f"""
-        **Parametry drzewa:**
-        - Współczynnik wzrostu (u): {u:.6f}
-        - Współczynnik spadku (d): {d:.6f}
-        - Prawdop. risk-neutral (p): {p:.4f}
-        - Stopa wolna od ryzyka: {r*252*100:.2f}%
-        """)
+        if use_empirical:
+            st.markdown(f"""
+            **Parametry modelu empirycznego:**
+            - Prawdopodobieństwo wzrostu: {p_up_empirical:.4f}
+            - Prawdopodobieństwo spadku: {p_down_empirical:.4f}
+            - Metoda: Normal CDF z ostatnich 20 dni
+            - Kombinacje: math.comb(n,k) dla precyzji
+            """)
+        else:
+            st.markdown(f"""
+            **Parametry drzewa tradycyjnego:**
+            - Współczynnik wzrostu (u): {u:.6f}
+            - Współczynnik spadku (d): {d:.6f}
+            - Prawdop. risk-neutral (p): {p:.4f}
+            - Stopa wolna od ryzyka: {r*252*100:.2f}%
+            """)
 
 # ============================================================================
 # GŁÓWNA APLIKACJA
