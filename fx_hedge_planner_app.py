@@ -1,172 +1,4 @@
-with col3:
-            st.metric(
-                "Portfolio Max Zysk", 
-                f"{portfolio_totals['total_max_profit']:,.0f} PLN",
-                help="Suma bank spreads + oszczędności hedging"
-            )
-        
-        with col4:
-            st.metric(
-                "Zakres Zysku", 
-                f"{portfolio_totals['total_max_profit'] - portfolio_totals['total_min_profit']:,.0f} PLN",
-                help="Zmienność całego portfolio"
-            )
-        
-        # Second row - percentage metrics
-        st.markdown("### 📊 Marże Procentowe")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="profit-metric">
-                <h4 style="margin: 0; color: white;">Min Marża</h4>
-                <h2 style="margin: 0; color: white;">{min_profit_pct:.3f}%</h2>
-                <p style="margin: 0; color: #f8f9fa;">vs całkowita ekspozycja</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="profit-metric" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
-                <h4 style="margin: 0; color: white;">Oczekiwana Marża</h4>
-                <h2 style="margin: 0; color: white;">{expected_profit_pct:.3f}%</h2>
-                <p style="margin: 0; color: #f8f9fa;">realistyczny scenariusz</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="profit-metric" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
-                <h4 style="margin: 0; color: white;">Max Marża</h4>
-                <h2 style="margin: 0; color: white;">{max_profit_pct:.3f}%</h2>
-                <p style="margin: 0; color: #f8f9fa;">optymistyczny scenariusz</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            margin_volatility = max_profit_pct - min_profit_pct
-            st.markdown(f"""
-            <div class="profit-metric" style="background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%); color: #2d3436;">
-                <h4 style="margin: 0;">Volatility Marży</h4>
-                <h2 style="margin: 0;">{margin_volatility:.3f}pp</h2>
-                <p style="margin: 0;">zakres zmienności</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Additional portfolio metrics
-        st.markdown("### ⚙️ Parametry Portfolio")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        portfolio_avg_points = portfolio_totals['total_points_to_window'] / portfolio_totals['total_notional']
-        portfolio_avg_swap_risk = portfolio_totals['total_swap_risk'] / portfolio_totals['total_notional']
-        portfolio_avg_client_rate = spot_rate + portfolio_avg_points * points_factor - portfolio_avg_swap_risk * risk_factor
-        
-        with col1:
-            st.metric(
-                "Średnie Punkty", 
-                f"{portfolio_avg_points:.4f}",
-                help="Średnia ważona punktów terminowych"
-            )
-        
-        with col2:
-            st.metric(
-                "Średnie Ryzyko Swap", 
-                f"{portfolio_avg_swap_risk:.4f}",
-                help=f"Średnie ryzyko swap dla {window_days}-dniowych okien"
-            )
-        
-        with col3:
-            st.metric(
-                "Średni Kurs Klienta", 
-                f"{portfolio_avg_client_rate:.4f}",
-                help="Średni kurs klienta w portfolio"
-            )
-        
-        with col4:
-            risk_reward_ratio = portfolio_totals['total_max_profit'] / portfolio_totals['total_min_profit'] if portfolio_totals['total_min_profit'] > 0 else float('inf')
-            st.metric(
-                "Risk/Reward", 
-                f"{risk_reward_ratio:.1f}x",
-                help="Stosunek max/min zysku"
-            )
-        
-        # Deal summary
-        st.markdown("---")
-        st.subheader("📋 Podsumowanie Transakcji")
-        
-        with st.container():
-            summary_col1, summary_col2 = st.columns([1, 1])
-            
-            with summary_col1:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h4>💼 Strategia Portfolio Window Forward</h4>
-                    <p><strong>Strategia:</strong> 12 Window Forwards z {window_days}-dniową elastycznością</p>
-                    <p><strong>Całkowity Nominał:</strong> €{portfolio_totals['total_notional']:,}</p>
-                    <p><strong>Kurs Spot:</strong> {spot_rate:.4f} ({spot_source})</p>
-                    <p><strong>Średni Kurs Klienta:</strong> {portfolio_avg_client_rate:.4f}</p>
-                    <p><strong>Points Factor:</strong> {points_factor:.1%}</p>
-                    <p><strong>Risk Factor:</strong> {risk_factor:.1%}</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with summary_col2:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h4>💰 Podsumowanie Finansowe</h4>
-                    <p><strong>Oczekiwany Zysk:</strong> {portfolio_totals['total_expected_profit']:,.0f} PLN ({expected_profit_pct:.3f}%)</p>
-                    <p><strong>Portfolio Minimum:</strong> {portfolio_totals['total_min_profit']:,.0f} PLN ({min_profit_pct:.3f}%)</p>
-                    <p><strong>Portfolio Maximum:</strong> {portfolio_totals['total_max_profit']:,.0f} PLN ({max_profit_pct:.3f}%)</p>
-                    <p><strong>Współczynnik Zmienności:</strong> {volatility_factor:.2f}</p>
-                    <p><strong>Oszczędności Hedging:</strong> {hedging_savings_pct:.0%}</p>
-                    <p><strong>Dźwignia:</strong> {leverage}x</p>
-                </div>
-                """, unsafe_allow_html=True)
-    
-    else:
-        st.info("👆 Kliknij 'Zaktualizuj Wycenę' aby wygenerować kursy dla klientów")
-
-# ============================================================================
-# PANEL ZABEZPIECZEŃ - SYNCHRONIZOWANY Z WYCENĘ DEALERSKĄ
-# ============================================================================
-
-def create_client_hedging_advisor():
-    """Panel zabezpieczeń - pokazuje kursy z panelu dealerskiego"""
-    
-    st.header("🛡️ Panel Zabezpieczeń EUR/PLN")
-    st.markdown("*Kursy synchronizowane z panelem dealerskim*")
-    
-    # Check if dealer pricing is available
-    if not st.session_state.dealer_pricing_data:
-        st.warning("⚠️ Brak wyceny dealerskiej! Przejdź najpierw do panelu dealerskiego i zaktualizuj wycenę.")
-        
-        # Show fallback basic info
-        forex_data = get_eur_pln_rate()
-        st.info(f"Aktualny kurs EUR/PLN: {forex_data['rate']:.4f} ({forex_data['source']})")
-        
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.markdown("""
-            <div class="metric-card" style="text-align: center;">
-                <h4>🚀 Rozpocznij Wycenę</h4>
-                <p>Przejdź do panelu dealerskiego aby:</p>
-                <ul style="text-align: left; margin: 1rem 0;">
-                    <li>Ustawić parametry rynkowe</li>
-                    <li>Skonfigurować marże i ryzyka</li>
-                    <li>Wygenerować kursy dla klientów</li>
-                </ul>
-                <p><strong>Po aktualizacji wyceny kursy pojawią się tutaj automatycznie!</strong></p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        return
-    
-    # Show pricing sync status
-    config = st.session_state.dealer_config
-    source_icon = "📊" if "Binomial" in config['spot_source'] else "🌐" if "Alpha" in config['spot_source'] or "NBP" in config['spot_source'] else "✋"
-    
-    st.markdown(f"""
+st.markdown(f"""
     <div class="pricing-sync">
         <h4 style="margin: 0;">✅ Wycena Zsynchronizowana {source_icon}</h4>
         <p style="margin: 0;">Kurs spot: {config['spot_rate']:.4f} ({config['spot_source']}) | Window: {config['window_days']} dni | Ostatnia aktualizacja: {datetime.now().strftime('%H:%M:%S')}</p>
@@ -359,7 +191,7 @@ def create_client_hedging_advisor():
                 y=spot_rates,
                 mode='lines',
                 name=f'Kurs spot ({config["spot_rate"]:.4f})',
-                line=dict(color='red', width=1.5, dash='dash'),  # Zmniejszone z 3 na 1.5
+                line=dict(color='red', width=1.5, dash='dash'),
                 hovertemplate='Spot: %{y:.4f}<extra></extra>'
             )
         )
@@ -371,8 +203,8 @@ def create_client_hedging_advisor():
                 y=forward_rates,
                 mode='lines+markers',
                 name='Kursy terminowe',
-                line=dict(color='#2e68a5', width=1.5),  # Zmniejszone z 3 na 1.5
-                marker=dict(size=8, color='#2e68a5'),    # Zmniejszone z 12 na 8
+                line=dict(color='#2e68a5', width=1.5),
+                marker=dict(size=8, color='#2e68a5'),
                 hovertemplate='%{x}: %{y:.4f}<extra></extra>'
             )
         )
@@ -386,7 +218,7 @@ def create_client_hedging_advisor():
                 y=benefits,
                 name='Korzyść PLN vs Spot',
                 yaxis='y2',
-                marker_color='#2e68a5',  # Zmienione z lightblue na #2e68a5
+                marker_color='#2e68a5',
                 opacity=0.7,
                 hovertemplate='%{x}: %{y:,.0f} PLN<extra></extra>'
             )
@@ -514,8 +346,6 @@ def create_binomial_model_panel():
             std_20_days = np.std(last_20_rates)
             
             # Calculate empirical probabilities using normal distribution
-            # p_up = probability that next price will be above current distribution
-            # Using normal CDF: P(X <= current_spot) given mean and std from last 20 days
             from scipy.stats import norm
             
             # P(up) = probability of being above current level based on historical distribution
@@ -624,7 +454,1067 @@ def create_binomial_model_panel():
             tree[day][0] = spot_rate
         else:
             for j in range(day + 1):
-                upsimport streamlit as st
+                ups = j
+                downs = day - j
+                rate = spot_rate * (u ** ups) * (d ** downs)
+                tree[day][j] = rate
+    
+    # Create business daily ranges (skip weekends)
+    st.subheader("📅 Dzienne Zakresy Kursów (Dni Robocze)")
+    
+    # Get next business days
+    today = datetime.now()
+    business_days = []
+    current_date = today
+    
+    while len(business_days) < 5:
+        current_date += timedelta(days=1)
+        # Skip weekends (5=Saturday, 6=Sunday)
+        if current_date.weekday() < 5:
+            business_days.append(current_date)
+    
+    weekdays = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek"]
+    
+    daily_ranges = []
+    
+    for day in range(1, 6):  # Days 1-5 (business days)
+        day_rates = [tree[day][j] for j in range(day + 1)]
+        min_rate = min(day_rates)
+        max_rate = max(day_rates)
+        
+        # Get business day info
+        business_date = business_days[day-1]
+        weekday_name = weekdays[business_date.weekday()]
+        date_str = business_date.strftime("%d.%m")
+        
+        daily_ranges.append({
+            "Dzień": f"Dzień {day}",
+            "Data": f"{weekday_name} {date_str}",
+            "Min kurs": f"{min_rate:.4f}",
+            "Max kurs": f"{max_rate:.4f}",
+            "Zakres": f"{min_rate:.4f} - {max_rate:.4f}",
+            "Rozpiętość": f"{((max_rate - min_rate) / min_rate * 10000):.0f} pkt"
+        })
+    
+    df_ranges = pd.DataFrame(daily_ranges)
+    
+    # Color coding based on range width
+    def highlight_ranges(row):
+        spread_pkt = float(row['Rozpiętość'].split()[0])
+        if spread_pkt > 200:
+            return ['background-color: #f8d7da'] * len(row)  # Red - high volatility
+        elif spread_pkt > 100:
+            return ['background-color: #fff3cd'] * len(row)  # Yellow - medium
+        else:
+            return ['background-color: #d4edda'] * len(row)  # Green - low volatility
+    
+    st.dataframe(
+        df_ranges.style.apply(highlight_ranges, axis=1),
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    # Tree visualization with most probable path
+    st.subheader("🌳 Drzewo Dwumianowe z Najczęściej Prawdopodobną Ścieżką")
+    
+    # Calculate most probable path (closest to risk-neutral expectation)
+    most_probable_path = []
+    for day in range(6):
+        if day == 0:
+            most_probable_path.append(0)
+        else:
+            # Find the node closest to expected value
+            expected_ups = day * p  # Expected number of up moves
+            closest_j = round(expected_ups)
+            closest_j = max(0, min(closest_j, day))  # Ensure valid range
+            most_probable_path.append(closest_j)
+    
+    # Create tree visualization
+    fig = go.Figure()
+    
+    # Plot tree nodes
+    for day in range(6):
+        for j in range(day + 1):
+            rate = tree[day][j]
+            
+            # Position calculations
+            x = day
+            y = j - day/2  # Center the nodes vertically
+            
+            # Check if this node is on the most probable path
+            is_most_probable = (j == most_probable_path[day])
+            
+            # Add node
+            fig.add_trace(
+                go.Scatter(
+                    x=[x],
+                    y=[y],
+                    mode='markers',
+                    marker=dict(
+                        size=20 if is_most_probable else 15,
+                        color='#ff6b35' if is_most_probable else '#2e68a5',
+                        line=dict(width=3 if is_most_probable else 2, 
+                                 color='white')
+                    ),
+                    showlegend=False,
+                    hovertemplate=f"Dzień {day}<br>Kurs: {rate:.4f}<br>{'🎯 Najczęstsza ścieżka' if is_most_probable else ''}<extra></extra>"
+                )
+            )
+            
+            # Add text label above the node
+            fig.add_trace(
+                go.Scatter(
+                    x=[x],
+                    y=[y + 0.25],  # Higher position above the node
+                    mode='text',
+                    text=f"{rate:.4f}",  # 4 decimal places format
+                    textposition="middle center",
+                    textfont=dict(
+                        color='#ff6b35' if is_most_probable else '#2e68a5',
+                        size=12 if is_most_probable else 10,
+                        family="Arial Black" if is_most_probable else "Arial"
+                    ),
+                    showlegend=False,
+                    hoverinfo='skip'
+                )
+            )
+            
+            # Add connecting lines to next day
+            if day < 5:
+                # Up movement
+                if j < day + 1:
+                    next_y_up = (j + 1) - (day + 1)/2
+                    
+                    # Check if this connection is part of most probable path
+                    is_prob_connection = (j == most_probable_path[day] and 
+                                        (j + 1) == most_probable_path[day + 1])
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[x, x + 1],
+                            y=[y, next_y_up],
+                            mode='lines',
+                            line=dict(
+                                color='#ff6b35' if is_prob_connection else 'lightgray',
+                                width=4 if is_prob_connection else 1
+                            ),
+                            showlegend=False,
+                            hoverinfo='skip'
+                        )
+                    )
+                
+                # Down movement
+                if j >= 0:
+                    next_y_down = j - (day + 1)/2
+                    
+                    # Check if this connection is part of most probable path
+                    is_prob_connection = (j == most_probable_path[day] and 
+                                        j == most_probable_path[day + 1])
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[x, x + 1],
+                            y=[y, next_y_down],
+                            mode='lines',
+                            line=dict(
+                                color='#ff6b35' if is_prob_connection else 'lightgray',
+                                width=4 if is_prob_connection else 1
+                            ),
+                            showlegend=False,
+                            hoverinfo='skip'
+                        )
+                    )
+    
+    # Add legend manually
+    fig.add_trace(
+        go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(size=20, color='#ff6b35'),
+            name='🎯 Najczęstsza ścieżka',
+            showlegend=True
+        )
+    )
+    
+    fig.add_trace(
+        go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(size=15, color='#2e68a5'),
+            name='Inne możliwe kursy',
+            showlegend=True
+        )
+    )
+    
+    # Update layout
+    fig.update_layout(
+        title="Drzewo dwumianowe EUR/PLN - 5 dni roboczych",
+        xaxis_title="Dzień roboczy",
+        yaxis_title="Poziom w drzewie",
+        height=500,
+        xaxis=dict(
+            tickmode='array',
+            tickvals=list(range(6)),
+            ticktext=[f"Dzień {i}" if i == 0 else f"Dzień {i}\n({weekdays[(business_days[i-1].weekday())][:3]})" for i in range(6)]
+        ),
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01
+        )
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Most probable path details
+    st.subheader("🎯 Najczęstsza Prognozowana Ścieżka")
+    
+    path_details = []
+    for day in range(1, 6):
+        j = most_probable_path[day]
+        rate = tree[day][j]
+        business_date = business_days[day-1]
+        weekday_name = weekdays[business_date.weekday()]
+        
+        # Calculate probability of reaching this specific node using your methodology
+        from math import comb
+        
+        if use_empirical:
+            # Your empirical method
+            node_prob = comb(day, j) * (p_up_empirical ** j) * (p_down_empirical ** (day - j))
+        else:
+            # Traditional binomial
+            node_prob = comb(day, j) * (p ** j) * ((1 - p) ** (day - j))
+        
+        path_details.append({
+            "Dzień": f"{weekday_name}",
+            "Data": business_date.strftime("%d.%m"),
+            "Prognozowany kurs": f"{rate:.4f}",
+            "Zmiana vs dziś": f"{((rate/spot_rate - 1) * 100):+.2f}%",
+            "Prawdopodobieństwo": f"{node_prob*100:.1f}%"
+        })
+    
+    df_path = pd.DataFrame(path_details)
+    st.dataframe(df_path, use_container_width=True, hide_index=True)
+    
+    # Statistical summary with highest rate info
+    st.subheader("📊 Podsumowanie Statystyczne")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    # Calculate final day statistics (day 5) using your methodology
+    final_rates = [tree[5][j] for j in range(6)]
+    final_probs = []
+    
+    # Calculate probabilities for final outcomes using your method
+    for j in range(6):
+        if use_empirical:
+            # Your empirical method for final probabilities
+            prob = comb(5, j) * (p_up_empirical ** j) * (p_down_empirical ** (5 - j))
+        else:
+            # Traditional binomial probability
+            prob = comb(5, j) * (p ** j) * ((1 - p) ** (5 - j))
+        final_probs.append(prob)
+    
+    # Normalize probabilities
+    total_prob = sum(final_probs)
+    final_probs = [prob/total_prob for prob in final_probs]
+    
+    expected_rate = sum(rate * prob for rate, prob in zip(final_rates, final_probs))
+    min_final = min(final_rates)
+    max_final = max(final_rates)
+    most_probable_final = tree[5][most_probable_path[5]]
+    
+    # Calculate highest rate from most probable path
+    path_rates = [tree[day][most_probable_path[day]] for day in range(6)]
+    highest_in_path = max(path_rates[1:])  # Skip day 0
+    highest_day = 0
+    for day in range(1, 6):
+        if abs(tree[day][most_probable_path[day]] - highest_in_path) < 0.0001:
+            highest_day = day
+            break
+    
+    prob_below_spot = sum(prob for rate, prob in zip(final_rates, final_probs) if rate < spot_rate) * 100
+    
+    with col1:
+        st.metric(
+            "Oczekiwany kurs (5 dni)",
+            f"{expected_rate:.4f}",
+            delta=f"{((expected_rate/spot_rate - 1) * 100):+.2f}%"
+        )
+    
+    with col2:
+        st.metric(
+            "🎯 Najwyższy z ścieżki",
+            f"{highest_in_path:.4f}",
+            delta=f"{((highest_in_path/spot_rate - 1) * 100):+.2f}%",
+            help=f"Dzień {highest_day} - używany w wycenie dealerskiej"
+        )
+    
+    with col3:
+        st.metric(
+            "Zakres (min-max)",
+            f"{min_final:.4f} - {max_final:.4f}",
+            help="Możliwe ekstremalne scenariusze"
+        )
+    
+    with col4:
+        st.metric(
+            "Prawdop. umocnienia PLN",
+            f"{prob_below_spot:.1f}%",
+            help="Prawdopodobieństwo kursu poniżej dzisiejszego"
+        )
+    
+    # Integration info
+    st.markdown("---")
+    st.subheader("🔗 Integracja z Wyceną Dealerską")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <h4>🎯 Kurs dla Wyceny Forward</h4>
+            <p><strong>Najwyższy kurs z ścieżki:</strong> {highest_in_path:.4f}</p>
+            <p><strong>Występuje w dniu:</strong> {highest_day}</p>
+            <p><strong>Zmiana vs spot:</strong> {((highest_in_path/spot_rate - 1) * 100):+.2f}%</p>
+            <p><strong>Logika:</strong> Wykorzystuje maksymalny potencjał kursu z najczęstszej ścieżki</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <h4>📊 Porównanie Kursów</h4>
+            <p><strong>Kurs spot dziś:</strong> {spot_rate:.4f}</p>
+            <p><strong>Finalny kurs (dzień 5):</strong> {most_probable_final:.4f}</p>
+            <p><strong>Najwyższy z ścieżki:</strong> {highest_in_path:.4f}</p>
+            <p><strong>Przewaga najwyższego:</strong> {((highest_in_path/most_probable_final - 1) * 100):+.2f}%</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Show path rates table
+    st.subheader("📋 Kursy z Najczęstszej Ścieżki")
+    
+    path_data = []
+    for day in range(6):
+        rate = tree[day][most_probable_path[day]]
+        is_highest = abs(rate - highest_in_path) < 0.0001 and day > 0
+        
+        path_data.append({
+            "Dzień": day,
+            "Kurs": f"{rate:.4f}",
+            "Zmiana vs spot": f"{((rate/spot_rate - 1) * 100):+.2f}%",
+            "Status": "🎯 Najwyższy" if is_highest else "⚪ Normalny" if day > 0 else "📍 Start"
+        })
+    
+    df_path = pd.DataFrame(path_data)
+    
+    # Highlight the highest rate row
+    def highlight_highest(row):
+        if "🎯" in row['Status']:
+            return ['background-color: #d4edda; font-weight: bold'] * len(row)
+        elif "📍" in row['Status']:
+            return ['background-color: #f8f9fa'] * len(row)
+        else:
+            return [''] * len(row)
+    
+    st.dataframe(
+        df_path.style.apply(highlight_highest, axis=1),
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    # Model parameters
+    st.subheader("📋 Parametry Modelu")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if use_empirical:
+            st.markdown(f"""
+            **Dane wejściowe (Empirical Method):**
+            - Kurs spot: {spot_rate:.4f}
+            - Mean (20 dni): {mean_20_days:.4f}
+            - Std Dev (20 dni): {std_20_days:.4f}
+            - P(up): {p_up_empirical:.3f}, P(down): {p_down_empirical:.3f}
+            - Horyzont: 5 dni roboczych (Pn-Pt)
+            - Dane historyczne: {historical_data['count']} punktów
+            """)
+        else:
+            st.markdown(f"""
+            **Dane wejściowe (Traditional Binomial):**
+            - Kurs spot: {spot_rate:.4f}
+            - Zmienność dzienna: {daily_vol*100:.3f}%
+            - Metoda: Traditional Risk-Neutral
+            - Horyzont: 5 dni roboczych (Pn-Pt)
+            - Dane historyczne: {historical_data['count']} punktów
+            """)
+    
+    with col2:
+        if use_empirical:
+            st.markdown(f"""
+            **Parametry modelu empirycznego:**
+            - Prawdopodobieństwo wzrostu: {p_up_empirical:.4f}
+            - Prawdopodobieństwo spadku: {p_down_empirical:.4f}
+            - Metoda: Normal CDF z ostatnich 20 dni
+            - Kombinacje: math.comb(n,k) dla precyzji
+            """)
+        else:
+            st.markdown(f"""
+            **Parametry drzewa tradycyjnego:**
+            - Współczynnik wzrostu (u): {u:.6f}
+            - Współczynnik spadku (d): {d:.6f}
+            - Prawdop. risk-neutral (p): {p:.4f}
+            - Stopa wolna od ryzyka: {r*252*100:.2f}%
+            """)
+
+# ============================================================================
+# GŁÓWNA APLIKACJA
+# ============================================================================
+
+def main():
+    """Główny punkt wejścia aplikacji"""
+    
+    # Initialize session state
+    initialize_session_state()
+    
+    # Header
+    st.markdown("""
+    <div style="display: flex; align-items: center; margin-bottom: 2rem;">
+        <div style="background: linear-gradient(45deg, #667eea, #764ba2); width: 60px; height: 60px; border-radius: 10px; margin-right: 1rem; display: flex; align-items: center; justify-content: center;">
+            <span style="font-size: 2rem;">🚀</span>
+        </div>
+        <h1 style="margin: 0; color: #2c3e50;">Zintegrowana Platforma FX</h1>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("*Alpha Vantage + NBP + FRED APIs | Synchronizacja dealerska ↔ klient | Model Dwumianowy*")
+    
+    # Show sync status in header
+    if st.session_state.dealer_pricing_data:
+        config = st.session_state.dealer_config
+        source_icon = "📊" if "Binomial" in config['spot_source'] else "🌐" if "Alpha" in config['spot_source'] or "NBP" in config['spot_source'] else "✋"
+        st.success(f"✅ System zsynchronizowany {source_icon} | Spot: {config['spot_rate']:.4f} ({config['spot_source']}) | Window: {config['window_days']} dni | Kursy: {len(st.session_state.dealer_pricing_data)} tenorów")
+    else:
+        st.info("🔄 Oczekiwanie na wycenę dealerską...")
+    
+    # Create tabs with binomial model
+    tab1, tab2, tab3 = st.tabs(["🔧 Panel Dealerski", "🛡️ Panel Zabezpieczeń", "📊 Model Dwumianowy"])
+    
+    with tab1:
+        create_dealer_panel()
+    
+    with tab2:
+        create_client_hedging_advisor()
+    
+    with tab3:
+        create_binomial_model_panel()
+
+# ============================================================================
+# URUCHOMIENIE APLIKACJI
+# ============================================================================
+
+if __name__ == "__main__":
+    main()def update_dealer_config(spot_rate, spot_source, pl_yield, de_yield, window_days, 
+                        points_factor, risk_factor, bid_ask_spread, volatility_factor, 
+                        hedging_savings_pct, minimum_profit_floor):
+    """Update dealer configuration in session state"""
+    st.session_state.dealer_config = {
+        'spot_rate': spot_rate,
+        'spot_source': spot_source,
+        'pl_yield': pl_yield,
+        'de_yield': de_yield,
+        'window_days': window_days,
+        'points_factor': points_factor,
+        'risk_factor': risk_factor,
+        'bid_ask_spread': bid_ask_spread,
+        'volatility_factor': volatility_factor,
+        'hedging_savings_pct': hedging_savings_pct,
+        'minimum_profit_floor': minimum_profit_floor
+    }
+    
+    # Recalculate pricing
+    st.session_state.dealer_pricing_data = calculate_dealer_pricing(st.session_state.dealer_config)
+    st.session_state.pricing_updated = True
+
+# ============================================================================
+# PANEL DEALERSKI Z KONTROLĄ NAD WYCENĄ
+# ============================================================================
+
+def create_dealer_panel():
+    """Panel dealerski - ustala wycenę dla całego systemu"""
+    
+    st.header("🚀 Panel Dealerski - Wycena Master")
+    st.markdown("*Ustaw parametry wyceny - te kursy będą widoczne w panelu zabezpieczeń*")
+    
+    # Alpha Vantage API Status Display
+    st.subheader("📡 Status API")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Test Alpha Vantage API
+        alpha_api = AlphaVantageAPI()
+        forex_result = alpha_api.get_eur_pln_rate()
+        
+        if 'Alpha Vantage' in forex_result['source']:
+            st.markdown(f"""
+            <div class="alpha-api">
+                <h4 style="margin: 0;">📈 Alpha Vantage API Active</h4>
+                <p style="margin: 0;">Source: {forex_result['source']}</p>
+                <p style="margin: 0;">Rate: {forex_result['rate']:.4f} | Date: {forex_result['date']}</p>
+                <p style="margin: 0;">Real-time professional data</p>
+            </div>
+            """, unsafe_allow_html=True)
+        elif 'NBP' in forex_result['source']:
+            st.markdown(f"""
+            <div class="alpha-api" style="background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%); color: #2d3436;">
+                <h4 style="margin: 0;">🏛️ NBP API Backup</h4>
+                <p style="margin: 0;">Source: {forex_result['source']}</p>
+                <p style="margin: 0;">Rate: {forex_result['rate']:.4f}</p>
+                <p style="margin: 0;">Official Polish central bank</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="alpha-api" style="background: linear-gradient(135deg, #e17055 0%, #d63031 100%);">
+                <h4 style="margin: 0;">⚠️ Fallback Mode</h4>
+                <p style="margin: 0;">Source: {forex_result['source']}</p>
+                <p style="margin: 0;">Rate: {forex_result['rate']:.4f}</p>
+                <p style="margin: 0;">Check API connectivity</p>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    with col2:
+        # Show historical data status
+        historical_data = get_historical_eur_pln_data(30)
+        
+        st.markdown(f"""
+        <div class="alpha-api">
+            <h4 style="margin: 0;">📊 Historical Data</h4>
+            <p style="margin: 0;">Source: {historical_data['source']}</p>
+            <p style="margin: 0;">Data points: {historical_data['count']}</p>
+            <p style="margin: 0;">For volatility calculation</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Load market data
+    with st.spinner("📡 Ładowanie danych rynkowych..."):
+        bond_data = get_fred_bond_data()
+        forex_data = get_eur_pln_rate()
+    
+    # Enhanced spot rate control with binomial model integration
+    st.subheader("⚙️ Kontrola Kursu Spot - z Integracją Modelu Dwumianowego")
+    
+    # Get binomial prediction for integration
+    with st.spinner("📊 Obliczanie prognozy dwumianowej..."):
+        historical_data = get_historical_eur_pln_data(30)
+        binomial_prediction = calculate_binomial_prediction(historical_data, forex_data['rate'], days=5)
+    
+    # Display binomial prediction status
+    if binomial_prediction['success']:
+        st.success(f"✅ Model dwumianowy aktywny | Prognoza 5D: {binomial_prediction['predicted_spot']:.4f} ({binomial_prediction['change_pct']:+.2f}%)")
+    else:
+        st.warning("⚠️ Model dwumianowy niedostępny - używam kursu spot")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        spot_rate_source = st.radio(
+            "Źródło kursu do wyceny:",
+            options=["api", "binomial", "manual"],
+            format_func=lambda x: {
+                "api": "🌐 API (Alpha Vantage/NBP)",
+                "binomial": "📊 Najwyższa prognoza z modelu",
+                "manual": "✋ Ręczny"
+            }[x],
+            key="dealer_spot_source",
+            help="Wybierz źródło kursu dla kalkulacji forward"
+        )
+    
+    with col2:
+        if spot_rate_source == "api":
+            spot_rate = forex_data['rate']
+            spot_source = forex_data['source']
+            st.info(f"Kurs API: {spot_rate:.4f} (źródło: {spot_source})")
+            
+        elif spot_rate_source == "binomial":
+            if binomial_prediction['success']:
+                # Use the highest predicted rate from the most probable path
+                spot_rate = binomial_prediction['predicted_spot']
+                spot_source = f"Binomial 5D ({binomial_prediction['probability']:.1%} prob)"
+                
+                st.success(f"Prognoza dwumianowa: {spot_rate:.4f}")
+                st.info(f"Zmiana vs obecny spot: {binomial_prediction['change_pct']:+.2f}%")
+                st.info(f"Prawdopodobieństwo: {binomial_prediction['probability']:.1%}")
+            else:
+                # Fallback to API if binomial fails
+                spot_rate = forex_data['rate']
+                spot_source = f"{forex_data['source']} (binomial fallback)"
+                st.warning("Model dwumianowy niedostępny - używam kursu API")
+                
+        else:  # manual
+            spot_rate = st.number_input(
+                "Kurs EUR/PLN:",
+                value=st.session_state.dealer_config['spot_rate'],
+                min_value=3.50,
+                max_value=6.00,
+                step=0.0001,
+                format="%.4f",
+                key="dealer_spot_input",
+                help="Wprowadź własny kurs spot do wyceny"
+            )
+            spot_source = "Manual"
+    
+    # Show comparison if binomial available
+    if binomial_prediction['success']:
+        st.markdown("### 📊 Porównanie Źródeł Kursu")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(
+                "Kurs API",
+                f"{forex_data['rate']:.4f}",
+                help=f"Źródło: {forex_data['source']}"
+            )
+        
+        with col2:
+            st.metric(
+                "Prognoza Dwumianowa",
+                f"{binomial_prediction['predicted_spot']:.4f}",
+                delta=f"{binomial_prediction['change_pct']:+.2f}%",
+                help=f"Prawdopodobieństwo: {binomial_prediction['probability']:.1%}"
+            )
+        
+        with col3:
+            diff_pct = ((binomial_prediction['predicted_spot'] - forex_data['rate']) / forex_data['rate']) * 100
+            st.metric(
+                "Różnica Model vs API",
+                f"{diff_pct:+.2f}%",
+                help="Wpływ na wycenę terminową"
+            )
+    
+    # Market data display
+    st.subheader("📊 Dane Rynkowe")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    pl_yield = bond_data['Poland_10Y']['value'] if 'Poland_10Y' in bond_data else 5.42
+    de_yield = bond_data['Germany_10Y']['value'] if 'Germany_10Y' in bond_data else 2.63
+    spread = pl_yield - de_yield
+    
+    with col1:
+        st.metric(
+            "EUR/PLN Spot",
+            f"{spot_rate:.4f}",
+            help=f"Źródło: {spot_source}"
+        )
+    
+    with col2:
+        st.metric(
+            "Rentowność PL 10Y",
+            f"{pl_yield:.2f}%",
+            help=f"Źródło: {bond_data.get('Poland_10Y', {}).get('source', 'Current Market')}"
+        )
+    
+    with col3:
+        st.metric(
+            "Rentowność DE 10Y",
+            f"{de_yield:.2f}%", 
+            help=f"Źródło: {bond_data.get('Germany_10Y', {}).get('source', 'Current Market')}"
+        )
+    
+    with col4:
+        st.metric(
+            "Spread PL-DE 10Y",
+            f"{spread:.2f}pp",
+            help="Różnica rentowności 10Y napędzająca punkty terminowe"
+        )
+    
+    # Transaction configuration
+    st.markdown("---")
+    st.subheader("⚙️ Konfiguracja Transakcji")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        window_days = st.number_input(
+            "Długość okna (dni):",
+            value=st.session_state.dealer_config['window_days'],
+            min_value=30,
+            max_value=365,
+            step=5,
+            help="Długość okresu window forward"
+        )
+    
+    with col2:
+        nominal_amount = st.number_input(
+            "Kwota nominalna (EUR):",
+            value=2_500_000,
+            min_value=10_000,
+            max_value=100_000_000,
+            step=10_000,
+            format="%d",
+            help="Kwota nominalna transakcji"
+        )
+    
+    with col3:
+        leverage = st.number_input(
+            "Współczynnik dźwigni:",
+            value=1.0,
+            min_value=1.0,
+            max_value=3.0,
+            step=0.1,
+            help="Dźwignia ryzyka dla kalkulacji P&L"
+        )
+    
+    # Advanced pricing parameters
+    with st.expander("🔧 Zaawansowane Parametry Wyceny"):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            points_factor = st.slider(
+                "Współczynnik punktów (% dla klienta):",
+                min_value=0.60,
+                max_value=0.85,
+                value=st.session_state.dealer_config['points_factor'],
+                step=0.01,
+                help="Procent punktów terminowych przekazywanych klientowi"
+            )
+        
+        with col2:
+            risk_factor = st.slider(
+                "Współczynnik ryzyka (% obciążenia):",
+                min_value=0.30,
+                max_value=0.60,
+                value=st.session_state.dealer_config['risk_factor'],
+                step=0.01,
+                help="Procent ryzyka swap obciążanego klientowi"
+            )
+        
+        with col3:
+            bid_ask_spread = st.number_input(
+                "Spread bid-ask:",
+                value=st.session_state.dealer_config['bid_ask_spread'],
+                min_value=0.001,
+                max_value=0.005,
+                step=0.0005,
+                format="%.4f",
+                help="Rynkowy spread bid-ask w punktach terminowych"
+            )
+        
+        col4, col5, col6 = st.columns(3)
+        
+        with col4:
+            minimum_profit_floor = st.number_input(
+                "Min próg zysku (PLN/EUR):",
+                value=st.session_state.dealer_config['minimum_profit_floor'],
+                min_value=-0.020,
+                max_value=0.020,
+                step=0.001,
+                format="%.4f",
+                help="Minimalny gwarantowany zysk na EUR"
+            )
+        
+        with col5:
+            volatility_factor = st.slider(
+                "Współczynnik zmienności:",
+                min_value=0.15,
+                max_value=0.35,
+                value=st.session_state.dealer_config['volatility_factor'],
+                step=0.01,
+                help="Wpływ zmienności na ryzyko swap"
+            )
+        
+        with col6:
+            hedging_savings_pct = st.slider(
+                "Oszczędności hedging (%):",
+                min_value=0.40,
+                max_value=0.80,
+                value=st.session_state.dealer_config['hedging_savings_pct'],
+                step=0.05,
+                help="% oszczędności swap risk w najlepszym scenariuszu"
+            )
+    
+    # Update pricing button
+    if st.button("🔄 Zaktualizuj Wycenę", type="primary", use_container_width=True):
+        update_dealer_config(
+            spot_rate, spot_source, pl_yield, de_yield, window_days,
+            points_factor, risk_factor, bid_ask_spread, volatility_factor,
+            hedging_savings_pct, minimum_profit_floor
+        )
+        
+        if spot_rate_source == "binomial":
+            st.success("✅ Wycena zaktualizowana z prognozą dwumianową! Najwyższy kurs z najczęstszej ścieżki zostanie użyty.")
+        else:
+            st.success("✅ Wycena zaktualizowana! Przejdź do panelu zabezpieczeń aby zobaczyć kursy klienta.")
+        
+        st.rerun()
+    
+    # Show current pricing if available
+    if st.session_state.dealer_pricing_data:
+        st.markdown("---")
+        st.subheader("💼 Aktualna Wycena Dealerska")
+        
+        # Show spot rate source impact
+        current_config_spot = st.session_state.dealer_config['spot_rate']
+        if abs(current_config_spot - spot_rate) > 0.0001:
+            st.warning(f"⚠️ Zmiana kursu spot: {current_config_spot:.4f} → {spot_rate:.4f} ({((spot_rate-current_config_spot)/current_config_spot*100):+.2f}%)")
+            st.info("Kliknij 'Zaktualizuj Wycenę' aby przeliczyć kursy z nowym kursem spot")
+        
+        # Show binomial integration status
+        if spot_rate_source == "binomial" and binomial_prediction['success']:
+            st.success(f"🎯 Używasz prognozy dwumianowej: najwyższy kurs z najczęstszej ścieżki")
+            st.info(f"Dzień {binomial_prediction['highest_day']}: {binomial_prediction['predicted_spot']:.4f} (prawdopodobieństwo ścieżki: {binomial_prediction['probability']:.1%})")
+        
+        # Create DataFrame for display
+        pricing_df_data = []
+        portfolio_totals = {
+            'total_min_profit': 0,
+            'total_max_profit': 0,
+            'total_expected_profit': 0,
+            'total_notional': 0,
+            'total_points_to_window': 0,
+            'total_swap_risk': 0,
+            'total_client_premium': 0
+        }
+        
+        for pricing in st.session_state.dealer_pricing_data:
+            # Calculate window forward metrics
+            window_min_profit_per_eur = pricing['profit_per_eur']
+            window_max_profit_per_eur = window_min_profit_per_eur + (pricing['swap_risk'] * hedging_savings_pct)
+            window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
+            
+            window_min_profit_total = window_min_profit_per_eur * nominal_amount
+            window_max_profit_total = window_max_profit_per_eur * nominal_amount
+            window_expected_profit_total = window_expected_profit_per_eur * nominal_amount
+            
+            portfolio_totals['total_min_profit'] += window_min_profit_total
+            portfolio_totals['total_max_profit'] += window_max_profit_total
+            portfolio_totals['total_expected_profit'] += window_expected_profit_total
+            portfolio_totals['total_notional'] += nominal_amount
+            portfolio_totals['total_points_to_window'] += pricing['forward_points'] * nominal_amount
+            portfolio_totals['total_swap_risk'] += pricing['swap_risk'] * nominal_amount
+            portfolio_totals['total_client_premium'] += (pricing['client_rate'] - spot_rate) * nominal_amount
+            
+            pricing_df_data.append({
+                "Tenor": pricing['tenor_name'],
+                "Forward Days": pricing['tenor_days'],
+                "Window Days": window_days,
+                "Forward Points": f"{pricing['forward_points']:.4f}",
+                "Swap Risk": f"{pricing['swap_risk']:.4f}",
+                "Client Rate": f"{pricing['client_rate']:.4f}",
+                "Theoretical Rate": f"{pricing['theoretical_rate']:.4f}",
+                "Min Profit/EUR": f"{window_min_profit_per_eur:.4f}",
+                "Max Profit/EUR": f"{window_max_profit_per_eur:.4f}",
+                "Expected Profit/EUR": f"{window_expected_profit_per_eur:.4f}",
+                "Min Profit Total": f"{window_min_profit_total:,.0f} PLN",
+                "Max Profit Total": f"{window_max_profit_total:,.0f} PLN",
+                "Expected Profit Total": f"{window_expected_profit_total:,.0f} PLN"
+            })
+        
+        df_pricing = pd.DataFrame(pricing_df_data)
+        st.dataframe(df_pricing, use_container_width=True, height=400)
+        
+        # Portfolio summary with percentage metrics
+        total_exposure_pln = spot_rate * portfolio_totals['total_notional']
+        min_profit_pct = (portfolio_totals['total_min_profit'] / total_exposure_pln) * 100
+        expected_profit_pct = (portfolio_totals['total_expected_profit'] / total_exposure_pln) * 100
+        max_profit_pct = (portfolio_totals['total_max_profit'] / total_exposure_pln) * 100
+        
+        st.subheader("📊 Podsumowanie Portfolio")
+        
+        # First row - PLN amounts
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "Portfolio Min Zysk", 
+                f"{portfolio_totals['total_min_profit']:,.0f} PLN",
+                help="Suma wszystkich gwarantowanych bank spreads"
+            )
+        
+        with col2:
+            st.metric(
+                "Portfolio Oczekiwany", 
+                f"{portfolio_totals['total_expected_profit']:,.0f} PLN",
+                help="Średnia scenariuszy min/max"
+            )
+        
+        with col3:
+            st.metric(
+                "Portfolio Max Zysk", 
+                f"{portfolio_totals['total_max_profit']:,.0f} PLN",
+                help="Suma bank spreads + oszczędności hedging"
+            )
+        
+        with col4:
+            st.metric(
+                "Zakres Zysku", 
+                f"{portfolio_totals['total_max_profit'] - portfolio_totals['total_min_profit']:,.0f} PLN",
+                help="Zmienność całego portfolio"
+            )
+        
+        # Second row - percentage metrics
+        st.markdown("### 📊 Marże Procentowe")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="profit-metric">
+                <h4 style="margin: 0; color: white;">Min Marża</h4>
+                <h2 style="margin: 0; color: white;">{min_profit_pct:.3f}%</h2>
+                <p style="margin: 0; color: #f8f9fa;">vs całkowita ekspozycja</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="profit-metric" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+                <h4 style="margin: 0; color: white;">Oczekiwana Marża</h4>
+                <h2 style="margin: 0; color: white;">{expected_profit_pct:.3f}%</h2>
+                <p style="margin: 0; color: #f8f9fa;">realistyczny scenariusz</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class="profit-metric" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <h4 style="margin: 0; color: white;">Max Marża</h4>
+                <h2 style="margin: 0; color: white;">{max_profit_pct:.3f}%</h2>
+                <p style="margin: 0; color: #f8f9fa;">optymistyczny scenariusz</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            margin_volatility = max_profit_pct - min_profit_pct
+            st.markdown(f"""
+            <div class="profit-metric" style="background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%); color: #2d3436;">
+                <h4 style="margin: 0;">Volatility Marży</h4>
+                <h2 style="margin: 0;">{margin_volatility:.3f}pp</h2>
+                <p style="margin: 0;">zakres zmienności</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Additional portfolio metrics
+        st.markdown("### ⚙️ Parametry Portfolio")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        portfolio_avg_points = portfolio_totals['total_points_to_window'] / portfolio_totals['total_notional']
+        portfolio_avg_swap_risk = portfolio_totals['total_swap_risk'] / portfolio_totals['total_notional']
+        portfolio_avg_client_rate = spot_rate + portfolio_avg_points * points_factor - portfolio_avg_swap_risk * risk_factor
+        
+        with col1:
+            st.metric(
+                "Średnie Punkty", 
+                f"{portfolio_avg_points:.4f}",
+                help="Średnia ważona punktów terminowych"
+            )
+        
+        with col2:
+            st.metric(
+                "Średnie Ryzyko Swap", 
+                f"{portfolio_avg_swap_risk:.4f}",
+                help=f"Średnie ryzyko swap dla {window_days}-dniowych okien"
+            )
+        
+        with col3:
+            st.metric(
+                "Średni Kurs Klienta", 
+                f"{portfolio_avg_client_rate:.4f}",
+                help="Średni kurs klienta w portfolio"
+            )
+        
+        with col4:
+            risk_reward_ratio = portfolio_totals['total_max_profit'] / portfolio_totals['total_min_profit'] if portfolio_totals['total_min_profit'] > 0 else float('inf')
+            st.metric(
+                "Risk/Reward", 
+                f"{risk_reward_ratio:.1f}x",
+                help="Stosunek max/min zysku"
+            )
+        
+        # Deal summary
+        st.markdown("---")
+        st.subheader("📋 Podsumowanie Transakcji")
+        
+        with st.container():
+            summary_col1, summary_col2 = st.columns([1, 1])
+            
+            with summary_col1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>💼 Strategia Portfolio Window Forward</h4>
+                    <p><strong>Strategia:</strong> 12 Window Forwards z {window_days}-dniową elastycznością</p>
+                    <p><strong>Całkowity Nominał:</strong> €{portfolio_totals['total_notional']:,}</p>
+                    <p><strong>Kurs Spot:</strong> {spot_rate:.4f} ({spot_source})</p>
+                    <p><strong>Średni Kurs Klienta:</strong> {portfolio_avg_client_rate:.4f}</p>
+                    <p><strong>Points Factor:</strong> {points_factor:.1%}</p>
+                    <p><strong>Risk Factor:</strong> {risk_factor:.1%}</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with summary_col2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>💰 Podsumowanie Finansowe</h4>
+                    <p><strong>Oczekiwany Zysk:</strong> {portfolio_totals['total_expected_profit']:,.0f} PLN ({expected_profit_pct:.3f}%)</p>
+                    <p><strong>Portfolio Minimum:</strong> {portfolio_totals['total_min_profit']:,.0f} PLN ({min_profit_pct:.3f}%)</p>
+                    <p><strong>Portfolio Maximum:</strong> {portfolio_totals['total_max_profit']:,.0f} PLN ({max_profit_pct:.3f}%)</p>
+                    <p><strong>Współczynnik Zmienności:</strong> {volatility_factor:.2f}</p>
+                    <p><strong>Oszczędności Hedging:</strong> {hedging_savings_pct:.0%}</p>
+                    <p><strong>Dźwignia:</strong> {leverage}x</p>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    else:
+        st.info("👆 Kliknij 'Zaktualizuj Wycenę' aby wygenerować kursy dla klientów")
+
+# ============================================================================
+# PANEL ZABEZPIECZEŃ - SYNCHRONIZOWANY Z WYCENĘ DEALERSKĄ
+# ============================================================================
+
+def create_client_hedging_advisor():
+    """Panel zabezpieczeń - pokazuje kursy z panelu dealerskiego"""
+    
+    st.header("🛡️ Panel Zabezpieczeń EUR/PLN")
+    st.markdown("*Kursy synchronizowane z panelem dealerskim*")
+    
+    # Check if dealer pricing is available
+    if not st.session_state.dealer_pricing_data:
+        st.warning("⚠️ Brak wyceny dealerskiej! Przejdź najpierw do panelu dealerskiego i zaktualizuj wycenę.")
+        
+        # Show fallback basic info
+        forex_data = get_eur_pln_rate()
+        st.info(f"Aktualny kurs EUR/PLN: {forex_data['rate']:.4f} ({forex_data['source']})")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("""
+            <div class="metric-card" style="text-align: center;">
+                <h4>🚀 Rozpocznij Wycenę</h4>
+                <p>Przejdź do panelu dealerskiego aby:</p>
+                <ul style="text-align: left; margin: 1rem 0;">
+                    <li>Ustawić parametry rynkowe</li>
+                    <li>Skonfigurować marże i ryzyka</li>
+                    <li>Wygenerować kursy dla klientów</li>
+                </ul>
+                <p><strong>Po aktualizacji wyceny kursy pojawią się tutaj automatycznie!</strong></p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        return
+    
+    # Show pricing sync status
+    config = st.session_state.dealer_config
+    source_icon = "📊" if "Binomial" in config['spot_source'] else "🌐" if "Alpha" in config['spot_source'] or "NBP" in config['spot_source'] else "✋"
+    
+    st.markdown(f"""
+    <div class="pricing-sync">
+        <h4 style="margin: 0;">✅ Wycena Zsynchronizowana {source_icon}</h4>
+        <p style="margin: 0;">Kurs spot: {config['spot_rate']:.4f} ({config['spot_source']}) | Window: {config['window_import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -641,7 +1531,7 @@ import math
 ALPHA_VANTAGE_API_KEY = "MQGKUNL9JWIJHF9S"
 
 # FRED API Configuration - PLACE YOUR API KEY HERE
-FRED_API_KEY = st.secrets.get("FRED_API_KEY", "demo")  # Uses Streamlit secrets or demo
+FRED_API_KEY = st.secrets.get("FRED_API_KEY", "5b6bdfa2ea4d27f55da4d7ac845c05b3")  # Uses Streamlit secrets or demo
 
 # Page config
 st.set_page_config(
@@ -1312,434 +2202,4 @@ def calculate_dealer_pricing(config):
     
     return pricing_data
 
-def update_dealer_config(spot_rate, spot_source, pl_yield, de_yield, window_days, 
-                        points_factor, risk_factor, bid_ask_spread, volatility_factor, 
-                        hedging_savings_pct, minimum_profit_floor):
-    """Update dealer configuration in session state"""
-    st.session_state.dealer_config = {
-        'spot_rate': spot_rate,
-        'spot_source': spot_source,
-        'pl_yield': pl_yield,
-        'de_yield': de_yield,
-        'window_days': window_days,
-        'points_factor': points_factor,
-        'risk_factor': risk_factor,
-        'bid_ask_spread': bid_ask_spread,
-        'volatility_factor': volatility_factor,
-        'hedging_savings_pct': hedging_savings_pct,
-        'minimum_profit_floor': minimum_profit_floor
-    }
-    
-    # Recalculate pricing
-    st.session_state.dealer_pricing_data = calculate_dealer_pricing(st.session_state.dealer_config)
-    st.session_state.pricing_updated = True
-
-# ============================================================================
-# PANEL DEALERSKI Z KONTROLĄ NAD WYCENĄ
-# ============================================================================
-
-def create_dealer_panel():
-    """Panel dealerski - ustala wycenę dla całego systemu"""
-    
-    st.header("🚀 Panel Dealerski - Wycena Master")
-    st.markdown("*Ustaw parametry wyceny - te kursy będą widoczne w panelu zabezpieczeń*")
-    
-    # Alpha Vantage API Status Display
-    st.subheader("📡 Status API")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Test Alpha Vantage API
-        alpha_api = AlphaVantageAPI()
-        forex_result = alpha_api.get_eur_pln_rate()
-        
-        if 'Alpha Vantage' in forex_result['source']:
-            st.markdown(f"""
-            <div class="alpha-api">
-                <h4 style="margin: 0;">📈 Alpha Vantage API Active</h4>
-                <p style="margin: 0;">Source: {forex_result['source']}</p>
-                <p style="margin: 0;">Rate: {forex_result['rate']:.4f} | Date: {forex_result['date']}</p>
-                <p style="margin: 0;">Real-time professional data</p>
-            </div>
-            """, unsafe_allow_html=True)
-        elif 'NBP' in forex_result['source']:
-            st.markdown(f"""
-            <div class="alpha-api" style="background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%); color: #2d3436;">
-                <h4 style="margin: 0;">🏛️ NBP API Backup</h4>
-                <p style="margin: 0;">Source: {forex_result['source']}</p>
-                <p style="margin: 0;">Rate: {forex_result['rate']:.4f}</p>
-                <p style="margin: 0;">Official Polish central bank</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="alpha-api" style="background: linear-gradient(135deg, #e17055 0%, #d63031 100%);">
-                <h4 style="margin: 0;">⚠️ Fallback Mode</h4>
-                <p style="margin: 0;">Source: {forex_result['source']}</p>
-                <p style="margin: 0;">Rate: {forex_result['rate']:.4f}</p>
-                <p style="margin: 0;">Check API connectivity</p>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    with col2:
-        # Show historical data status
-        historical_data = get_historical_eur_pln_data(30)
-        
-        st.markdown(f"""
-        <div class="alpha-api">
-            <h4 style="margin: 0;">📊 Historical Data</h4>
-            <p style="margin: 0;">Source: {historical_data['source']}</p>
-            <p style="margin: 0;">Data points: {historical_data['count']}</p>
-            <p style="margin: 0;">For volatility calculation</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Load market data
-    with st.spinner("📡 Ładowanie danych rynkowych..."):
-        bond_data = get_fred_bond_data()
-        forex_data = get_eur_pln_rate()
-    
-    # Enhanced spot rate control with binomial model integration
-    st.subheader("⚙️ Kontrola Kursu Spot - z Integracją Modelu Dwumianowego")
-    
-    # Get binomial prediction for integration
-    with st.spinner("📊 Obliczanie prognozy dwumianowej..."):
-        historical_data = get_historical_eur_pln_data(30)
-        binomial_prediction = calculate_binomial_prediction(historical_data, forex_data['rate'], days=5)
-    
-    # Display binomial prediction status
-    if binomial_prediction['success']:
-        st.success(f"✅ Model dwumianowy aktywny | Prognoza 5D: {binomial_prediction['predicted_spot']:.4f} ({binomial_prediction['change_pct']:+.2f}%)")
-    else:
-        st.warning("⚠️ Model dwumianowy niedostępny - używam kursu spot")
-    
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        spot_rate_source = st.radio(
-            "Źródło kursu do wyceny:",
-            options=["api", "binomial", "manual"],
-            format_func=lambda x: {
-                "api": "🌐 API (Alpha Vantage/NBP)",
-                "binomial": "📊 Najwyższa prognoza z modelu",
-                "manual": "✋ Ręczny"
-            }[x],
-            key="dealer_spot_source",
-            help="Wybierz źródło kursu dla kalkulacji forward"
-        )
-    
-    with col2:
-        if spot_rate_source == "api":
-            spot_rate = forex_data['rate']
-            spot_source = forex_data['source']
-            st.info(f"Kurs API: {spot_rate:.4f} (źródło: {spot_source})")
-            
-        elif spot_rate_source == "binomial":
-            if binomial_prediction['success']:
-                # Use the highest predicted rate from the most probable path
-                spot_rate = binomial_prediction['predicted_spot']
-                spot_source = f"Binomial 5D ({binomial_prediction['probability']:.1%} prob)"
-                
-                st.success(f"Prognoza dwumianowa: {spot_rate:.4f}")
-                st.info(f"Zmiana vs obecny spot: {binomial_prediction['change_pct']:+.2f}%")
-                st.info(f"Prawdopodobieństwo: {binomial_prediction['probability']:.1%}")
-            else:
-                # Fallback to API if binomial fails
-                spot_rate = forex_data['rate']
-                spot_source = f"{forex_data['source']} (binomial fallback)"
-                st.warning("Model dwumianowy niedostępny - używam kursu API")
-                
-        else:  # manual
-            spot_rate = st.number_input(
-                "Kurs EUR/PLN:",
-                value=st.session_state.dealer_config['spot_rate'],
-                min_value=3.50,
-                max_value=6.00,
-                step=0.0001,
-                format="%.4f",
-                key="dealer_spot_input",
-                help="Wprowadź własny kurs spot do wyceny"
-            )
-            spot_source = "Manual"
-    
-    # Show comparison if binomial available
-    if binomial_prediction['success']:
-        st.markdown("### 📊 Porównanie Źródeł Kursu")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric(
-                "Kurs API",
-                f"{forex_data['rate']:.4f}",
-                help=f"Źródło: {forex_data['source']}"
-            )
-        
-        with col2:
-            st.metric(
-                "Prognoza Dwumianowa",
-                f"{binomial_prediction['predicted_spot']:.4f}",
-                delta=f"{binomial_prediction['change_pct']:+.2f}%",
-                help=f"Prawdopodobieństwo: {binomial_prediction['probability']:.1%}"
-            )
-        
-        with col3:
-            diff_pct = ((binomial_prediction['predicted_spot'] - forex_data['rate']) / forex_data['rate']) * 100
-            st.metric(
-                "Różnica Model vs API",
-                f"{diff_pct:+.2f}%",
-                help="Wpływ na wycenę terminową"
-            )
-    
-    # Market data display
-    st.subheader("📊 Dane Rynkowe")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    pl_yield = bond_data['Poland_10Y']['value'] if 'Poland_10Y' in bond_data else 5.42
-    de_yield = bond_data['Germany_10Y']['value'] if 'Germany_10Y' in bond_data else 2.63
-    spread = pl_yield - de_yield
-    
-    with col1:
-        st.metric(
-            "EUR/PLN Spot",
-            f"{spot_rate:.4f}",
-            help=f"Źródło: {spot_source}"
-        )
-    
-    with col2:
-        st.metric(
-            "Rentowność PL 10Y",
-            f"{pl_yield:.2f}%",
-            help=f"Źródło: {bond_data.get('Poland_10Y', {}).get('source', 'Current Market')}"
-        )
-    
-    with col3:
-        st.metric(
-            "Rentowność DE 10Y",
-            f"{de_yield:.2f}%", 
-            help=f"Źródło: {bond_data.get('Germany_10Y', {}).get('source', 'Current Market')}"
-        )
-    
-    with col4:
-        st.metric(
-            "Spread PL-DE 10Y",
-            f"{spread:.2f}pp",
-            help="Różnica rentowności 10Y napędzająca punkty terminowe"
-        )
-    
-    # Transaction configuration
-    st.markdown("---")
-    st.subheader("⚙️ Konfiguracja Transakcji")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        window_days = st.number_input(
-            "Długość okna (dni):",
-            value=st.session_state.dealer_config['window_days'],
-            min_value=30,
-            max_value=365,
-            step=5,
-            help="Długość okresu window forward"
-        )
-    
-    with col2:
-        nominal_amount = st.number_input(
-            "Kwota nominalna (EUR):",
-            value=2_500_000,
-            min_value=10_000,
-            max_value=100_000_000,
-            step=10_000,
-            format="%d",
-            help="Kwota nominalna transakcji"
-        )
-    
-    with col3:
-        leverage = st.number_input(
-            "Współczynnik dźwigni:",
-            value=1.0,
-            min_value=1.0,
-            max_value=3.0,
-            step=0.1,
-            help="Dźwignia ryzyka dla kalkulacji P&L"
-        )
-    
-    # Advanced pricing parameters
-    with st.expander("🔧 Zaawansowane Parametry Wyceny"):
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            points_factor = st.slider(
-                "Współczynnik punktów (% dla klienta):",
-                min_value=0.60,
-                max_value=0.85,
-                value=st.session_state.dealer_config['points_factor'],
-                step=0.01,
-                help="Procent punktów terminowych przekazywanych klientowi"
-            )
-        
-        with col2:
-            risk_factor = st.slider(
-                "Współczynnik ryzyka (% obciążenia):",
-                min_value=0.30,
-                max_value=0.60,
-                value=st.session_state.dealer_config['risk_factor'],
-                step=0.01,
-                help="Procent ryzyka swap obciążanego klientowi"
-            )
-        
-        with col3:
-            bid_ask_spread = st.number_input(
-                "Spread bid-ask:",
-                value=st.session_state.dealer_config['bid_ask_spread'],
-                min_value=0.001,
-                max_value=0.005,
-                step=0.0005,
-                format="%.4f",
-                help="Rynkowy spread bid-ask w punktach terminowych"
-            )
-        
-        col4, col5, col6 = st.columns(3)
-        
-        with col4:
-            minimum_profit_floor = st.number_input(
-                "Min próg zysku (PLN/EUR):",
-                value=st.session_state.dealer_config['minimum_profit_floor'],
-                min_value=-0.020,
-                max_value=0.020,
-                step=0.001,
-                format="%.4f",
-                help="Minimalny gwarantowany zysk na EUR"
-            )
-        
-        with col5:
-            volatility_factor = st.slider(
-                "Współczynnik zmienności:",
-                min_value=0.15,
-                max_value=0.35,
-                value=st.session_state.dealer_config['volatility_factor'],
-                step=0.01,
-                help="Wpływ zmienności na ryzyko swap"
-            )
-        
-        with col6:
-            hedging_savings_pct = st.slider(
-                "Oszczędności hedging (%):",
-                min_value=0.40,
-                max_value=0.80,
-                value=st.session_state.dealer_config['hedging_savings_pct'],
-                step=0.05,
-                help="% oszczędności swap risk w najlepszym scenariuszu"
-            )
-    
-    # Update pricing button
-    if st.button("🔄 Zaktualizuj Wycenę", type="primary", use_container_width=True):
-        update_dealer_config(
-            spot_rate, spot_source, pl_yield, de_yield, window_days,
-            points_factor, risk_factor, bid_ask_spread, volatility_factor,
-            hedging_savings_pct, minimum_profit_floor
-        )
-        
-        if spot_rate_source == "binomial":
-            st.success("✅ Wycena zaktualizowana z prognozą dwumianową! Najwyższy kurs z najczęstszej ścieżki zostanie użyty.")
-        else:
-            st.success("✅ Wycena zaktualizowana! Przejdź do panelu zabezpieczeń aby zobaczyć kursy klienta.")
-        
-        st.rerun()
-    
-    # Show current pricing if available
-    if st.session_state.dealer_pricing_data:
-        st.markdown("---")
-        st.subheader("💼 Aktualna Wycena Dealerska")
-        
-        # Show spot rate source impact
-        current_config_spot = st.session_state.dealer_config['spot_rate']
-        if abs(current_config_spot - spot_rate) > 0.0001:
-            st.warning(f"⚠️ Zmiana kursu spot: {current_config_spot:.4f} → {spot_rate:.4f} ({((spot_rate-current_config_spot)/current_config_spot*100):+.2f}%)")
-            st.info("Kliknij 'Zaktualizuj Wycenę' aby przeliczyć kursy z nowym kursem spot")
-        
-        # Show binomial integration status
-        if spot_rate_source == "binomial" and binomial_prediction['success']:
-            st.success(f"🎯 Używasz prognozy dwumianowej: najwyższy kurs z najczęstszej ścieżki")
-            st.info(f"Dzień {binomial_prediction['highest_day']}: {binomial_prediction['predicted_spot']:.4f} (prawdopodobieństwo ścieżki: {binomial_prediction['probability']:.1%})")
-        
-        # Create DataFrame for display
-        pricing_df_data = []
-        portfolio_totals = {
-            'total_min_profit': 0,
-            'total_max_profit': 0,
-            'total_expected_profit': 0,
-            'total_notional': 0,
-            'total_points_to_window': 0,
-            'total_swap_risk': 0,
-            'total_client_premium': 0
-        }
-        
-        for pricing in st.session_state.dealer_pricing_data:
-            # Calculate window forward metrics
-            window_min_profit_per_eur = pricing['profit_per_eur']
-            window_max_profit_per_eur = window_min_profit_per_eur + (pricing['swap_risk'] * hedging_savings_pct)
-            window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
-            
-            window_min_profit_total = window_min_profit_per_eur * nominal_amount
-            window_max_profit_total = window_max_profit_per_eur * nominal_amount
-            window_expected_profit_total = window_expected_profit_per_eur * nominal_amount
-            
-            portfolio_totals['total_min_profit'] += window_min_profit_total
-            portfolio_totals['total_max_profit'] += window_max_profit_total
-            portfolio_totals['total_expected_profit'] += window_expected_profit_total
-            portfolio_totals['total_notional'] += nominal_amount
-            portfolio_totals['total_points_to_window'] += pricing['forward_points'] * nominal_amount
-            portfolio_totals['total_swap_risk'] += pricing['swap_risk'] * nominal_amount
-            portfolio_totals['total_client_premium'] += (pricing['client_rate'] - spot_rate) * nominal_amount
-            
-            pricing_df_data.append({
-                "Tenor": pricing['tenor_name'],
-                "Forward Days": pricing['tenor_days'],
-                "Window Days": window_days,
-                "Forward Points": f"{pricing['forward_points']:.4f}",
-                "Swap Risk": f"{pricing['swap_risk']:.4f}",
-                "Client Rate": f"{pricing['client_rate']:.4f}",
-                "Theoretical Rate": f"{pricing['theoretical_rate']:.4f}",
-                "Min Profit/EUR": f"{window_min_profit_per_eur:.4f}",
-                "Max Profit/EUR": f"{window_max_profit_per_eur:.4f}",
-                "Expected Profit/EUR": f"{window_expected_profit_per_eur:.4f}",
-                "Min Profit Total": f"{window_min_profit_total:,.0f} PLN",
-                "Max Profit Total": f"{window_max_profit_total:,.0f} PLN",
-                "Expected Profit Total": f"{window_expected_profit_total:,.0f} PLN"
-            })
-        
-        df_pricing = pd.DataFrame(pricing_df_data)
-        st.dataframe(df_pricing, use_container_width=True, height=400)
-        
-        # Portfolio summary with percentage metrics
-        total_exposure_pln = spot_rate * portfolio_totals['total_notional']
-        min_profit_pct = (portfolio_totals['total_min_profit'] / total_exposure_pln) * 100
-        expected_profit_pct = (portfolio_totals['total_expected_profit'] / total_exposure_pln) * 100
-        max_profit_pct = (portfolio_totals['total_max_profit'] / total_exposure_pln) * 100
-        
-        st.subheader("📊 Podsumowanie Portfolio")
-        
-        # First row - PLN amounts
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric(
-                "Portfolio Min Zysk", 
-                f"{portfolio_totals['total_min_profit']:,.0f} PLN",
-                help="Suma wszystkich gwarantowanych bank spreads"
-            )
-        
-        with col2:
-            st.metric(
-                "Portfolio Oczekiwany", 
-                f"{portfolio_totals['total_expected_profit']:,.0f} PLN",
-                help="Średnia scenariuszy min/max"
-            )
-        
-        with col3:
-            st.metric(
-                "Portfolio Max Zysk", 
-                f"{portfolio_totals['total_max_profit']:,.0f} PLN",
-                help="Suma bank spreads + oszczędności
+def update_dealer_config(spot_rate, spot_source, pl_yield, de_yield, window_days,
