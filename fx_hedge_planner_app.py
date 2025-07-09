@@ -584,6 +584,108 @@ def create_dealer_panel():
                 <p style="margin: 0;">Real-time professional data</p>
             </div>
             """, unsafe_allow_html=True)
+        
+        # ============================================================================
+        # CHART COMPARISON - PIĘKNY NIEBIESKI WYKRES
+        # ============================================================================
+        
+        st.markdown("---")
+        st.subheader("📈 Porównanie Wizualne")
+        
+        # Create comparison chart
+        tenors_list = [data["Tenor"] for data in client_rates_data]
+        forward_rates = [float(data["Kurs terminowy"]) for data in client_rates_data]
+        spot_rates = [config['spot_rate']] * len(tenors_list)
+        
+        fig = go.Figure()
+        
+        # Add spot rate line
+        fig.add_trace(
+            go.Scatter(
+                x=tenors_list,
+                y=spot_rates,
+                mode='lines',
+                name=f'Kurs spot ({config["spot_rate"]:.4f})',
+                line=dict(color='red', width=2, dash='dash'),
+                hovertemplate='Spot: %{y:.4f}<extra></extra>'
+            )
+        )
+        
+        # Add forward rates - PIĘKNY NIEBIESKI
+        fig.add_trace(
+            go.Scatter(
+                x=tenors_list,
+                y=forward_rates,
+                mode='lines+markers',
+                name='Kursy terminowe',
+                line=dict(color='#2e68a5', width=3),
+                marker=dict(size=10, color='#2e68a5'),
+                hovertemplate='%{x}: %{y:.4f}<extra></extra>'
+            )
+        )
+        
+        # Calculate and add benefit bars
+        benefits = [(float(data["Kurs terminowy"]) - config['spot_rate']) * exposure_amount for data in client_rates_data]
+        
+        fig.add_trace(
+            go.Bar(
+                x=tenors_list,
+                y=benefits,
+                name='Korzyść PLN vs Spot',
+                yaxis='y2',
+                marker_color='lightblue',
+                opacity=0.7,
+                hovertemplate='%{x}: %{y:,.0f} PLN<extra></extra>'
+            )
+        )
+        
+        fig.update_layout(
+            title="Kursy terminowe vs kurs spot + korzyść w PLN",
+            xaxis_title="Tenor",
+            yaxis_title="Kurs EUR/PLN",
+            yaxis2=dict(
+                title="Korzyść (PLN)",
+                overlaying='y',
+                side='right',
+                showgrid=False
+            ),
+            height=500,
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # ============================================================================
+        # REKOMENDACJE
+        # ============================================================================
+        
+        st.markdown("---")
+        st.subheader("🎯 Rekomendacje Zabezpieczeń")
+        
+        # Filter best recommendations
+        best_rates = [rate for rate in client_rates_data if '🟢' in rate['Rekomendacja'] or '🟡' in rate['Rekomendacja']]
+        best_rates = sorted(best_rates, key=lambda x: float(x['vs Spot'].rstrip('%')), reverse=True)[:3]
+        
+        if best_rates:
+            st.markdown("**📋 Top 3 rekomendacje:**")
+            
+            for i, rate in enumerate(best_rates, 1):
+                col1, col2, col3, col4 = st.columns([1, 2, 1, 1])
+                
+                with col1:
+                    st.write(f"**#{i}** {rate['Rekomendacja']}")
+                
+                with col2:
+                    st.write(f"**{rate['Tenor']}** - kurs {rate['Kurs terminowy']}")
+                
+                with col3:
+                    st.write(f"Korzyść: **{rate['vs Spot']}**")
+                
+                with col4:
+                    st.write(f"**{rate['Dodatkowy PLN']} PLN**")
+        
+        else:
+            st.info("💡 W obecnych warunkach rynkowych rozważ pozostanie na kursie spot lub poczekaj na lepsze warunki.")
         elif 'NBP' in forex_result['source']:
             st.markdown(f"""
             <div class="alpha-api" style="background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%); color: #2d3436;">
