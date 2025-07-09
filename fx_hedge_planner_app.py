@@ -1346,6 +1346,276 @@ def create_binomial_model_panel():
             f"{min_rate:.4f} - {max_rate:.4f}",
             help="Możliwe ekstremalne scenariusze"
         )
+    
+    # ============================================================================
+    # DRZEWO DWUMIANOWE - PIĘKNA WIZUALIZACJA
+    # ============================================================================
+    
+    st.subheader("🌳 Drzewo Dwumianowe z Najczęściej Prawdopodobną Ścieżką")
+    
+    # Create tree visualization
+    fig = go.Figure()
+    
+    # Get next business days for labels
+    today = datetime.now()
+    business_days = []
+    current_date = today
+    
+    while len(business_days) < 5:
+        current_date += timedelta(days=1)
+        # Skip weekends (5=Saturday, 6=Sunday)
+        if current_date.weekday() < 5:
+            business_days.append(current_date)
+    
+    weekdays = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek"]
+    
+    # Plot tree nodes
+    for day in range(6):
+        for j in range(day + 1):
+            rate = tree[day][j]
+            
+            # Position calculations
+            x = day
+            y = j - day/2  # Center the nodes vertically
+            
+            # Check if this node is on the most probable path
+            is_most_probable = (j == most_probable_path[day])
+            
+            # Add node
+            fig.add_trace(
+                go.Scatter(
+                    x=[x],
+                    y=[y],
+                    mode='markers',
+                    marker=dict(
+                        size=20 if is_most_probable else 15,
+                        color='#ff6b35' if is_most_probable else '#2e68a5',
+                        line=dict(width=3 if is_most_probable else 2, 
+                                 color='white')
+                    ),
+                    showlegend=False,
+                    hovertemplate=f"Dzień {day}<br>Kurs: {rate:.4f}<br>{'🎯 Najczęstsza ścieżka' if is_most_probable else ''}<extra></extra>"
+                )
+            )
+            
+            # Add text label above the node
+            fig.add_trace(
+                go.Scatter(
+                    x=[x],
+                    y=[y + 0.25],  # Higher position above the node
+                    mode='text',
+                    text=f"{rate:.4f}",  # 4 decimal places format
+                    textposition="middle center",
+                    textfont=dict(
+                        color='#ff6b35' if is_most_probable else '#2e68a5',
+                        size=12 if is_most_probable else 10,
+                        family="Arial Black" if is_most_probable else "Arial"
+                    ),
+                    showlegend=False,
+                    hoverinfo='skip'
+                )
+            )
+            
+            # Add connecting lines to next day
+            if day < 5:
+                # Up movement
+                if j < day + 1:
+                    next_y_up = (j + 1) - (day + 1)/2
+                    
+                    # Check if this connection is part of most probable path
+                    is_prob_connection = (j == most_probable_path[day] and 
+                                        (j + 1) == most_probable_path[day + 1])
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[x, x + 1],
+                            y=[y, next_y_up],
+                            mode='lines',
+                            line=dict(
+                                color='#ff6b35' if is_prob_connection else 'lightgray',
+                                width=4 if is_prob_connection else 1
+                            ),
+                            showlegend=False,
+                            hoverinfo='skip'
+                        )
+                    )
+                
+                # Down movement
+                if j >= 0:
+                    next_y_down = j - (day + 1)/2
+                    
+                    # Check if this connection is part of most probable path
+                    is_prob_connection = (j == most_probable_path[day] and 
+                                        j == most_probable_path[day + 1])
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[x, x + 1],
+                            y=[y, next_y_down],
+                            mode='lines',
+                            line=dict(
+                                color='#ff6b35' if is_prob_connection else 'lightgray',
+                                width=4 if is_prob_connection else 1
+                            ),
+                            showlegend=False,
+                            hoverinfo='skip'
+                        )
+                    )
+    
+    # Add legend manually
+    fig.add_trace(
+        go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(size=20, color='#ff6b35'),
+            name='🎯 Najczęstsza ścieżka',
+            showlegend=True
+        )
+    )
+    
+    fig.add_trace(
+        go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(size=15, color='#2e68a5'),
+            name='Inne możliwe kursy',
+            showlegend=True
+        )
+    )
+    
+    # Update layout
+    fig.update_layout(
+        title="Drzewo dwumianowe EUR/PLN - 5 dni roboczych",
+        xaxis_title="Dzień roboczy",
+        yaxis_title="Poziom w drzewie",
+        height=500,
+        xaxis=dict(
+            tickmode='array',
+            tickvals=list(range(6)),
+            ticktext=[f"Dzień {i}" if i == 0 else f"Dzień {i}\n({weekdays[(business_days[i-1].weekday())][:3]})" for i in range(6)]
+        ),
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01
+        )
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Most probable path details
+    st.subheader("🎯 Najczęstsza Prognozowana Ścieżka")
+    
+    path_details = []
+    for day in range(1, 6):
+        j = most_probable_path[day]
+        rate = tree[day][j]
+        business_date = business_days[day-1]
+        weekday_name = weekdays[business_date.weekday()]
+        
+        # Calculate probability of reaching this specific node
+        if use_empirical:
+            node_prob = comb(day, j) * (p_up_empirical ** j) * (p_down_empirical ** (day - j))
+        else:
+            node_prob = comb(day, j) * (p ** j) * ((1 - p) ** (day - j))
+        
+        path_details.append({
+            "Dzień": f"{weekday_name}",
+            "Data": business_date.strftime("%d.%m"),
+            "Prognozowany kurs": f"{rate:.4f}",
+            "Zmiana vs dziś": f"{((rate/spot_rate - 1) * 100):+.2f}%",
+            "Prawdopodobieństwo": f"{node_prob*100:.1f}%"
+        })
+    
+    df_path = pd.DataFrame(path_details)
+    st.dataframe(df_path, use_container_width=True, hide_index=True)
+    
+    # Model parameters
+    st.subheader("📋 Parametry Modelu")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if use_empirical:
+            st.markdown(f"""
+            **Dane wejściowe (Empirical Method):**
+            - Kurs spot: {spot_rate:.4f}
+            - Mean (20 dni): {mean_20_days:.4f}
+            - Std Dev (20 dni): {std_20_days:.4f}
+            - P(up): {p_up_empirical:.3f}, P(down): {p_down_empirical:.3f}
+            - Horyzont: 5 dni roboczych (Pn-Pt)
+            - Dane historyczne: {historical_data['count']} punktów
+            """)
+        else:
+            st.markdown(f"""
+            **Dane wejściowe (Traditional Binomial):**
+            - Kurs spot: {spot_rate:.4f}
+            - Zmienność dzienna: {daily_vol*100:.3f}%
+            - Metoda: Traditional Risk-Neutral
+            - Horyzont: 5 dni roboczych (Pn-Pt)
+            - Dane historyczne: {historical_data['count']} punktów
+            """)
+    
+    with col2:
+        if use_empirical:
+            st.markdown(f"""
+            **Parametry modelu empirycznego:**
+            - Prawdopodobieństwo wzrostu: {p_up_empirical:.4f}
+            - Prawdopodobieństwo spadku: {p_down_empirical:.4f}
+            - Metoda: Normal CDF z ostatnich 20 dni
+            - Kombinacje: math.comb(n,k) dla precyzji
+            """)
+        else:
+            st.markdown(f"""
+            **Parametry drzewa tradycyjnego:**
+            - Współczynnik wzrostu (u): {u:.6f}
+            - Współczynnik spadku (d): {d:.6f}
+            - Prawdop. risk-neutral (p): {p:.4f}
+            - Stopa wolna od ryzyka: {r*252*100:.2f}%
+            """)
+    
+    # Daily ranges table
+    st.subheader("📅 Dzienne Zakresy Kursów (Dni Robocze)")
+    
+    daily_ranges = []
+    
+    for day in range(1, 6):  # Days 1-5 (business days)
+        day_rates = [tree[day][j] for j in range(day + 1)]
+        min_rate = min(day_rates)
+        max_rate = max(day_rates)
+        
+        # Get business day info
+        business_date = business_days[day-1]
+        weekday_name = weekdays[business_date.weekday()]
+        date_str = business_date.strftime("%d.%m")
+        
+        daily_ranges.append({
+            "Dzień": f"Dzień {day}",
+            "Data": f"{weekday_name} {date_str}",
+            "Min kurs": f"{min_rate:.4f}",
+            "Max kurs": f"{max_rate:.4f}",
+            "Zakres": f"{min_rate:.4f} - {max_rate:.4f}",
+            "Rozpiętość": f"{((max_rate - min_rate) / min_rate * 10000):.0f} pkt"
+        })
+    
+    df_ranges = pd.DataFrame(daily_ranges)
+    
+    # Color coding based on range width
+    def highlight_ranges(row):
+        spread_pkt = float(row['Rozpiętość'].split()[0])
+        if spread_pkt > 200:
+            return ['background-color: #f8d7da'] * len(row)  # Red - high volatility
+        elif spread_pkt > 100:
+            return ['background-color: #fff3cd'] * len(row)  # Yellow - medium
+        else:
+            return ['background-color: #d4edda'] * len(row)  # Green - low volatility
+    
+    st.dataframe(
+        df_ranges.style.apply(highlight_ranges, axis=1),
+        use_container_width=True,
+        hide_index=True
+    )
 
 # ============================================================================
 # GŁÓWNA APLIKACJA
