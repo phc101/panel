@@ -1403,28 +1403,36 @@ def create_binomial_model_panel():
         </div>
         """, unsafe_allow_html=True)
     
-    # Calculate volatility from historical data
+    # Calculate volatility from historical data using proper method
     try:
-        if historical_data['success'] and len(historical_data['rates']) >= 10:
+        if historical_data['success'] and len(historical_data['rates']) >= 20:
             rates = historical_data['rates']
-            # Calculate returns
-            returns = np.diff(np.log(rates))
-            # Calculate rolling volatility (annualized)
-            rolling_vol = np.std(returns) * np.sqrt(252)  # 252 trading days
-            current_spot = rates[-1]  # Most recent rate
-            data_count = len(rates)
+            
+            # Take exactly last 20 rates for calculation
+            last_20_rates = rates[-20:] if len(rates) >= 20 else rates
+            current_spot = last_20_rates[-1]  # Most recent rate
+            
+            # Method: Standard deviation of prices (not returns)
+            # 1. Calculate standard deviation from last 20 days prices
+            price_std = np.std(last_20_rates)
+            
+            # 2. Divide by current spot rate to get percentage volatility
+            rolling_vol = price_std / current_spot  # This gives us daily volatility as %
+            
+            data_count = len(last_20_rates)
             
             if rolling_vol > 0:
-                st.success(f"✅ Zmienność z ostatnich {data_count} dni: {rolling_vol*100:.2f}% rocznie")
+                st.success(f"✅ Zmienność z ostatnich {data_count} dni: Std Dev = {price_std:.4f}, Spot = {current_spot:.4f}, Volatility = {rolling_vol*100:.2f}% dzienna")
             else:
                 raise Exception("Zero volatility calculated")
         else:
-            raise Exception("Insufficient historical data")
+            raise Exception("Insufficient historical data (need 20 days)")
             
     except Exception as e:
-        rolling_vol = 0.12
+        # Default daily volatility
+        rolling_vol = 0.0034  # 0.34% daily as example
         current_spot = current_forex['rate']
-        st.warning(f"⚠️ Używam domyślnej zmienności (12%). Błąd: {str(e)[:50]}...")
+        st.warning(f"⚠️ Używam domyślnej zmienności (0.34% dzienna). Błąd: {str(e)[:50]}...")
     
     # Model parameters
     col1, col2, col3 = st.columns(3)
@@ -1448,9 +1456,9 @@ def create_binomial_model_panel():
             "Zmienność dzienna (%):",
             min_value=0.1,
             max_value=2.0,
-            value=rolling_vol/np.sqrt(252)*100,  # Convert to daily
+            value=rolling_vol*100,  # Already in daily % format
             step=0.05,
-            help="Zmienność na jeden dzień roboczy"
+            help="Zmienność na jeden dzień roboczy (odch. std. cen / spot rate)"
         ) / 100
     
     # Binomial tree calculation
@@ -1779,7 +1787,7 @@ def create_binomial_model_panel():
         **Dane wejściowe (Alpha Vantage):**
         - Kurs spot: {spot_rate:.4f}
         - Zmienność dzienna: {daily_vol*100:.3f}%
-        - Zmienność roczna: {daily_vol*np.sqrt(252)*100:.2f}%
+        - Metoda: Std Dev(20 dni) / Spot Rate
         - Horyzont: 5 dni roboczych (Pn-Pt)
         - Dane historyczne: {historical_data['count']} punktów
         """)
