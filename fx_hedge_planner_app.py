@@ -513,8 +513,99 @@ class APIIntegratedForwardCalculator:
         }
 
 # ============================================================================
-# PRICING SYNC FUNCTIONS
+# BINOMIAL PREDICTION INTEGRATION
 # ============================================================================
+
+def calculate_binomial_prediction(historical_data, current_spot, days=5):
+    """Calculate binomial prediction for integration with dealer pricing"""
+    
+    try:
+        if historical_data['success'] and len(historical_data['rates']) >= 20:
+            rates = historical_data['rates']
+            last_20_rates = rates[-20:] if len(rates) >= 20 else rates
+            
+            # Calculate empirical probabilities
+            mean_20_days = np.mean(last_20_rates)
+            std_20_days = np.std(last_20_rates)
+            
+            from scipy.stats import norm
+            p_up_empirical = 1 - norm.cdf(current_spot, mean_20_days, std_20_days)
+            p_down_empirical = 1 - p_up_empirical
+            
+            # Build simple tree for most probable path
+            tree = {}
+            most_probable_path = []
+            
+            # Calculate most probable path
+            for day in range(days + 1):
+                if day == 0:
+                    most_probable_path.append(0)
+                    tree[day] = {0: current_spot}
+                else:
+                    # Find most probable node (highest probability)
+                    from math import comb
+                    best_j = 0
+                    best_prob = 0
+                    
+                    for j in range(day + 1):
+                        prob = comb(day, j) * (p_up_empirical ** j) * (p_down_empirical ** (day - j))
+                        if prob > best_prob:
+                            best_prob = prob
+                            best_j = j
+                    
+                    most_probable_path.append(best_j)
+                    
+                    # Calculate price for this path
+                    rolling_vol = std_20_days / current_spot
+                    u = 1 + rolling_vol
+                    d = 1 - rolling_vol
+                    
+                    predicted_rate = current_spot * (u ** best_j) * (d ** (day - best_j))
+                    tree[day] = {best_j: predicted_rate}
+            
+            # Get final prediction (day 5)
+            final_day = days
+            final_j = most_probable_path[final_day]
+            final_predicted_rate = tree[final_day][final_j]
+            final_prob = comb(final_day, final_j) * (p_up_empirical ** final_j) * (p_down_empirical ** (final_day - final_j))
+            
+            return {
+                'success': True,
+                'predicted_spot': final_predicted_rate,
+                'current_spot': current_spot,
+                'probability': final_prob,
+                'change_pct': ((final_predicted_rate - current_spot) / current_spot) * 100,
+                'most_probable_path': most_probable_path,
+                'empirical_p_up': p_up_empirical,
+                'empirical_p_down': p_down_empirical,
+                'data_points': len(last_20_rates)
+            }
+        
+        else:
+            return {
+                'success': False,
+                'predicted_spot': current_spot,
+                'current_spot': current_spot,
+                'probability': 0.2,
+                'change_pct': 0.0,
+                'most_probable_path': [0, 0, 0, 0, 0, 0],
+                'empirical_p_up': 0.5,
+                'empirical_p_down': 0.5,
+                'data_points': 0
+            }
+    
+    except Exception as e:
+        return {
+            'success': False,
+            'predicted_spot': current_spot,
+            'current_spot': current_spot,
+            'probability': 0.2,
+            'change_pct': 0.0,
+            'most_probable_path': [0, 0, 0, 0, 0, 0],
+            'empirical_p_up': 0.5,
+            'empirical_p_down': 0.5,
+            'data_points': 0
+        }
 
 def calculate_dealer_pricing(config):
     """Calculate dealer pricing and store in session state"""
