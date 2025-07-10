@@ -15,7 +15,7 @@ st.set_page_config(
 
 # Alpha Vantage API Configuration
 ALPHA_VANTAGE_API_KEY = "MQGKUNL9JWIJHF9S"
-FRED_API_KEY = st.secrets.get("FRED_API_KEY", "210b1f7136aff2e7312c9dffcbd7fd89")
+FRED_API_KEY = st.secrets.get("FRED_API_KEY", "693819ccc32ac43704fbbc15cfb4a6d7")
 
 # Custom CSS
 st.markdown("""
@@ -1143,6 +1143,241 @@ def create_client_hedging_advisor():
                     st.write(f"**{rate['Dodatkowy PLN']} PLN**")
         else:
             st.info("💡 Rozważ pozostanie na kursie spot.")
+    
+    # ============================================================================
+    # PLANOWANIE HEDGINGU
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("📅 Planowanie Strategii Hedgingu")
+    
+    # Hedge planner configuration
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        hedge_horizon = st.selectbox(
+            "Horyzont planowania:",
+            options=[3, 6, 12, 18, 24],
+            index=2,
+            help="Okres w miesiącach dla planowania hedgingu"
+        )
+    
+    with col2:
+        hedge_coverage = st.slider(
+            "Docelowe pokrycie ekspozycji:",
+            min_value=25,
+            max_value=100,
+            value=75,
+            step=5,
+            help="Procent ekspozycji do zabezpieczenia"
+        ) / 100
+    
+    with col3:
+        risk_tolerance = st.selectbox(
+            "Tolerancja ryzyka:",
+            options=["Konserwatywna", "Umiarkowana", "Agresywna"],
+            index=1,
+            help="Profil ryzyka dla strategii hedgingu"
+        )
+    
+    # Calculate hedge plan
+    target_hedge_amount = exposure_amount * hedge_coverage
+    
+    # Risk parameters based on tolerance
+    risk_params = {
+        "Konserwatywna": {"max_single_trade": 0.15, "prefer_short_tenors": True, "volatility_buffer": 1.5},
+        "Umiarkowana": {"max_single_trade": 0.25, "prefer_short_tenors": False, "volatility_buffer": 1.2},
+        "Agresywna": {"max_single_trade": 0.40, "prefer_short_tenors": False, "volatility_buffer": 1.0}
+    }
+    
+    current_risk = risk_params[risk_tolerance]
+    max_single_trade = target_hedge_amount * current_risk["max_single_trade"]
+    
+    # Generate hedge plan
+    hedge_plan = []
+    remaining_amount = target_hedge_amount
+    
+    # Filter tenors based on horizon and risk tolerance
+    available_tenors = [p for p in filtered_pricing if p['tenor_months'] <= hedge_horizon]
+    
+    if current_risk["prefer_short_tenors"]:
+        available_tenors = sorted(available_tenors, key=lambda x: x['tenor_months'])
+    else:
+        # Mix of short and medium tenors
+        available_tenors = sorted(available_tenors, key=lambda x: abs(x['tenor_months'] - hedge_horizon/2))
+    
+    month_counter = 0
+    while remaining_amount > 100_000 and available_tenors and month_counter < hedge_horizon:
+        
+        # Select tenor based on strategy
+        if month_counter < len(available_tenors):
+            selected_tenor = available_tenors[month_counter % len(available_tenors)]
+        else:
+            selected_tenor = available_tenors[0]
+        
+        # Calculate trade size
+        trade_size = min(remaining_amount, max_single_trade)
+        trade_size = max(trade_size, 100_000)  # Minimum trade size
+        
+        # Calculate dates
+        start_date = datetime.now() + timedelta(days=30 * month_counter)
+        execution_window_start = start_date + timedelta(days=selected_tenor['tenor_months'] * 30)
+        execution_window_end = execution_window_start + timedelta(days=config['window_days'])
+        
+        hedge_plan.append({
+            "Miesiąc": month_counter + 1,
+            "Data rozpoczęcia": start_date.strftime("%d.%m.%Y"),
+            "Tenor": selected_tenor['tenor_name'],
+            "Kwota EUR": f"{trade_size:,.0f}",
+            "Kurs": f"{selected_tenor['client_rate']:.4f}",
+            "Okno wykonania": f"{execution_window_start.strftime('%d.%m')} - {execution_window_end.strftime('%d.%m.%Y')}",
+            "Korzyść vs Spot": f"{((selected_tenor['client_rate'] - config['spot_rate']) / config['spot_rate'] * 100):+.2f}%",
+            "Profit PLN": f"{(selected_tenor['client_rate'] - config['spot_rate']) * trade_size:+,.0f}"
+        })
+        
+        remaining_amount -= trade_size
+        month_counter += 1
+        
+        if month_counter >= 8:  # Safety break
+            break
+    
+    # Display hedge plan
+    if hedge_plan:
+        st.markdown("### 📋 Proponowany Plan Hedgingu")
+        
+        df_hedge_plan = pd.DataFrame(hedge_plan)
+        
+        # Color coding for hedge plan
+        def highlight_hedge_plan(row):
+            profit_str = row['Profit PLN'].replace(',', '').replace('+', '').replace(' PLN', '')
+            try:
+                profit = float(profit_str)
+                if profit > 0:
+                    return ['background-color: #d4edda'] * len(row)  # Green for profit
+                elif profit < 0:
+                    return ['background-color: #f8d7da'] * len(row)  # Red for loss
+                else:
+                    return ['background-color: #fff3cd'] * len(row)  # Yellow for neutral
+            except:
+                return [''] * len(row)
+        
+        st.dataframe(
+            df_hedge_plan.style.apply(highlight_hedge_plan, axis=1),
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Plan summary
+        st.markdown("### 📊 Podsumowanie Planu Hedgingu")
+        
+        total_planned = sum(float(row['Kwota EUR'].replace(',', '')) for row in hedge_plan)
+        total_profit = sum(float(row['Profit PLN'].replace(',', '').replace('+', '').replace(' PLN', '')) for row in hedge_plan)
+        coverage_achieved = total_planned / exposure_amount * 100
+        avg_rate = sum(float(row['Kurs']) * float(row['Kwota EUR'].replace(',', '')) for row in hedge_plan) / total_planned
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "Pokrycie Ekspozycji",
+                f"{coverage_achieved:.1f}%",
+                delta=f"{coverage_achieved - hedge_coverage*100:+.1f}pp vs docelowe",
+                help="Procent ekspozycji zabezpieczony przez plan"
+            )
+        
+        with col2:
+            st.metric(
+                "Łączna Kwota",
+                f"€{total_planned:,.0f}",
+                help="Suma wszystkich transakcji w planie"
+            )
+        
+        with col3:
+            st.metric(
+                "Średni Kurs Hedgingu",
+                f"{avg_rate:.4f}",
+                delta=f"{((avg_rate - config['spot_rate']) / config['spot_rate'] * 100):+.2f}% vs spot",
+                help="Średnia ważona kursów w planie"
+            )
+        
+        with col4:
+            st.metric(
+                "Łączny Profit",
+                f"{total_profit:+,.0f} PLN",
+                help="Suma korzyści vs pozostanie na spot"
+            )
+        
+        # Risk analysis
+        st.markdown("### ⚖️ Analiza Ryzyka Planu")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <h4>🎯 Charakterystyka Strategii</h4>
+                <p><strong>Profil ryzyka:</strong> {risk_tolerance}</p>
+                <p><strong>Max transakcja:</strong> €{max_single_trade:,.0f} ({current_risk['max_single_trade']:.0%} ekspozycji)</p>
+                <p><strong>Liczba transakcji:</strong> {len(hedge_plan)}</p>
+                <p><strong>Horyzont:</strong> {hedge_horizon} miesięcy</p>
+                <p><strong>Średni tenor:</strong> {sum(p['tenor_months'] for p in available_tenors[:len(hedge_plan)]) / len(hedge_plan):.1f} miesięcy</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            # Calculate risk metrics
+            plan_rates = [float(row['Kurs']) for row in hedge_plan]
+            rate_volatility = np.std(plan_rates) if len(plan_rates) > 1 else 0
+            
+            # Exposure timeline
+            months_covered = len(hedge_plan)
+            timeline_risk = "Niskie" if months_covered >= 6 else "Średnie" if months_covered >= 3 else "Wysokie"
+            
+            st.markdown(f"""
+            <div class="metric-card">
+                <h4>📈 Metryki Ryzyka</h4>
+                <p><strong>Zmienność kursów:</strong> {rate_volatility:.4f}</p>
+                <p><strong>Ryzyko timeline:</strong> {timeline_risk}</p>
+                <p><strong>Koncentracja:</strong> {'Rozproszona' if len(hedge_plan) >= 4 else 'Skoncentrowana'}</p>
+                <p><strong>Bufor zmienności:</strong> {current_risk['volatility_buffer']}x</p>
+                <p><strong>Elastyczność:</strong> {config['window_days']} dni na transakcję</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Execution calendar
+        st.markdown("### 📅 Kalendarz Wykonania")
+        
+        # Create execution timeline
+        execution_data = []
+        for i, trade in enumerate(hedge_plan):
+            execution_data.append({
+                "Okres": f"M{trade['Miesiąc']}",
+                "Data": trade['Data rozpoczęcia'],
+                "Akcja": f"Hedge €{trade['Kwota EUR']} na {trade['Tenor']}",
+                "Okno": trade['Okno wykonania'],
+                "Status": "🟡 Planowana" if i < 3 else "🔵 Przyszła",
+                "Priorytet": "🔴 Wysoki" if i < 2 else "🟡 Średni" if i < 4 else "🟢 Niski"
+            })
+        
+        df_execution = pd.DataFrame(execution_data)
+        st.dataframe(df_execution, use_container_width=True, hide_index=True)
+        
+        # Action items
+        st.markdown("### ✅ Następne Kroki")
+        
+        next_actions = [
+            "📞 **Natychmiastowe:** Skontaktuj się z dealerem FX w celu potwierdzenia dostępności kursów",
+            "📋 **Do końca tygodnia:** Przygotuj dokumentację do pierwszych 2-3 transakcji",
+            "📊 **Monitoring:** Ustaw alerty na kursy EUR/PLN dla timing wykonania",
+            "🔄 **Miesięczny przegląd:** Ocena skuteczności i ewentualne korekty planu",
+            f"⏰ **Pierwsza transakcja:** {hedge_plan[0]['Data rozpoczęcia']} - {hedge_plan[0]['Kwota EUR']} na tenor {hedge_plan[0]['Tenor']}"
+        ]
+        
+        for action in next_actions:
+            st.markdown(f"- {action}")
+    
+    else:
+        st.warning("⚠️ Nie można wygenerować planu hedgingu z obecnymi parametrami.")
 
 def create_binomial_model_panel():
     st.header("📊 Drzewo Dwumianowe - 5 Dni")
