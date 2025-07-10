@@ -1072,11 +1072,15 @@ def create_client_hedging_advisor():
         st.markdown("---")
         st.markdown("## Lista transakcji")
         
-        # Summary header like in bank interface
-        total_volume_eur = sum(
-            float(str(t['kwota_sprzedazy']).replace('(EUR) ', '').replace(',', '')) 
-            for t in st.session_state.hedge_transactions
-        )
+        # Summary header like in bank interface - with error handling
+        try:
+            total_volume_eur = sum(
+                float(str(t['kwota_sprzedazy']).replace('(EUR) ', '').replace(',', '')) 
+                for t in st.session_state.hedge_transactions
+                if 'kwota_sprzedazy' in t
+            )
+        except (KeyError, ValueError, TypeError):
+            total_volume_eur = 0
         
         st.markdown(f"""
         <div style="background: #f8f9fa; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #28a745; margin: 1rem 0;">
@@ -1144,18 +1148,24 @@ def create_client_hedging_advisor():
             # Professional summary metrics
             st.markdown("### 📊 Podsumowanie Portfolio")
             
-            total_pln = sum(
-                float(str(t['kwota_zakupu']).replace('(PLN) ', '').replace(',', ''))
-                for t in st.session_state.hedge_transactions
-            )
-            
-            avg_rate = total_pln / total_volume_eur if total_volume_eur > 0 else 0
-            
-            total_market_value = sum(
-                float(str(t['wycena_do_rynku']).replace(' PLN', '').replace(',', '').replace('+', '').replace('-', ''))
-                for t in st.session_state.hedge_transactions
-                if 'PLN' in str(t['wycena_do_rynku'])
-            )
+            try:
+                total_pln = sum(
+                    float(str(t['kwota_zakupu']).replace('(PLN) ', '').replace(',', ''))
+                    for t in st.session_state.hedge_transactions
+                    if 'kwota_zakupu' in t
+                )
+                
+                avg_rate = total_pln / total_volume_eur if total_volume_eur > 0 else 0
+                
+                total_market_value = sum(
+                    float(str(t['wycena_do_rynku']).replace(' PLN', '').replace(',', '').replace('+', '').replace('-', ''))
+                    for t in st.session_state.hedge_transactions
+                    if 'wycena_do_rynku' in t and 'PLN' in str(t['wycena_do_rynku'])
+                )
+            except (KeyError, ValueError, TypeError):
+                total_pln = 0
+                avg_rate = 0
+                total_market_value = 0
             
             col1, col2, col3, col4 = st.columns(4)
             
