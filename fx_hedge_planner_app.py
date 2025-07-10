@@ -894,6 +894,47 @@ def create_client_hedging_advisor():
         )
         
         st.plotly_chart(fig, use_container_width=True)
+    
+    # Wyjaśnienie metody najczęstszej ścieżki
+    st.subheader("🧮 Metodologia Najczęstszej Ścieżki")
+    
+    st.markdown("""
+    **Jak znajduję najczęstszą ścieżkę:**
+    
+    1. **Dla każdego dnia** obliczam prawdopodobieństwo osiągnięcia każdego możliwego węzła
+    2. **Formuła:** `P(j ruchów w górę w n dniach) = C(n,j) × p^j × (1-p)^(n-j)`
+    3. **Wybieram węzeł** o najwyższym prawdopodobieństwie w danym dniu
+    4. **Ścieżka łączy** kolejne najczęstsze węzły dzień po dniu
+    
+    ⚠️ **Uwaga:** To nie jest ścieżka o najwyższym prawdopodobieństwie end-to-end, 
+    ale ścieżka przechodząca przez najczęstsze węzły w każdym dniu.
+    """)
+    
+    # Tabela prawdopodobieństw dla pierwszych 3 dni
+    if st.checkbox("Pokaż szczegóły prawdopodobieństw", value=False):
+        prob_data = []
+        
+        for day in range(1, 4):  # Dni 1, 2, 3
+            for j in range(day + 1):
+                from math import comb
+                if use_empirical:
+                    node_prob = comb(day, j) * (p_up_empirical ** j) * (p_down_empirical ** (day - j))
+                else:
+                    node_prob = comb(day, j) * (p ** j) * ((1 - p) ** (day - j))
+                
+                is_selected = (j == most_probable_path[day])
+                
+                prob_data.append({
+                    "Dzień": day,
+                    "Ruchy w górę (j)": j,
+                    "Ruchy w dół": day - j,
+                    "C(n,j)": comb(day, j),
+                    "Prawdopodobieństwo": f"{node_prob:.4f}",
+                    "Najczęstszy?": "🎯 TAK" if is_selected else "❌ Nie"
+                })
+        
+        df_prob = pd.DataFrame(prob_data)
+        st.dataframe(df_prob, use_container_width=True, hide_index=True)
         
         # Top recommendations
         st.markdown("---")
@@ -1046,16 +1087,33 @@ def create_binomial_model_panel():
                 rate = spot_rate * (u ** ups) * (d ** downs)
                 tree[day][j] = rate
     
-    # Most probable path
+    # Most probable path - PRAWDZIWA NAJCZĘSTSZA ŚCIEŻKA
     most_probable_path = []
     for day in range(6):
         if day == 0:
             most_probable_path.append(0)
         else:
-            expected_ups = day * p
-            closest_j = round(expected_ups)
-            closest_j = max(0, min(closest_j, day))
-            most_probable_path.append(closest_j)
+            # Znajdź węzeł o najwyższym prawdopodobieństwie w tym dniu
+            best_j = 0
+            best_prob = 0
+            
+            for j in range(day + 1):  # j może być od 0 do day
+                # Prawdopodobieństwo osiągnięcia węzła (j, day)
+                from math import comb
+                if use_empirical:
+                    node_prob = comb(day, j) * (p_up_empirical ** j) * (p_down_empirical ** (day - j))
+                else:
+                    node_prob = comb(day, j) * (p ** j) * ((1 - p) ** (day - j))
+                
+                if node_prob > best_prob:
+                    best_prob = node_prob
+                    best_j = j
+            
+            most_probable_path.append(best_j)
+            
+            # Debug info dla pierwszych 3 dni
+            if day <= 3:
+                st.write(f"Dzień {day}: najwyższe P = {best_prob:.4f} dla j={best_j} ({best_j} ruchów w górę, {day-best_j} w dół)")
     
     # Final prediction
     st.subheader("🎯 Prognoza Finalna")
