@@ -1141,52 +1141,102 @@ def create_client_hedging_advisor():
     
     # Add transaction button
     if st.button("➕ Dodaj Transakcję", type="primary", use_container_width=True):
-        # Filter tenors based on settlement date
+        # Calculate days to settlement
         settlement_datetime = datetime.combine(settlement_date, datetime.min.time())
-        available_tenors = [
-            p for p in st.session_state.dealer_pricing_data 
-            if (datetime.strptime(p['rozliczenie_do'], "%d.%m.%Y") <= settlement_datetime)
-        ]
+        today_datetime = datetime.now()
+        days_to_settlement = (settlement_datetime - today_datetime).days
         
-        # Sort tenors by proximity to settlement date
-        available_tenors = sorted(
-            available_tenors, 
-            key=lambda x: abs((datetime.strptime(x['rozliczenie_do'], "%d.%m.%Y") - settlement_datetime).days)
+        # Calculate forward points based on actual days
+        config = st.session_state.dealer_config
+        calculator = APIIntegratedForwardCalculator(FREDAPIClient())
+        
+        # Calculate theoretical forward for this specific settlement date
+        theoretical = calculator.calculate_theoretical_forward_points(
+            config['spot_rate'], 
+            config['pl_yield'], 
+            config['de_yield'], 
+            days_to_settlement
         )
         
-        if available_tenors:
-            # Select closest tenor
-            selected_tenor = available_tenors[0]
-            
-            # Calculate execution window
-            execution_window_end = datetime.strptime(selected_tenor['rozliczenie_do'], "%d.%m.%Y")
-            execution_window_start = execution_window_end - timedelta(days=window_days)
-            
-            # Add to transactions list
-            transaction_id = len(st.session_state.hedge_transactions) + 1
-            st.session_state.hedge_transactions.append({
-                "ID": transaction_id,
-                "Data otwarcia okna": window_open_date.strftime("%d.%m.%Y"),
-                "Tenor": selected_tenor['tenor_name'],
-                "Kwota EUR": f"{volume:,.0f}",
-                "Kurs": f"{selected_tenor['client_rate']:.4f}",
-                "Okno wykonania": f"{execution_window_start.strftime('%d.%m.%Y')} - {execution_window_end.strftime('%d.%m.%Y')}",
-                "Korzyść vs Spot": f"{((selected_tenor['client_rate'] - config['spot_rate']) / config['spot_rate'] * 100):+.2f}%",
-                "Profit PLN": f"{(selected_tenor['client_rate'] - config['spot_rate']) * volume:+,.0f}"
-            })
-            st.success("✅ Transakcja dodana do listy!")
+        forward_points = theoretical['forward_points']
+        
+        # Calculate swap risk for this specific window length
+        tenor_window_swap_risk = abs(forward_points) * config['volatility_factor'] * np.sqrt(window_days / 90)
+        tenor_window_swap_risk = max(tenor_window_swap_risk, 0.015)
+        
+        # Calculate client rate for this specific configuration
+        calculator.points_factor = config['points_factor']
+        calculator.risk_factor = config['risk_factor']
+        
+        rates_result = calculator.calculate_professional_rates(
+            config['spot_rate'], 
+            forward_points, 
+            tenor_window_swap_risk, 
+            config['minimum_profit_floor']
+        )
+        
+        client_rate = rates_result['fwd_client']
+        
+        # Calculate execution window
+        execution_window_end = settlement_datetime
+        execution_window_start = execution_window_end - timedelta(days=window_days)
+        
+        # Determine tenor name based on days
+        months_approx = days_to_settlement / 30
+        if months_approx < 1:
+            tenor_name = f"{days_to_settlement} dni"
         else:
-            st.error("⚠️ Brak dostępnych tenorów dla wybranej daty rozliczenia!")
+            tenor_name = f"{months_approx:.1f} miesiąca"
+        
+        # Add to transactions list
+        transaction_id = len(st.session_state.hedge_transactions) + 1
+        st.session_state.hedge_transactions.append({
+            "ID": transaction_id,
+            "Data otwarcia okna": window_open_date.strftime("%d.%m.%Y"),
+            "Tenor": tenor_name,
+            "Dni do rozliczenia": days_to_settlement,
+            "Długość okna": window_days,
+            "Kwota EUR": f"{volume:,.0f}",
+            "Forward Points": f"{forward_points:.4f}",
+            "Swap Risk": f"{tenor_window_swap_risk:.4f}",
+            "Kurs": f"{client_rate:.4f}",
+            "Okno wykonania": f"{execution_window_start.strftime('%d.%m.%Y')} - {execution_window_end.strftime('%d.%m.%Y')}",
+            "Korzyść vs Spot": f"{((client_rate - config['spot_rate']) / config['spot_rate'] * 100):+.2f}%",
+            "Profit PLN": f"{(client_rate - config['spot_rate']) * volume:+,.0f}"
+        })
+        st.success(f"✅ Transakcja dodana! Tenor: {tenor_name} ({days_to_settlement} dni), Okno: {window_days} dni")
+        st.rerun()
     
     # Display transactions list
     if st.session_state.hedge_transactions:
         st.markdown("### 📋 Lista Transakcji")
         
+        # Show detailed table with calculation breakdown
+        col1, col2 = st.columns([3, 1])
+        
+        with col2:
+            show_calculation_details = st.checkbox("Pokaż szczegóły kalkulacji", value=False)
+        
         df_hedge_transactions = pd.DataFrame(st.session_state.hedge_transactions)
+        
+        # Prepare display dataframe
+        if show_calculation_details:
+            display_columns = [
+                "ID", "Tenor", "Dni do rozliczenia", "Długość okna", "Kwota EUR", 
+                "Forward Points", "Swap Risk", "Kurs", "Korzyść vs Spot", "Profit PLN"
+            ]
+        else:
+            display_columns = [
+                "ID", "Tenor", "Kwota EUR", "Kurs", "Okno wykonania", "Korzyść vs Spot", "Profit PLN"
+            ]
+        
+        # Filter columns that exist
+        available_columns = [col for col in display_columns if col in df_hedge_transactions.columns]
+        display_df = df_hedge_transactions[available_columns]
         
         # Color coding for transactions
         def highlight_transactions(row):
-            profit_str = row['Profit PLN'].replace(',', '').replace('+', '').replace(' PLN', '')
+            profit_str = str(row['Profit PLN']).replace(',', '').replace('+', '').replace(' PLN', '')
             try:
                 profit = float(profit_str)
                 if profit > 0:
@@ -1199,7 +1249,7 @@ def create_client_hedging_advisor():
                 return [''] * len(row)
         
         st.dataframe(
-            df_hedge_transactions.style.apply(highlight_transactions, axis=1),
+            display_df.style.apply(highlight_transactions, axis=1),
             use_container_width=True,
             hide_index=True
         )
@@ -1207,11 +1257,21 @@ def create_client_hedging_advisor():
         # Transactions summary
         st.markdown("### 📊 Podsumowanie Transakcji")
         
-        total_planned = sum(float(row['Kwota EUR'].replace(',', '')) for row in st.session_state.hedge_transactions)
-        total_profit = sum(float(row['Profit PLN'].replace(',', '').replace('+', '').replace(' PLN', '')) for row in st.session_state.hedge_transactions)
-        avg_rate = sum(float(row['Kurs']) * float(row['Kwota EUR'].replace(',', '')) for row in st.session_state.hedge_transactions) / total_planned if total_planned > 0 else 0
+        total_planned = sum(float(str(row['Kwota EUR']).replace(',', '')) for row in st.session_state.hedge_transactions)
+        total_profit = sum(float(str(row['Profit PLN']).replace(',', '').replace('+', '').replace(' PLN', '')) for row in st.session_state.hedge_transactions)
+        avg_rate = sum(float(row['Kurs']) * float(str(row['Kwota EUR']).replace(',', '')) for row in st.session_state.hedge_transactions) / total_planned if total_planned > 0 else 0
         
-        col1, col2, col3 = st.columns(3)
+        # Calculate window diversity metrics
+        window_lengths = [row.get('Długość okna', 0) for row in st.session_state.hedge_transactions if 'Długość okna' in row]
+        avg_window = np.mean(window_lengths) if window_lengths else 0
+        min_window = min(window_lengths) if window_lengths else 0
+        max_window = max(window_lengths) if window_lengths else 0
+        
+        # Calculate tenor diversity
+        days_to_settlements = [row.get('Dni do rozliczenia', 0) for row in st.session_state.hedge_transactions if 'Dni do rozliczenia' in row]
+        avg_tenor_days = np.mean(days_to_settlements) if days_to_settlements else 0
+        
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             st.metric(
@@ -1234,6 +1294,50 @@ def create_client_hedging_advisor():
                 f"{total_profit:+,.0f} PLN",
                 help="Suma korzyści vs pozostanie na spot"
             )
+        
+        with col4:
+            st.metric(
+                "Średni Tenor",
+                f"{avg_tenor_days:.0f} dni",
+                help="Średnia liczba dni do rozliczenia"
+            )
+        
+        # Window analysis
+        if window_lengths:
+            st.markdown("### 🪟 Analiza Okien Wykonania")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric(
+                    "Średnie Okno",
+                    f"{avg_window:.0f} dni",
+                    help="Średnia długość okien wykonania"
+                )
+            
+            with col2:
+                st.metric(
+                    "Zakres Okien",
+                    f"{min_window}-{max_window} dni",
+                    help="Minimalne i maksymalne okno"
+                )
+            
+            with col3:
+                unique_windows = len(set(window_lengths))
+                st.metric(
+                    "Różne Okna",
+                    f"{unique_windows}",
+                    help="Liczba różnych długości okien"
+                )
+            
+            with col4:
+                window_flexibility = "Wysoka" if unique_windows > 2 else "Średnia" if unique_windows > 1 else "Niska"
+                flexibility_color = "🟢" if unique_windows > 2 else "🟡" if unique_windows > 1 else "🔴"
+                st.metric(
+                    "Elastyczność",
+                    f"{flexibility_color} {window_flexibility}",
+                    help="Ocena różnorodności okien"
+                )
     else:
         st.info("📋 Brak dodanych transakcji. Użyj przycisku 'Dodaj Transakcję' aby rozpocząć.")
 
