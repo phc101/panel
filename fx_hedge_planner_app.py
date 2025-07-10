@@ -1198,7 +1198,7 @@ def create_client_hedging_advisor():
     remaining_amount = target_hedge_amount
     
     # Filter tenors based on horizon and risk tolerance
-    available_tenors = [p for p in filtered_pricing if p['tenor_months'] <= hedge_horizon]
+    available_tenors = [p for p in st.session_state.dealer_pricing_data if p['tenor_months'] <= hedge_horizon]
     
     if current_risk["prefer_short_tenors"]:
         available_tenors = sorted(available_tenors, key=lambda x: x['tenor_months'])
