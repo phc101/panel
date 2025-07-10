@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -258,6 +259,8 @@ def initialize_session_state():
             'hedging_savings_pct': 0.60,
             'minimum_profit_floor': 0.000
         }
+    if 'hedge_transactions' not in st.session_state:
+        st.session_state.hedge_transactions = []
 
 # ============================================================================
 # CACHED DATA FUNCTIONS
@@ -1076,74 +1079,6 @@ def create_client_hedging_advisor():
         
         st.plotly_chart(fig, use_container_width=True)
     
-    # Wyjaśnienie metody najczęstszej ścieżki
-    st.subheader("🧮 Metodologia Najczęstszej Ścieżki")
-    
-    st.markdown("""
-    **Jak znajduję najczęstszą ścieżkę:**
-    
-    1. **Dla każdego dnia** obliczam prawdopodobieństwo osiągnięcia każdego możliwego węzła
-    2. **Formuła:** `P(j ruchów w górę w n dniach) = C(n,j) × p^j × (1-p)^(n-j)`
-    3. **Wybieram węzeł** o najwyższym prawdopodobieństwie w danym dniu
-    4. **Ścieżka łączy** kolejne najczęstsze węzły dzień po dniu
-    
-    ⚠️ **Uwaga:** To nie jest ścieżka o najwyższym prawdopodobieństwie end-to-end, 
-    ale ścieżka przechodząca przez najczęstsze węzły w każdym dniu.
-    """)
-    
-    # Tabela prawdopodobieństw dla pierwszych 3 dni
-    if st.checkbox("Pokaż szczegóły prawdopodobieństw", value=False):
-        prob_data = []
-        
-        for day in range(1, 4):  # Dni 1, 2, 3
-            for j in range(day + 1):
-                from math import comb
-                if use_empirical:
-                    node_prob = comb(day, j) * (p_up_empirical ** j) * (p_down_empirical ** (day - j))
-                else:
-                    node_prob = comb(day, j) * (p ** j) * ((1 - p) ** (day - j))
-                
-                is_selected = (j == most_probable_path[day])
-                
-                prob_data.append({
-                    "Dzień": day,
-                    "Ruchy w górę (j)": j,
-                    "Ruchy w dół": day - j,
-                    "C(n,j)": comb(day, j),
-                    "Prawdopodobieństwo": f"{node_prob:.4f}",
-                    "Najczęstszy?": "🎯 TAK" if is_selected else "❌ Nie"
-                })
-        
-        df_prob = pd.DataFrame(prob_data)
-        st.dataframe(df_prob, use_container_width=True, hide_index=True)
-        
-        # Top recommendations
-        st.markdown("---")
-        st.subheader("🎯 Rekomendacje Zabezpieczeń")
-        
-        best_rates = [rate for rate in client_rates_data if '🟢' in rate['Rekomendacja'] or '🟡' in rate['Rekomendacja']]
-        best_rates = sorted(best_rates, key=lambda x: float(x['vs Spot'].rstrip('%')), reverse=True)[:3]
-        
-        if best_rates:
-            st.markdown("**📋 Top 3 rekomendacje:**")
-            
-            for i, rate in enumerate(best_rates, 1):
-                col1, col2, col3, col4 = st.columns([1, 2, 1, 1])
-                
-                with col1:
-                    st.write(f"**#{i}** {rate['Rekomendacja']}")
-                
-                with col2:
-                    st.write(f"**{rate['Tenor']}** - kurs {rate['Kurs terminowy']}")
-                
-                with col3:
-                    st.write(f"Korzyść: **{rate['vs Spot']}**")
-                
-                with col4:
-                    st.write(f"**{rate['Dodatkowy PLN']} PLN**")
-        else:
-            st.info("💡 Rozważ pozostanie na kursie spot.")
-    
     # ============================================================================
     # PLANOWANIE HEDGINGU
     # ============================================================================
@@ -1156,22 +1091,23 @@ def create_client_hedging_advisor():
     
     with col1:
         settlement_date = st.date_input(
-            "Planowana data rozliczenia:",
+            "Data rozliczenia przepływu:",
             value=datetime.now() + timedelta(days=90),
             min_value=datetime.now(),
             max_value=datetime.now() + timedelta(days=730),
-            help="Wybierz datę rozliczenia dla planu hedgingu"
+            help="Wybierz datę rozliczenia dla pojedynczego przepływu"
         )
     
     with col2:
-        hedge_coverage = st.slider(
-            "Docelowe pokrycie ekspozycji:",
-            min_value=25,
-            max_value=100,
-            value=75,
-            step=5,
-            help="Procent ekspozycji do zabezpieczenia"
-        ) / 100
+        volume = st.number_input(
+            "Wolumen (EUR):",
+            value=250_000,
+            min_value=10_000,
+            max_value=50_000_000,
+            step=10_000,
+            format="%d",
+            help="Wolumen dla pojedynczej transakcji"
+        )
     
     with col3:
         window_days = st.number_input(
@@ -1183,79 +1119,62 @@ def create_client_hedging_advisor():
             help="Okres elastyczności dla każdej transakcji"
         )
     
-    # Volume input
-    volume = st.number_input(
-        "Wolumen (EUR):",
-        value=1_000_000,
-        min_value=10_000,
-        max_value=50_000_000,
-        step=10_000,
-        format="%d",
-        help="Całkowity wolumen do zabezpieczenia"
+    # Window opening date
+    window_open_date = st.date_input(
+        "Data otwarcia okna:",
+        value=datetime.now() + timedelta(days=30),
+        min_value=datetime.now(),
+        max_value=settlement_date - timedelta(days=window_days),
+        help="Wybierz datę rozpoczęcia okna wykonania dla tej transakcji"
     )
     
-    # Calculate hedge plan
-    target_hedge_amount = volume * hedge_coverage
+    # Add transaction button
+    if st.button("➕ Dodaj Transakcję", type="primary", use_container_width=True):
+        # Filter tenors based on settlement date
+        settlement_datetime = datetime.combine(settlement_date, datetime.min.time())
+        available_tenors = [
+            p for p in st.session_state.dealer_pricing_data 
+            if (datetime.strptime(p['rozliczenie_do'], "%d.%m.%Y") <= settlement_datetime)
+        ]
+        
+        # Sort tenors by proximity to settlement date
+        available_tenors = sorted(
+            available_tenors, 
+            key=lambda x: abs((datetime.strptime(x['rozliczenie_do'], "%d.%m.%Y") - settlement_datetime).days)
+        )
+        
+        if available_tenors:
+            # Select closest tenor
+            selected_tenor = available_tenors[0]
+            
+            # Calculate execution window
+            execution_window_end = datetime.strptime(selected_tenor['rozliczenie_do'], "%d.%m.%Y")
+            execution_window_start = execution_window_end - timedelta(days=window_days)
+            
+            # Add to transactions list
+            transaction_id = len(st.session_state.hedge_transactions) + 1
+            st.session_state.hedge_transactions.append({
+                "ID": transaction_id,
+                "Data otwarcia okna": window_open_date.strftime("%d.%m.%Y"),
+                "Tenor": selected_tenor['tenor_name'],
+                "Kwota EUR": f"{volume:,.0f}",
+                "Kurs": f"{selected_tenor['client_rate']:.4f}",
+                "Okno wykonania": f"{execution_window_start.strftime('%d.%m.%Y')} - {execution_window_end.strftime('%d.%m.%Y')}",
+                "Korzyść vs Spot": f"{((selected_tenor['client_rate'] - config['spot_rate']) / config['spot_rate'] * 100):+.2f}%",
+                "Profit PLN": f"{(selected_tenor['client_rate'] - config['spot_rate']) * volume:+,.0f}"
+            })
+            st.success("✅ Transakcja dodana do listy!")
+        else:
+            st.error("⚠️ Brak dostępnych tenorów dla wybranej daty rozliczenia!")
     
-    # Risk parameters (simplified without risk tolerance profiles)
-    max_single_trade = target_hedge_amount * 0.25  # Fixed at 25% of target amount
-    
-    # Generate hedge plan
-    hedge_plan = []
-    remaining_amount = target_hedge_amount
-    
-    # Filter tenors based on settlement date
-    settlement_datetime = datetime.combine(settlement_date, datetime.min.time())
-    available_tenors = [
-        p for p in st.session_state.dealer_pricing_data 
-        if (datetime.strptime(p['rozliczenie_do'], "%d.%m.%Y") <= settlement_datetime)
-    ]
-    
-    # Sort tenors by proximity to settlement date
-    available_tenors = sorted(
-        available_tenors, 
-        key=lambda x: abs((datetime.strptime(x['rozliczenie_do'], "%d.%m.%Y") - settlement_datetime).days)
-    )
-    
-    month_counter = 0
-    while remaining_amount > 100_000 and available_tenors:
-        # Select tenor based on proximity to settlement date
-        selected_tenor = available_tenors[month_counter % len(available_tenors)]
+    # Display transactions list
+    if st.session_state.hedge_transactions:
+        st.markdown("### 📋 Lista Transakcji")
         
-        # Calculate trade size
-        trade_size = min(remaining_amount, max_single_trade)
-        trade_size = max(trade_size, 100_000)  # Minimum trade size
+        df_hedge_transactions = pd.DataFrame(st.session_state.hedge_transactions)
         
-        # Calculate dates
-        start_date = datetime.now() + timedelta(days=30 * month_counter)
-        execution_window_start = datetime.strptime(selected_tenor['rozliczenie_do'], "%d.%m.%Y") - timedelta(days=window_days)
-        execution_window_end = datetime.strptime(selected_tenor['rozliczenie_do'], "%d.%m.%Y")
-        
-        hedge_plan.append({
-            "Miesiąc": month_counter + 1,
-            "Data rozpoczęcia": start_date.strftime("%d.%m.%Y"),
-            "Tenor": selected_tenor['tenor_name'],
-            "Kwota EUR": f"{trade_size:,.0f}",
-            "Kurs": f"{selected_tenor['client_rate']:.4f}",
-            "Okno wykonania": f"{execution_window_start.strftime('%d.%m.%Y')} - {execution_window_end.strftime('%d.%m.%Y')}",
-            "Korzyść vs Spot": f"{((selected_tenor['client_rate'] - config['spot_rate']) / config['spot_rate'] * 100):+.2f}%",
-            "Profit PLN": f"{(selected_tenor['client_rate'] - config['spot_rate']) * trade_size:+,.0f}"
-        })
-        
-        remaining_amount -= trade_size
-        month_counter += 1
-        
-        if month_counter >= 8:  # Safety break
-            break
-    
-    # Display hedge plan
-    if hedge_plan:
-        st.markdown("### 📋 Proponowany Plan Hedgingu")
-        
-        df_hedge_plan = pd.DataFrame(hedge_plan)
-        
-        # Color coding for hedge plan
-        def highlight_hedge_plan(row):
+        # Color coding for transactions
+        def highlight_transactions(row):
             profit_str = row['Profit PLN'].replace(',', '').replace('+', '').replace(' PLN', '')
             try:
                 profit = float(profit_str)
@@ -1269,45 +1188,36 @@ def create_client_hedging_advisor():
                 return [''] * len(row)
         
         st.dataframe(
-            df_hedge_plan.style.apply(highlight_hedge_plan, axis=1),
+            df_hedge_transactions.style.apply(highlight_transactions, axis=1),
             use_container_width=True,
             hide_index=True
         )
         
-        # Plan summary
-        st.markdown("### 📊 Podsumowanie Planu Hedgingu")
+        # Transactions summary
+        st.markdown("### 📊 Podsumowanie Transakcji")
         
-        total_planned = sum(float(row['Kwota EUR'].replace(',', '')) for row in hedge_plan)
-        total_profit = sum(float(row['Profit PLN'].replace(',', '').replace('+', '').replace(' PLN', '')) for row in hedge_plan)
-        coverage_achieved = total_planned / volume * 100
-        avg_rate = sum(float(row['Kurs']) * float(row['Kwota EUR'].replace(',', '')) for row in hedge_plan) / total_planned
+        total_planned = sum(float(row['Kwota EUR'].replace(',', '')) for row in st.session_state.hedge_transactions)
+        total_profit = sum(float(row['Profit PLN'].replace(',', '').replace('+', '').replace(' PLN', '')) for row in st.session_state.hedge_transactions)
+        avg_rate = sum(float(row['Kurs']) * float(row['Kwota EUR'].replace(',', '')) for row in st.session_state.hedge_transactions) / total_planned if total_planned > 0 else 0
         
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             st.metric(
-                "Pokrycie Ekspozycji",
-                f"{coverage_achieved:.1f}%",
-                delta=f"{coverage_achieved - hedge_coverage*100:+.1f}pp vs docelowe",
-                help="Procent ekspozycji zabezpieczony przez plan"
+                "Łączna Kwota",
+                f"€{total_planned:,.0f}",
+                help="Suma wszystkich transakcji"
             )
         
         with col2:
             st.metric(
-                "Łączna Kwota",
-                f"€{total_planned:,.0f}",
-                help="Suma wszystkich transakcji w planie"
+                "Średni Kurs",
+                f"{avg_rate:.4f}",
+                delta=f"{((avg_rate - config['spot_rate']) / config['spot_rate'] * 100):+.2f}% vs spot" if avg_rate > 0 else "N/A",
+                help="Średnia ważona kursów"
             )
         
         with col3:
-            st.metric(
-                "Średni Kurs Hedgingu",
-                f"{avg_rate:.4f}",
-                delta=f"{((avg_rate - config['spot_rate']) / config['spot_rate'] * 100):+.2f}% vs spot",
-                help="Średnia ważona kursów w planie"
-            )
-        
-        with col4:
             st.metric(
                 "Łączny Profit",
                 f"{total_profit:+,.0f} PLN",
@@ -1315,49 +1225,43 @@ def create_client_hedging_advisor():
             )
         
         # Risk analysis
-        st.markdown("### ⚖️ Analiza Ryzyka Planu")
+        st.markdown("### ⚖️ Analiza Ryzyka")
         
         col1, col2 = st.columns(2)
         
         with col1:
             st.markdown(f"""
             <div class="metric-card">
-                <h4>🎯 Charakterystyka Strategii</h4>
-                <p><strong>Max transakcja:</strong> €{max_single_trade:,.0f} (25% ekspozycji)</p>
-                <p><strong>Liczba transakcji:</strong> {len(hedge_plan)}</p>
-                <p><strong>Data rozliczenia:</strong> {settlement_date.strftime('%d.%m.%Y')}</p>
-                <p><strong>Średni tenor:</strong> {sum(p['tenor_months'] for p in available_tenors[:len(hedge_plan)]) / len(hedge_plan):.1f} miesięcy</p>
+                <h4>🎯 Charakterystyka Transakcji</h4>
+                <p><strong>Liczba transakcji:</strong> {len(st.session_state.hedge_transactions)}</p>
+                <p><strong>Średni tenor:</strong> {sum(p['tenor_months'] for p in st.session_state.dealer_pricing_data if p['tenor_name'] in [t['Tenor'] for t in st.session_state.hedge_transactions]) / len(st.session_state.hedge_transactions):.1f} miesięcy</p>
+                <p><strong>Elastyczność:</strong> {window_days} dni na transakcję</p>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
             # Calculate risk metrics
-            plan_rates = [float(row['Kurs']) for row in hedge_plan]
+            plan_rates = [float(row['Kurs']) for row in st.session_state.hedge_transactions]
             rate_volatility = np.std(plan_rates) if len(plan_rates) > 1 else 0
-            
-            # Exposure timeline
-            months_covered = len(hedge_plan)
-            timeline_risk = "Niskie" if months_covered >= 6 else "Średnie" if months_covered >= 3 else "Wysokie"
+            timeline_risk = "Niskie" if len(st.session_state.hedge_transactions) >= 6 else "Średnie" if len(st.session_state.hedge_transactions) >= 3 else "Wysokie"
             
             st.markdown(f"""
             <div class="metric-card">
                 <h4>📈 Metryki Ryzyka</h4>
                 <p><strong>Zmienność kursów:</strong> {rate_volatility:.4f}</p>
                 <p><strong>Ryzyko timeline:</strong> {timeline_risk}</p>
-                <p><strong>Koncentracja:</strong> {'Rozproszona' if len(hedge_plan) >= 4 else 'Skoncentrowana'}</p>
-                <p><strong>Elastyczność:</strong> {window_days} dni na transakcję</p>
+                <p><strong>Koncentracja:</strong> {'Rozproszona' if len(st.session_state.hedge_transactions) >= 4 else 'Skoncentrowana'}</p>
             </div>
             """, unsafe_allow_html=True)
         
         # Execution calendar
         st.markdown("### 📅 Kalendarz Wykonania")
         
-        # Create execution timeline
         execution_data = []
-        for i, trade in enumerate(hedge_plan):
+        for i, trade in enumerate(st.session_state.hedge_transactions):
             execution_data.append({
-                "Okres": f"M{trade['Miesiąc']}",
-                "Data": trade['Data rozpoczęcia'],
+                "ID": trade['ID'],
+                "Data": trade['Data otwarcia okna'],
                 "Akcja": f"Hedge €{trade['Kwota EUR']} na {trade['Tenor']}",
                 "Okno": trade['Okno wykonania'],
                 "Status": "🟡 Planowana" if i < 3 else "🔵 Przyszła",
@@ -1374,15 +1278,16 @@ def create_client_hedging_advisor():
             "📞 **Natychmiastowe:** Skontaktuj się z dealerem FX w celu potwierdzenia dostępności kursów",
             "📋 **Do końca tygodnia:** Przygotuj dokumentację do pierwszych 2-3 transakcji",
             "📊 **Monitoring:** Ustaw alerty na kursy EUR/PLN dla timing wykonania",
-            "🔄 **Miesięczny przegląd:** Ocena skuteczności i ewentualne korekty planu",
-            f"⏰ **Pierwsza transakcja:** {hedge_plan[0]['Data rozpoczęcia']} - {hedge_plan[0]['Kwota EUR']} na tenor {hedge_plan[0]['Tenor']}"
+            "🔄 **Miesięczny przegląd:** Ocena skuteczności i ewentualne korekty planu"
         ]
+        if st.session_state.hedge_transactions:
+            next_actions.append(f"⏰ **Pierwsza transakcja:** {st.session_state.hedge_transactions[0]['Data otwarcia okna']} - {st.session_state.hedge_transactions[0]['Kwota EUR']} na tenor {st.session_state.hedge_transactions[0]['Tenor']}")
         
         for action in next_actions:
             st.markdown(f"- {action}")
     
     else:
-        st.warning("⚠️ Nie można wygenerować planu hedgingu z obecnymi parametrami.")
+        st.info("📋 Brak dodanych transakcji. Użyj przycisku 'Dodaj Transakcję' aby rozpocząć.")
 
 def create_binomial_model_panel():
     st.header("📊 Drzewo Dwumianowe - 5 Dni")
@@ -1741,3 +1646,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
