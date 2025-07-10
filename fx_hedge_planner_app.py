@@ -1100,27 +1100,21 @@ def create_client_hedging_advisor():
         transactions_data = []
         
         for i, transaction in enumerate(st.session_state.hedge_transactions, 1):
-            # Safely get values with defaults
-            status = transaction.get('status', 'PLANOWANE')
-            typ = transaction.get('typ', 'Forward elastyczny')
-            pierwsze_wykonanie = transaction.get('pierwsze_wykonanie', 'N/A')
-            data_wygasniecia = transaction.get('data_wygasniecia', 'N/A')
-            kwota_sprzedazy = transaction.get('kwota_sprzedazy', 'N/A')
-            kwota_zakupu = transaction.get('kwota_zakupu', 'N/A')
-            kurs_zabezpieczenia = transaction.get('kurs_zabezpieczenia', 'N/A')
-            kurs_koncowy = transaction.get('kurs_koncowy', 'N/A')
-            wycena_do_rynku = transaction.get('wycena_do_rynku', '0,00 PLN')
-            
-            # Determine status styling
-            if status == 'PLANOWANE':
-                status_style = 'background-color: #007bff; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;'
-            else:
-                status_style = 'background-color: #28a745; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;'
+            # Safely get values with defaults - ensure no NaN values
+            status = str(transaction.get('status', 'PLANOWANE')).replace('nan', 'PLANOWANE')
+            typ = str(transaction.get('typ', 'Forward elastyczny')).replace('nan', 'Forward elastyczny')
+            pierwsze_wykonanie = str(transaction.get('pierwsze_wykonanie', 'Brak daty')).replace('nan', 'Brak daty')
+            data_wygasniecia = str(transaction.get('data_wygasniecia', 'Brak daty')).replace('nan', 'Brak daty')
+            kwota_sprzedazy = str(transaction.get('kwota_sprzedazy', '(EUR) 0')).replace('nan', '(EUR) 0')
+            kwota_zakupu = str(transaction.get('kwota_zakupu', '(PLN) 0')).replace('nan', '(PLN) 0')
+            kurs_zabezpieczenia = str(transaction.get('kurs_zabezpieczenia', '0.0000')).replace('nan', '0.0000')
+            kurs_koncowy = str(transaction.get('kurs_koncowy', '0.0000')).replace('nan', '0.0000')
+            wycena_do_rynku = str(transaction.get('wycena_do_rynku', '0 PLN')).replace('nan', '0 PLN')
             
             transactions_data.append({
                 "#": i,
                 "TYP": typ,
-                "PIERWSZE WYKONYSTANIE": pierwsze_wykonanie,
+                "PIERWSZE WYKONANIE": pierwsze_wykonanie,
                 "DATA WYGAŚNIĘCIA": data_wygasniecia,
                 "KWOTA SPRZEDAŻY": kwota_sprzedazy,
                 "KWOTA ZAKUPU": kwota_zakupu,
@@ -1133,47 +1127,74 @@ def create_client_hedging_advisor():
         if transactions_data:
             df_transactions = pd.DataFrame(transactions_data)
             
-            # Apply professional styling
+            # Safe styling function with error handling
             def highlight_status(row):
-                colors = []
-                for val in row:
-                    if 'PLANOWANE' in str(val):
-                        colors.append('background-color: #e3f2fd')
-                    elif 'PLN' in str(val) and ('+' in str(val) or '-' in str(val)):
-                        if '+' in str(val):
-                            colors.append('background-color: #d4edda; color: #155724')
+                try:
+                    colors = []
+                    for val in row:
+                        val_str = str(val)
+                        if 'PLANOWANE' in val_str:
+                            colors.append('background-color: #e3f2fd')
+                        elif 'PLN' in val_str and ('+' in val_str or '-' in val_str):
+                            if '+' in val_str:
+                                colors.append('background-color: #d4edda; color: #155724')
+                            else:
+                                colors.append('background-color: #f8d7da; color: #721c24')
                         else:
-                            colors.append('background-color: #f8d7da; color: #721c24')
-                    else:
-                        colors.append('')
-                return colors
+                            colors.append('')
+                    return colors
+                except Exception:
+                    # Return empty styling if any error occurs
+                    return [''] * len(row)
             
-            # Display the professional table
-            st.dataframe(
-                df_transactions.style.apply(highlight_status, axis=1),
-                use_container_width=True,
-                height=400,
-                hide_index=True
-            )
+            # Display the professional table with safe styling
+            try:
+                styled_df = df_transactions.style.apply(highlight_status, axis=1)
+                st.dataframe(styled_df, use_container_width=True, height=400, hide_index=True)
+            except Exception:
+                # Fallback: display without styling if styling fails
+                st.dataframe(df_transactions, use_container_width=True, height=400, hide_index=True)
             
-            # Professional summary metrics
+            # Professional summary metrics with safe calculations
             st.markdown("### 📊 Podsumowanie Portfolio")
             
             try:
-                total_pln = sum(
-                    float(str(t['kwota_zakupu']).replace('(PLN) ', '').replace(',', ''))
-                    for t in st.session_state.hedge_transactions
-                    if 'kwota_zakupu' in t
-                )
+                # Safe calculation of totals
+                total_pln = 0
+                total_volume_eur_calc = 0
+                total_market_value = 0
                 
-                avg_rate = total_pln / total_volume_eur if total_volume_eur > 0 else 0
+                for t in st.session_state.hedge_transactions:
+                    # Safely parse EUR volume
+                    try:
+                        kwota_eur_str = str(t.get('kwota_sprzedazy', '0')).replace('(EUR) ', '').replace(',', '')
+                        if kwota_eur_str and kwota_eur_str != 'nan':
+                            total_volume_eur_calc += float(kwota_eur_str)
+                    except (ValueError, TypeError):
+                        pass
+                    
+                    # Safely parse PLN amount
+                    try:
+                        kwota_pln_str = str(t.get('kwota_zakupu', '0')).replace('(PLN) ', '').replace(',', '')
+                        if kwota_pln_str and kwota_pln_str != 'nan':
+                            total_pln += float(kwota_pln_str)
+                    except (ValueError, TypeError):
+                        pass
+                    
+                    # Safely parse market value
+                    try:
+                        market_val_str = str(t.get('wycena_do_rynku', '0')).replace(' PLN', '').replace(',', '').replace('+', '').replace('-', '')
+                        if market_val_str and market_val_str != 'nan':
+                            total_market_value += float(market_val_str)
+                    except (ValueError, TypeError):
+                        pass
                 
-                total_market_value = sum(
-                    float(str(t['wycena_do_rynku']).replace(' PLN', '').replace(',', '').replace('+', '').replace('-', ''))
-                    for t in st.session_state.hedge_transactions
-                    if 'wycena_do_rynku' in t and 'PLN' in str(t['wycena_do_rynku'])
-                )
-            except (KeyError, ValueError, TypeError):
+                # Calculate average rate safely
+                avg_rate = total_pln / total_volume_eur_calc if total_volume_eur_calc > 0 else 0
+                
+            except Exception:
+                # Fallback values if any calculation fails
+                total_volume_eur_calc = 0
                 total_pln = 0
                 avg_rate = 0
                 total_market_value = 0
