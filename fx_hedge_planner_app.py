@@ -1100,23 +1100,34 @@ def create_client_hedging_advisor():
         transactions_data = []
         
         for i, transaction in enumerate(st.session_state.hedge_transactions, 1):
+            # Safely get values with defaults
+            status = transaction.get('status', 'PLANOWANE')
+            typ = transaction.get('typ', 'Forward elastyczny')
+            pierwsze_wykonanie = transaction.get('pierwsze_wykonanie', 'N/A')
+            data_wygasniecia = transaction.get('data_wygasniecia', 'N/A')
+            kwota_sprzedazy = transaction.get('kwota_sprzedazy', 'N/A')
+            kwota_zakupu = transaction.get('kwota_zakupu', 'N/A')
+            kurs_zabezpieczenia = transaction.get('kurs_zabezpieczenia', 'N/A')
+            kurs_koncowy = transaction.get('kurs_koncowy', 'N/A')
+            wycena_do_rynku = transaction.get('wycena_do_rynku', '0,00 PLN')
+            
             # Determine status styling
-            if transaction['status'] == 'PLANOWANE':
+            if status == 'PLANOWANE':
                 status_style = 'background-color: #007bff; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;'
             else:
                 status_style = 'background-color: #28a745; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;'
             
             transactions_data.append({
                 "#": i,
-                "TYP": transaction['typ'],
-                "PIERWSZE WYKONYSTANIE": transaction['pierwsze_wykonanie'],
-                "DATA WYGAŚNIĘCIA": transaction['data_wygasniecia'],
-                "KWOTA SPRZEDAŻY": transaction['kwota_sprzedazy'],
-                "KWOTA ZAKUPU": transaction['kwota_zakupu'],
-                "KURS ZABEZPIECZENIA": transaction['kurs_zabezpieczenia'],
-                "KURS KOŃCOWY": transaction['kurs_koncowy'],
-                "WYCENA DO RYNKU": transaction['wycena_do_rynku'],
-                "STATUS": transaction['status']
+                "TYP": typ,
+                "PIERWSZE WYKONYSTANIE": pierwsze_wykonanie,
+                "DATA WYGAŚNIĘCIA": data_wygasniecia,
+                "KWOTA SPRZEDAŻY": kwota_sprzedazy,
+                "KWOTA ZAKUPU": kwota_zakupu,
+                "KURS ZABEZPIECZENIA": kurs_zabezpieczenia,
+                "KURS KOŃCOWY": kurs_koncowy,
+                "WYCENA DO RYNKU": wycena_do_rynku,
+                "STATUS": status
             })
         
         if transactions_data:
