@@ -1155,11 +1155,12 @@ def create_client_hedging_advisor():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        hedge_horizon = st.selectbox(
-            "Horyzont planowania:",
-            options=[3, 6, 12, 18, 24],
-            index=2,
-            help="Okres w miesiącach dla planowania hedgingu"
+        settlement_date = st.date_input(
+            "Planowana data rozliczenia:",
+            value=datetime.now() + timedelta(days=90),
+            min_value=datetime.now(),
+            max_value=datetime.now() + timedelta(days=730),
+            help="Wybierz datę rozliczenia dla planu hedgingu"
         )
     
     with col2:
@@ -1173,47 +1174,53 @@ def create_client_hedging_advisor():
         ) / 100
     
     with col3:
-        risk_tolerance = st.selectbox(
-            "Tolerancja ryzyka:",
-            options=["Konserwatywna", "Umiarkowana", "Agresywna"],
-            index=1,
-            help="Profil ryzyka dla strategii hedgingu"
+        window_days = st.number_input(
+            "Długość okna (dni):",
+            value=config['window_days'],
+            min_value=30,
+            max_value=365,
+            step=5,
+            help="Okres elastyczności dla każdej transakcji"
         )
     
+    # Volume input
+    volume = st.number_input(
+        "Wolumen (EUR):",
+        value=1_000_000,
+        min_value=10_000,
+        max_value=50_000_000,
+        step=10_000,
+        format="%d",
+        help="Całkowity wolumen do zabezpieczenia"
+    )
+    
     # Calculate hedge plan
-    target_hedge_amount = exposure_amount * hedge_coverage
+    target_hedge_amount = volume * hedge_coverage
     
-    # Risk parameters based on tolerance
-    risk_params = {
-        "Konserwatywna": {"max_single_trade": 0.15, "prefer_short_tenors": True, "volatility_buffer": 1.5},
-        "Umiarkowana": {"max_single_trade": 0.25, "prefer_short_tenors": False, "volatility_buffer": 1.2},
-        "Agresywna": {"max_single_trade": 0.40, "prefer_short_tenors": False, "volatility_buffer": 1.0}
-    }
-    
-    current_risk = risk_params[risk_tolerance]
-    max_single_trade = target_hedge_amount * current_risk["max_single_trade"]
+    # Risk parameters (simplified without risk tolerance profiles)
+    max_single_trade = target_hedge_amount * 0.25  # Fixed at 25% of target amount
     
     # Generate hedge plan
     hedge_plan = []
     remaining_amount = target_hedge_amount
     
-    # Filter tenors based on horizon and risk tolerance
-    available_tenors = [p for p in st.session_state.dealer_pricing_data if p['tenor_months'] <= hedge_horizon]
+    # Filter tenors based on settlement date
+    settlement_datetime = datetime.combine(settlement_date, datetime.min.time())
+    available_tenors = [
+        p for p in st.session_state.dealer_pricing_data 
+        if (datetime.strptime(p['rozliczenie_do'], "%d.%m.%Y") <= settlement_datetime)
+    ]
     
-    if current_risk["prefer_short_tenors"]:
-        available_tenors = sorted(available_tenors, key=lambda x: x['tenor_months'])
-    else:
-        # Mix of short and medium tenors
-        available_tenors = sorted(available_tenors, key=lambda x: abs(x['tenor_months'] - hedge_horizon/2))
+    # Sort tenors by proximity to settlement date
+    available_tenors = sorted(
+        available_tenors, 
+        key=lambda x: abs((datetime.strptime(x['rozliczenie_do'], "%d.%m.%Y") - settlement_datetime).days)
+    )
     
     month_counter = 0
-    while remaining_amount > 100_000 and available_tenors and month_counter < hedge_horizon:
-        
-        # Select tenor based on strategy
-        if month_counter < len(available_tenors):
-            selected_tenor = available_tenors[month_counter % len(available_tenors)]
-        else:
-            selected_tenor = available_tenors[0]
+    while remaining_amount > 100_000 and available_tenors:
+        # Select tenor based on proximity to settlement date
+        selected_tenor = available_tenors[month_counter % len(available_tenors)]
         
         # Calculate trade size
         trade_size = min(remaining_amount, max_single_trade)
@@ -1221,8 +1228,8 @@ def create_client_hedging_advisor():
         
         # Calculate dates
         start_date = datetime.now() + timedelta(days=30 * month_counter)
-        execution_window_start = start_date + timedelta(days=selected_tenor['tenor_months'] * 30)
-        execution_window_end = execution_window_start + timedelta(days=config['window_days'])
+        execution_window_start = datetime.strptime(selected_tenor['rozliczenie_do'], "%d.%m.%Y") - timedelta(days=window_days)
+        execution_window_end = datetime.strptime(selected_tenor['rozliczenie_do'], "%d.%m.%Y")
         
         hedge_plan.append({
             "Miesiąc": month_counter + 1,
@@ -1230,7 +1237,7 @@ def create_client_hedging_advisor():
             "Tenor": selected_tenor['tenor_name'],
             "Kwota EUR": f"{trade_size:,.0f}",
             "Kurs": f"{selected_tenor['client_rate']:.4f}",
-            "Okno wykonania": f"{execution_window_start.strftime('%d.%m')} - {execution_window_end.strftime('%d.%m.%Y')}",
+            "Okno wykonania": f"{execution_window_start.strftime('%d.%m.%Y')} - {execution_window_end.strftime('%d.%m.%Y')}",
             "Korzyść vs Spot": f"{((selected_tenor['client_rate'] - config['spot_rate']) / config['spot_rate'] * 100):+.2f}%",
             "Profit PLN": f"{(selected_tenor['client_rate'] - config['spot_rate']) * trade_size:+,.0f}"
         })
@@ -1272,7 +1279,7 @@ def create_client_hedging_advisor():
         
         total_planned = sum(float(row['Kwota EUR'].replace(',', '')) for row in hedge_plan)
         total_profit = sum(float(row['Profit PLN'].replace(',', '').replace('+', '').replace(' PLN', '')) for row in hedge_plan)
-        coverage_achieved = total_planned / exposure_amount * 100
+        coverage_achieved = total_planned / volume * 100
         avg_rate = sum(float(row['Kurs']) * float(row['Kwota EUR'].replace(',', '')) for row in hedge_plan) / total_planned
         
         col1, col2, col3, col4 = st.columns(4)
@@ -1316,10 +1323,9 @@ def create_client_hedging_advisor():
             st.markdown(f"""
             <div class="metric-card">
                 <h4>🎯 Charakterystyka Strategii</h4>
-                <p><strong>Profil ryzyka:</strong> {risk_tolerance}</p>
-                <p><strong>Max transakcja:</strong> €{max_single_trade:,.0f} ({current_risk['max_single_trade']:.0%} ekspozycji)</p>
+                <p><strong>Max transakcja:</strong> €{max_single_trade:,.0f} (25% ekspozycji)</p>
                 <p><strong>Liczba transakcji:</strong> {len(hedge_plan)}</p>
-                <p><strong>Horyzont:</strong> {hedge_horizon} miesięcy</p>
+                <p><strong>Data rozliczenia:</strong> {settlement_date.strftime('%d.%m.%Y')}</p>
                 <p><strong>Średni tenor:</strong> {sum(p['tenor_months'] for p in available_tenors[:len(hedge_plan)]) / len(hedge_plan):.1f} miesięcy</p>
             </div>
             """, unsafe_allow_html=True)
@@ -1339,8 +1345,7 @@ def create_client_hedging_advisor():
                 <p><strong>Zmienność kursów:</strong> {rate_volatility:.4f}</p>
                 <p><strong>Ryzyko timeline:</strong> {timeline_risk}</p>
                 <p><strong>Koncentracja:</strong> {'Rozproszona' if len(hedge_plan) >= 4 else 'Skoncentrowana'}</p>
-                <p><strong>Bufor zmienności:</strong> {current_risk['volatility_buffer']}x</p>
-                <p><strong>Elastyczność:</strong> {config['window_days']} dni na transakcję</p>
+                <p><strong>Elastyczność:</strong> {window_days} dni na transakcję</p>
             </div>
             """, unsafe_allow_html=True)
         
