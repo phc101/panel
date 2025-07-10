@@ -1188,7 +1188,53 @@ def create_client_hedging_advisor():
                     help="Łączna wycena do rynku"
                 )
     else:
-        st.info("📋 Brak kontraktów. Dodaj pierwszy kontrakt Forward Elastyczny.")transactions[available_columns]
+        st.info("📋 Brak kontraktów. Dodaj pierwszy kontrakt Forward Elastyczny.")
+    
+    # Add a simple chart showing forward curve
+    st.markdown("---")
+    st.subheader("📈 Krzywa Forward EUR/PLN")
+    
+    if st.session_state.dealer_pricing_data:
+        tenors_list = [p['tenor_name'] for p in st.session_state.dealer_pricing_data]
+        forward_rates = [p['client_rate'] for p in st.session_state.dealer_pricing_data]
+        spot_rates = [config['spot_rate']] * len(tenors_list)
+        
+        fig = go.Figure()
+        
+        # Spot line
+        fig.add_trace(
+            go.Scatter(
+                x=tenors_list,
+                y=spot_rates,
+                mode='lines',
+                name=f'Kurs spot ({config["spot_rate"]:.4f})',
+                line=dict(color='red', width=2, dash='dash'),
+                hovertemplate='Spot: %{y:.4f}<extra></extra>'
+            )
+        )
+        
+        # Forward rates
+        fig.add_trace(
+            go.Scatter(
+                x=tenors_list,
+                y=forward_rates,
+                mode='lines+markers',
+                name='Kursy terminowe',
+                line=dict(color='#2e68a5', width=3),
+                marker=dict(size=10, color='#2e68a5'),
+                hovertemplate='%{x}: %{y:.4f}<extra></extra>'
+            )
+        )
+        
+        fig.update_layout(
+            title="Dostępne kursy terminowe vs kurs spot",
+            xaxis_title="Tenor",
+            yaxis_title="Kurs EUR/PLN",
+            height=400,
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
         
         # Color coding for transactions
         def highlight_transactions(row):
