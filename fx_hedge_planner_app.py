@@ -899,340 +899,296 @@ def create_client_hedging_advisor():
     </div>
     """, unsafe_allow_html=True)
     
-    # Client config
-    st.subheader("⚙️ Parametry Zabezpieczenia")
+    # Professional transaction interface like the bank example
+    st.markdown("---")
+    st.subheader("💱 Nowa Transakcja Forward Elastyczny")
     
-    col1, col2, col3 = st.columns(3)
+    # Transaction direction (like the bank interface)
+    col1, col2, col3 = st.columns([1, 1, 2])
     
     with col1:
-        exposure_amount = st.number_input(
-            "Kwota EUR:",
+        st.markdown("**SPRZEDAJ**")
+        sell_currency = st.selectbox("", ["EUR"], key="sell_curr", help="Waluta sprzedaży")
+    
+    with col2:
+        st.markdown("**KUP**")
+        buy_currency = st.selectbox("", ["PLN"], key="buy_curr", help="Waluta zakupu")
+    
+    with col3:
+        st.markdown("**CAŁKOWITY WOLUMEN**")
+        volume = st.number_input(
+            "",
             value=1_000_000,
             min_value=10_000,
             max_value=50_000_000,
             step=10_000,
-            format="%d"
+            format="%d",
+            help="Kwota w EUR"
         )
     
-    with col2:
-        show_details = st.checkbox("Pokaż szczegóły", value=False)
+    # Date selection with timeline (similar to bank interface)
+    st.markdown("### 📅 Wybór Terminów Wykonania")
     
-    with col3:
-        st.info(f"💼 Okno: **{config['window_days']} dni**")
-    
-    st.markdown("---")
-    st.subheader("💱 Dostępne Kursy Terminowe")
-    
-    # Process rates
-    client_rates_data = []
-    
-    for pricing in st.session_state.dealer_pricing_data:
-        client_rate = pricing['client_rate']
-        spot_rate = config['spot_rate']
-        rate_advantage = ((client_rate - spot_rate) / spot_rate) * 100
-        
-        pln_amount_forward = client_rate * exposure_amount
-        pln_amount_spot = spot_rate * exposure_amount
-        additional_pln = pln_amount_forward - pln_amount_spot
-        
-        if rate_advantage > 0.5:
-            recommendation = "🟢 Doskonały"
-            rec_color = "#d4edda"
-        elif rate_advantage > 0.2:
-            recommendation = "🟡 Dobry"
-            rec_color = "#fff3cd"
-        elif rate_advantage > 0:
-            recommendation = "🟠 Akceptowalny"
-            rec_color = "#ffeaa7"
-        else:
-            recommendation = "🔴 Rozważ spot"
-            rec_color = "#f8d7da"
-        
-        row_data = {
-            "Tenor": pricing['tenor_name'],
-            "Kurs terminowy": f"{client_rate:.4f}",
-            "vs Spot": f"{rate_advantage:+.2f}%",
-            "Kwota PLN": f"{pln_amount_forward:,.0f}",
-            "Dodatkowy PLN": f"{additional_pln:+,.0f}" if additional_pln != 0 else "0",
-            "Rekomendacja": recommendation,
-            "rec_color": rec_color
-        }
-        
-        if show_details:
-            row_data.update({
-                "Okno od": pricing['okno_od'],
-                "Rozliczenie do": pricing['rozliczenie_do']
-            })
-        
-        client_rates_data.append(row_data)
-    
-    # Display table
-    if client_rates_data:
-        df_client_rates = pd.DataFrame(client_rates_data)
-        
-        def highlight_recommendations(row):
-            color = row.get('rec_color', '#ffffff')
-            return [f'background-color: {color}'] * len(row)
-        
-        display_df = df_client_rates.drop('rec_color', axis=1, errors='ignore')
-        styled_df = display_df.style.apply(highlight_recommendations, axis=1)
-        
-        st.dataframe(styled_df, use_container_width=True, height=350, hide_index=True)
-        
-        # Summary
-        st.markdown("---")
-        st.subheader("📊 Podsumowanie Strategii")
-        
-        num_forwards = len(client_rates_data)
-        avg_client_rate = sum(float(data["Kurs terminowy"]) for data in client_rates_data) / num_forwards
-        avg_benefit_pct = sum(float(data["vs Spot"].rstrip('%')) for data in client_rates_data) / num_forwards
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="client-summary">
-                <h4 style="margin: 0; color: #2e68a5;">Średni Kurs</h4>
-                <h2 style="margin: 0; color: #2c3e50;">{avg_client_rate:.4f}</h2>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="client-summary">
-                <h4 style="margin: 0; color: #2e68a5;">Średnia Korzyść</h4>
-                <h2 style="margin: 0; color: #2c3e50;">{avg_benefit_pct:+.2f}%</h2>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            total_additional_pln = sum(float(data["Dodatkowy PLN"].replace(',', '').replace('+', '')) for data in client_rates_data if data["Dodatkowy PLN"] != "0")
-            st.markdown(f"""
-            <div class="client-summary">
-                <h4 style="margin: 0; color: #2e68a5;">Łączna Korzyść</h4>
-                <h2 style="margin: 0; color: #2c3e50;">{total_additional_pln:+,.0f} PLN</h2>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Chart visualization
-        st.markdown("---")
-        st.subheader("📈 Porównanie Wizualne")
-        
-        tenors_list = [data["Tenor"] for data in client_rates_data]
-        forward_rates = [float(data["Kurs terminowy"]) for data in client_rates_data]
-        spot_rates = [config['spot_rate']] * len(tenors_list)
-        
-        fig = go.Figure()
-        
-        # Spot line
-        fig.add_trace(
-            go.Scatter(
-                x=tenors_list,
-                y=spot_rates,
-                mode='lines',
-                name=f'Kurs spot ({config["spot_rate"]:.4f})',
-                line=dict(color='red', width=2, dash='dash'),
-                hovertemplate='Spot: %{y:.4f}<extra></extra>'
-            )
-        )
-        
-        # Forward rates
-        fig.add_trace(
-            go.Scatter(
-                x=tenors_list,
-                y=forward_rates,
-                mode='lines+markers',
-                name='Kursy terminowe',
-                line=dict(color='#2e68a5', width=3),
-                marker=dict(size=10, color='#2e68a5'),
-                hovertemplate='%{x}: %{y:.4f}<extra></extra>'
-            )
-        )
-        
-        # Benefits bars
-        benefits = [(float(data["Kurs terminowy"]) - config['spot_rate']) * exposure_amount for data in client_rates_data]
-        
-        fig.add_trace(
-            go.Bar(
-                x=tenors_list,
-                y=benefits,
-                name='Korzyść PLN vs Spot',
-                yaxis='y2',
-                marker_color='lightblue',
-                opacity=0.7,
-                hovertemplate='%{x}: %{y:,.0f} PLN<extra></extra>'
-            )
-        )
-        
-        fig.update_layout(
-            title="Kursy terminowe vs kurs spot + korzyść w PLN",
-            xaxis_title="Tenor",
-            yaxis_title="Kurs EUR/PLN",
-            yaxis2=dict(
-                title="Korzyść (PLN)",
-                overlaying='y',
-                side='right',
-                showgrid=False
-            ),
-            height=500,
-            hovermode='x unified'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Hedge planning section
-    st.markdown("---")
-    st.subheader("📅 Planowanie Strategii Hedgingu")
-    
-    # Hedge planner configuration
+    # Professional date picker
     col1, col2, col3 = st.columns(3)
     
     with col1:
         settlement_date = st.date_input(
-            "Data rozliczenia przepływu:",
+            "**Data pierwszego wykonania:**",
             value=(datetime.now() + timedelta(days=90)).date(),
             min_value=datetime.now().date(),
             max_value=(datetime.now() + timedelta(days=730)).date(),
-            help="Wybierz datę rozliczenia dla pojedynczego przepływu"
+            help="Data rozliczenia transakcji"
         )
     
     with col2:
-        volume = st.number_input(
-            "Wolumen (EUR):",
-            value=250_000,
-            min_value=10_000,
-            max_value=50_000_000,
-            step=10_000,
-            format="%d",
-            help="Wolumen dla pojedynczej transakcji"
-        )
-    
-    with col3:
         window_days = st.number_input(
-            "Długość okna (dni):",
+            "**Długość okna (dni):**",
             value=config['window_days'],
             min_value=30,
             max_value=365,
             step=5,
-            help="Okres elastyczności dla każdej transakcji"
+            help="Okres elastyczności wykonania"
         )
     
-    # Window opening date - fix the date logic
-    today = datetime.now().date()
-    settlement_date_obj = settlement_date
+    with col3:
+        execution_type = st.selectbox(
+            "**Typ wykonania:**",
+            ["Forward Elastyczny", "Forward Standardowy", "Window Forward"],
+            help="Rodzaj kontraktu terminowego"
+        )
     
-    # Calculate safe max date for window opening
-    max_window_open = settlement_date_obj - timedelta(days=window_days)
-    if max_window_open <= today:
-        max_window_open = today + timedelta(days=1)
+    # Calculate and display rates
+    settlement_datetime = datetime.combine(settlement_date, datetime.min.time())
+    today_datetime = datetime.now()
+    days_to_settlement = (settlement_datetime - today_datetime).days
     
-    # Calculate safe default value
-    default_window_open = today + timedelta(days=30)
-    if default_window_open > max_window_open:
-        default_window_open = max_window_open
-    
-    window_open_date = st.date_input(
-        "Data otwarcia okna:",
-        value=default_window_open,
-        min_value=today,
-        max_value=max_window_open,
-        help="Wybierz datę rozpoczęcia okna wykonania dla tej transakcji"
+    # Calculate forward rate for this specific date
+    calculator = APIIntegratedForwardCalculator(FREDAPIClient())
+    theoretical = calculator.calculate_theoretical_forward_points(
+        config['spot_rate'], 
+        config['pl_yield'], 
+        config['de_yield'], 
+        days_to_settlement
     )
     
-    # Add transaction button
-    if st.button("➕ Dodaj Transakcję", type="primary", use_container_width=True):
-        # Calculate days to settlement
-        settlement_datetime = datetime.combine(settlement_date, datetime.min.time())
-        today_datetime = datetime.now()
-        days_to_settlement = (settlement_datetime - today_datetime).days
-        
-        # Calculate forward points based on actual days
-        config = st.session_state.dealer_config
-        calculator = APIIntegratedForwardCalculator(FREDAPIClient())
-        
-        # Calculate theoretical forward for this specific settlement date
-        theoretical = calculator.calculate_theoretical_forward_points(
-            config['spot_rate'], 
-            config['pl_yield'], 
-            config['de_yield'], 
-            days_to_settlement
-        )
-        
-        forward_points = theoretical['forward_points']
-        
-        # Calculate swap risk for this specific window length
-        tenor_window_swap_risk = abs(forward_points) * config['volatility_factor'] * np.sqrt(window_days / 90)
-        tenor_window_swap_risk = max(tenor_window_swap_risk, 0.015)
-        
-        # Calculate client rate for this specific configuration
-        calculator.points_factor = config['points_factor']
-        calculator.risk_factor = config['risk_factor']
-        
-        rates_result = calculator.calculate_professional_rates(
-            config['spot_rate'], 
-            forward_points, 
-            tenor_window_swap_risk, 
-            config['minimum_profit_floor']
-        )
-        
-        client_rate = rates_result['fwd_client']
-        
+    forward_points = theoretical['forward_points']
+    tenor_window_swap_risk = abs(forward_points) * config['volatility_factor'] * np.sqrt(window_days / 90)
+    tenor_window_swap_risk = max(tenor_window_swap_risk, 0.015)
+    
+    calculator.points_factor = config['points_factor']
+    calculator.risk_factor = config['risk_factor']
+    
+    rates_result = calculator.calculate_professional_rates(
+        config['spot_rate'], 
+        forward_points, 
+        tenor_window_swap_risk, 
+        config['minimum_profit_floor']
+    )
+    
+    client_rate = rates_result['fwd_client']
+    
+    # Professional rate display
+    st.markdown("### 💰 Wycena Transakcji")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="client-summary">
+            <h4 style="margin: 0; color: #2e68a5;">Kurs Zabezpieczenia</h4>
+            <h2 style="margin: 0; color: #2c3e50;">{client_rate:.4f}</h2>
+            <p style="margin: 0; color: #666;">EUR/PLN</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="client-summary">
+            <h4 style="margin: 0; color: #2e68a5;">Kurs Końcowy</h4>
+            <h2 style="margin: 0; color: #2c3e50;">{client_rate:.4f}</h2>
+            <p style="margin: 0; color: #666;">Gwarantowany</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        pln_amount = client_rate * volume
+        st.markdown(f"""
+        <div class="client-summary">
+            <h4 style="margin: 0; color: #2e68a5;">Kwota PLN</h4>
+            <h2 style="margin: 0; color: #2c3e50;">{pln_amount:,.0f}</h2>
+            <p style="margin: 0; color: #666;">Do otrzymania</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        rate_advantage = ((client_rate - config['spot_rate']) / config['spot_rate']) * 100
+        advantage_pln = (client_rate - config['spot_rate']) * volume
+        color = "#28a745" if rate_advantage > 0 else "#dc3545"
+        st.markdown(f"""
+        <div class="client-summary">
+            <h4 style="margin: 0; color: #2e68a5;">Wycena do Rynku</h4>
+            <h2 style="margin: 0; color: {color};">{advantage_pln:+,.0f} PLN</h2>
+            <p style="margin: 0; color: #666;">{rate_advantage:+.2f}% vs spot</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Professional add transaction button
+    st.markdown("---")
+    if st.button("➕ Dodaj elastyczny kontrakt forwardowy", type="primary", use_container_width=True):
         # Calculate execution window
         execution_window_end = settlement_datetime
         execution_window_start = execution_window_end - timedelta(days=window_days)
         
-        # Determine tenor name based on days
+        # Determine tenor name
         months_approx = days_to_settlement / 30
         if months_approx < 1:
             tenor_name = f"{days_to_settlement} dni"
         else:
-            tenor_name = f"{months_approx:.1f} miesiąca"
+            tenor_name = f"{months_approx:.0f}M+"
         
         # Add to transactions list
         transaction_id = len(st.session_state.hedge_transactions) + 1
         st.session_state.hedge_transactions.append({
-            "ID": transaction_id,
-            "Data otwarcia okna": window_open_date.strftime("%d.%m.%Y"),
-            "Tenor": tenor_name,
-            "Dni do rozliczenia": days_to_settlement,
-            "Długość okna": window_days,
-            "Kwota EUR": f"{volume:,.0f}",
-            "Forward Points": f"{forward_points:.4f}",
-            "Swap Risk": f"{tenor_window_swap_risk:.4f}",
-            "Kurs": f"{client_rate:.4f}",
-            "Okno wykonania": f"{execution_window_start.strftime('%d.%m.%Y')} - {execution_window_end.strftime('%d.%m.%Y')}",
-            "Korzyść vs Spot": f"{((client_rate - config['spot_rate']) / config['spot_rate'] * 100):+.2f}%",
-            "Profit PLN": f"{(client_rate - config['spot_rate']) * volume:+,.0f}"
+            "nr": transaction_id,
+            "typ": "Forward elastyczny",
+            "pierwsze_wykonanie": settlement_date.strftime("%d %b %Y"),
+            "data_wygasniecia": execution_window_end.strftime("%d %b %Y"),
+            "kwota_sprzedazy": f"(EUR) {volume:,.0f}",
+            "kwota_zakupu": f"(PLN) {pln_amount:,.0f}",
+            "kurs_zabezpieczenia": f"{client_rate:.4f}",
+            "kurs_koncowy": f"{client_rate:.4f}",
+            "wycena_do_rynku": f"{advantage_pln:+,.0f} PLN" if advantage_pln != 0 else "0,00 PLN",
+            "status": "PLANOWANE",
+            "tenor": tenor_name,
+            "window_days": window_days,
+            "days_to_settlement": days_to_settlement
         })
-        st.success(f"✅ Transakcja dodana! Tenor: {tenor_name} ({days_to_settlement} dni), Okno: {window_days} dni")
+        st.success(f"✅ Dodano kontrakt Forward Elastyczny na {volume:,.0f} EUR")
         st.rerun()
     
-    # Display transactions list
+    # Professional transaction list (like bank interface)
     if st.session_state.hedge_transactions:
-        st.markdown("### 📋 Lista Transakcji")
+        st.markdown("---")
+        st.markdown("## Lista transakcji")
         
-        # Show detailed table with calculation breakdown
-        col1, col2 = st.columns([3, 1])
+        # Summary header like in bank interface
+        total_volume_eur = sum(
+            float(str(t['kwota_sprzedazy']).replace('(EUR) ', '').replace(',', '')) 
+            for t in st.session_state.hedge_transactions
+        )
         
-        with col2:
-            show_calculation_details = st.checkbox("Pokaż szczegóły kalkulacji", value=False)
+        st.markdown(f"""
+        <div style="background: #f8f9fa; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #28a745; margin: 1rem 0;">
+            <h4 style="margin: 0; color: #28a745;">100% WOLUMENU ZABEZPIECZONE W FORWARD ELASTYCZNY</h4>
+            <p style="margin: 0.5rem 0 0 0; color: #666;">
+                Usługa Elastycznych kontraktów terminowych umożliwia korzystanie z zalet kontraktów terminowych, 
+                jednocześnie zapewniając elastyczność w terminach płatności. Dzięki Elastycznym kontraktom terminowym 
+                można <strong>uzyskać korzystny kurs</strong> walutowy po kilku dni od ustalenia kursu i wykorzystywać je do jednej lub kilku przyszłych płatności z elastycznymi terminami.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        df_hedge_transactions = pd.DataFrame(st.session_state.hedge_transactions)
+        # Professional table header
+        st.markdown("### Otwarte i zaplanowane")
         
-        # Prepare display dataframe
-        if show_calculation_details:
-            display_columns = [
-                "ID", "Tenor", "Dni do rozliczenia", "Długość okna", "Kwota EUR", 
-                "Forward Points", "Swap Risk", "Kurs", "Korzyść vs Spot", "Profit PLN"
-            ]
-        else:
-            display_columns = [
-                "ID", "Tenor", "Kwota EUR", "Kurs", "Okno wykonania", "Korzyść vs Spot", "Profit PLN"
-            ]
+        # Create professional table layout
+        transactions_data = []
         
-        # Filter columns that exist
-        available_columns = [col for col in display_columns if col in df_hedge_transactions.columns]
-        display_df = df_hedge_transactions[available_columns]
+        for i, transaction in enumerate(st.session_state.hedge_transactions, 1):
+            # Determine status styling
+            if transaction['status'] == 'PLANOWANE':
+                status_style = 'background-color: #007bff; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;'
+            else:
+                status_style = 'background-color: #28a745; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;'
+            
+            transactions_data.append({
+                "#": i,
+                "TYP": transaction['typ'],
+                "PIERWSZE WYKONYSTANIE": transaction['pierwsze_wykonanie'],
+                "DATA WYGAŚNIĘCIA": transaction['data_wygasniecia'],
+                "KWOTA SPRZEDAŻY": transaction['kwota_sprzedazy'],
+                "KWOTA ZAKUPU": transaction['kwota_zakupu'],
+                "KURS ZABEZPIECZENIA": transaction['kurs_zabezpieczenia'],
+                "KURS KOŃCOWY": transaction['kurs_koncowy'],
+                "WYCENA DO RYNKU": transaction['wycena_do_rynku'],
+                "STATUS": transaction['status']
+            })
+        
+        if transactions_data:
+            df_transactions = pd.DataFrame(transactions_data)
+            
+            # Apply professional styling
+            def highlight_status(row):
+                colors = []
+                for val in row:
+                    if 'PLANOWANE' in str(val):
+                        colors.append('background-color: #e3f2fd')
+                    elif 'PLN' in str(val) and ('+' in str(val) or '-' in str(val)):
+                        if '+' in str(val):
+                            colors.append('background-color: #d4edda; color: #155724')
+                        else:
+                            colors.append('background-color: #f8d7da; color: #721c24')
+                    else:
+                        colors.append('')
+                return colors
+            
+            # Display the professional table
+            st.dataframe(
+                df_transactions.style.apply(highlight_status, axis=1),
+                use_container_width=True,
+                height=400,
+                hide_index=True
+            )
+            
+            # Professional summary metrics
+            st.markdown("### 📊 Podsumowanie Portfolio")
+            
+            total_pln = sum(
+                float(str(t['kwota_zakupu']).replace('(PLN) ', '').replace(',', ''))
+                for t in st.session_state.hedge_transactions
+            )
+            
+            avg_rate = total_pln / total_volume_eur if total_volume_eur > 0 else 0
+            
+            total_market_value = sum(
+                float(str(t['wycena_do_rynku']).replace(' PLN', '').replace(',', '').replace('+', '').replace('-', ''))
+                for t in st.session_state.hedge_transactions
+                if 'PLN' in str(t['wycena_do_rynku'])
+            )
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric(
+                    "Łączny Wolumen",
+                    f"€{total_volume_eur:,.0f}",
+                    help="Suma wszystkich kontraktów"
+                )
+            
+            with col2:
+                st.metric(
+                    "Średni Kurs",
+                    f"{avg_rate:.4f}",
+                    delta=f"{((avg_rate - config['spot_rate']) / config['spot_rate'] * 100):+.2f}% vs spot",
+                    help="Średnia ważona kursów zabezpieczenia"
+                )
+            
+            with col3:
+                st.metric(
+                    "Łączna Kwota PLN",
+                    f"{total_pln:,.0f} PLN",
+                    help="Suma PLN do otrzymania"
+                )
+            
+            with col4:
+                st.metric(
+                    "Wycena Portfolio",
+                    f"{total_market_value:+,.0f} PLN",
+                    help="Łączna wycena do rynku"
+                )
+    else:
+        st.info("📋 Brak kontraktów. Dodaj pierwszy kontrakt Forward Elastyczny.")transactions[available_columns]
         
         # Color coding for transactions
         def highlight_transactions(row):
