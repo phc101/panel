@@ -1090,9 +1090,9 @@ def create_client_hedging_advisor():
     with col1:
         settlement_date = st.date_input(
             "Data rozliczenia przepływu:",
-            value=datetime.now() + timedelta(days=90),
-            min_value=datetime.now(),
-            max_value=datetime.now() + timedelta(days=730),
+            value=(datetime.now() + timedelta(days=90)).date(),
+            min_value=datetime.now().date(),
+            max_value=(datetime.now() + timedelta(days=730)).date(),
             help="Wybierz datę rozliczenia dla pojedynczego przepływu"
         )
     
@@ -1117,12 +1117,25 @@ def create_client_hedging_advisor():
             help="Okres elastyczności dla każdej transakcji"
         )
     
-    # Window opening date
+    # Window opening date - fix the date logic
+    today = datetime.now().date()
+    settlement_date_obj = settlement_date
+    
+    # Calculate safe max date for window opening
+    max_window_open = settlement_date_obj - timedelta(days=window_days)
+    if max_window_open <= today:
+        max_window_open = today + timedelta(days=1)
+    
+    # Calculate safe default value
+    default_window_open = today + timedelta(days=30)
+    if default_window_open > max_window_open:
+        default_window_open = max_window_open
+    
     window_open_date = st.date_input(
         "Data otwarcia okna:",
-        value=datetime.now() + timedelta(days=30),
-        min_value=datetime.now(),
-        max_value=settlement_date - timedelta(days=window_days),
+        value=default_window_open,
+        min_value=today,
+        max_value=max_window_open,
         help="Wybierz datę rozpoczęcia okna wykonania dla tej transakcji"
     )
     
