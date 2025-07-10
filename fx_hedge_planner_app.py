@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,6 +5,8 @@ import plotly.graph_objects as go
 import requests
 from datetime import datetime, timedelta
 import math
+from scipy.stats import norm
+from math import comb
 
 # Page config
 st.set_page_config(
@@ -1013,7 +1014,7 @@ def create_client_hedging_advisor():
             </div>
             """, unsafe_allow_html=True)
         
-        # PIĘKNY NIEBIESKI WYKRES
+        # Chart visualization
         st.markdown("---")
         st.subheader("📈 Porównanie Wizualne")
         
@@ -1035,7 +1036,7 @@ def create_client_hedging_advisor():
             )
         )
         
-        # Forward rates - PIĘKNY NIEBIESKI
+        # Forward rates
         fig.add_trace(
             go.Scatter(
                 x=tenors_list,
@@ -1079,10 +1080,7 @@ def create_client_hedging_advisor():
         
         st.plotly_chart(fig, use_container_width=True)
     
-    # ============================================================================
-    # PLANOWANIE HEDGINGU
-    # ============================================================================
-    
+    # Hedge planning section
     st.markdown("---")
     st.subheader("📅 Planowanie Strategii Hedgingu")
     
@@ -1223,69 +1221,6 @@ def create_client_hedging_advisor():
                 f"{total_profit:+,.0f} PLN",
                 help="Suma korzyści vs pozostanie na spot"
             )
-        
-        # Risk analysis
-        st.markdown("### ⚖️ Analiza Ryzyka")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <h4>🎯 Charakterystyka Transakcji</h4>
-                <p><strong>Liczba transakcji:</strong> {len(st.session_state.hedge_transactions)}</p>
-                <p><strong>Średni tenor:</strong> {sum(p['tenor_months'] for p in st.session_state.dealer_pricing_data if p['tenor_name'] in [t['Tenor'] for t in st.session_state.hedge_transactions]) / len(st.session_state.hedge_transactions):.1f} miesięcy</p>
-                <p><strong>Elastyczność:</strong> {window_days} dni na transakcję</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            # Calculate risk metrics
-            plan_rates = [float(row['Kurs']) for row in st.session_state.hedge_transactions]
-            rate_volatility = np.std(plan_rates) if len(plan_rates) > 1 else 0
-            timeline_risk = "Niskie" if len(st.session_state.hedge_transactions) >= 6 else "Średnie" if len(st.session_state.hedge_transactions) >= 3 else "Wysokie"
-            
-            st.markdown(f"""
-            <div class="metric-card">
-                <h4>📈 Metryki Ryzyka</h4>
-                <p><strong>Zmienność kursów:</strong> {rate_volatility:.4f}</p>
-                <p><strong>Ryzyko timeline:</strong> {timeline_risk}</p>
-                <p><strong>Koncentracja:</strong> {'Rozproszona' if len(st.session_state.hedge_transactions) >= 4 else 'Skoncentrowana'}</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Execution calendar
-        st.markdown("### 📅 Kalendarz Wykonania")
-        
-        execution_data = []
-        for i, trade in enumerate(st.session_state.hedge_transactions):
-            execution_data.append({
-                "ID": trade['ID'],
-                "Data": trade['Data otwarcia okna'],
-                "Akcja": f"Hedge €{trade['Kwota EUR']} na {trade['Tenor']}",
-                "Okno": trade['Okno wykonania'],
-                "Status": "🟡 Planowana" if i < 3 else "🔵 Przyszła",
-                "Priorytet": "🔴 Wysoki" if i < 2 else "🟡 Średni" if i < 4 else "🟢 Niski"
-            })
-        
-        df_execution = pd.DataFrame(execution_data)
-        st.dataframe(df_execution, use_container_width=True, hide_index=True)
-        
-        # Action items
-        st.markdown("### ✅ Następne Kroki")
-        
-        next_actions = [
-            "📞 **Natychmiastowe:** Skontaktuj się z dealerem FX w celu potwierdzenia dostępności kursów",
-            "📋 **Do końca tygodnia:** Przygotuj dokumentację do pierwszych 2-3 transakcji",
-            "📊 **Monitoring:** Ustaw alerty na kursy EUR/PLN dla timing wykonania",
-            "🔄 **Miesięczny przegląd:** Ocena skuteczności i ewentualne korekty planu"
-        ]
-        if st.session_state.hedge_transactions:
-            next_actions.append(f"⏰ **Pierwsza transakcja:** {st.session_state.hedge_transactions[0]['Data otwarcia okna']} - {st.session_state.hedge_transactions[0]['Kwota EUR']} na tenor {st.session_state.hedge_transactions[0]['Tenor']}")
-        
-        for action in next_actions:
-            st.markdown(f"- {action}")
-    
     else:
         st.info("📋 Brak dodanych transakcji. Użyj przycisku 'Dodaj Transakcję' aby rozpocząć.")
 
@@ -1328,7 +1263,6 @@ def create_binomial_model_panel():
             mean_20_days = np.mean(last_20_rates)
             std_20_days = np.std(last_20_rates)
             
-            from scipy.stats import norm
             p_up_empirical = 1 - norm.cdf(current_spot, mean_20_days, std_20_days)
             p_down_empirical = 1 - p_up_empirical
             
@@ -1413,19 +1347,16 @@ def create_binomial_model_panel():
                 rate = spot_rate * (u ** ups) * (d ** downs)
                 tree[day][j] = rate
     
-    # Most probable path - PRAWDZIWA NAJCZĘSTSZA ŚCIEŻKA
+    # Most probable path
     most_probable_path = []
     for day in range(6):
         if day == 0:
             most_probable_path.append(0)
         else:
-            # Znajdź węzeł o najwyższym prawdopodobieństwie w tym dniu
             best_j = 0
             best_prob = 0
             
-            for j in range(day + 1):  # j może być od 0 do day
-                # Prawdopodobieństwo osiągnięcia węzła (j, day)
-                from math import comb
+            for j in range(day + 1):
                 if use_empirical:
                     node_prob = comb(day, j) * (p_up_empirical ** j) * (p_down_empirical ** (day - j))
                 else:
@@ -1436,10 +1367,6 @@ def create_binomial_model_panel():
                     best_j = j
             
             most_probable_path.append(best_j)
-            
-            # Debug info dla pierwszych 3 dni
-            if day <= 3:
-                st.write(f"Dzień {day}: najwyższe P = {best_prob:.4f} dla j={best_j} ({best_j} ruchów w górę, {day-best_j} w dół)")
     
     # Final prediction
     st.subheader("🎯 Prognoza Finalna")
@@ -1455,7 +1382,6 @@ def create_binomial_model_panel():
         st.metric("Prognoza (5 dni)", f"{final_predicted_rate:.4f}", delta=f"{change_pct:+.2f}%")
     
     with col2:
-        from math import comb
         if use_empirical:
             prob = comb(final_day, final_j) * (p_up_empirical ** final_j) * (p_down_empirical ** (final_day - final_j))
         else:
@@ -1469,7 +1395,7 @@ def create_binomial_model_panel():
         max_rate = max(final_rates)
         st.metric("Zakres", f"{min_rate:.4f} - {max_rate:.4f}")
     
-    # DRZEWO DWUMIANOWE WIZUALIZACJA
+    # Binomial tree visualization
     st.subheader("🌳 Drzewo Dwumianowe")
     
     fig = go.Figure()
@@ -1646,4 +1572,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
