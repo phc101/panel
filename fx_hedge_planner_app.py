@@ -1124,36 +1124,12 @@ def create_client_hedging_advisor():
                 "STATUS": status
             })
         
+        # Display table if we have data
         if transactions_data:
             df_transactions = pd.DataFrame(transactions_data)
             
-            # Safe styling function with error handling
-            def highlight_status(row):
-                try:
-                    colors = []
-                    for val in row:
-                        val_str = str(val)
-                        if 'PLANOWANE' in val_str:
-                            colors.append('background-color: #e3f2fd')
-                        elif 'PLN' in val_str and ('+' in val_str or '-' in val_str):
-                            if '+' in val_str:
-                                colors.append('background-color: #d4edda; color: #155724')
-                            else:
-                                colors.append('background-color: #f8d7da; color: #721c24')
-                        else:
-                            colors.append('')
-                    return colors
-                except Exception:
-                    # Return empty styling if any error occurs
-                    return [''] * len(row)
-            
-            # Display the professional table with safe styling
-            try:
-                styled_df = df_transactions.style.apply(highlight_status, axis=1)
-                st.dataframe(styled_df, use_container_width=True, height=400, hide_index=True)
-            except Exception:
-                # Fallback: display without styling if styling fails
-                st.dataframe(df_transactions, use_container_width=True, height=400, hide_index=True)
+            # Display the professional table without complex styling to avoid errors
+            st.dataframe(df_transactions, use_container_width=True, height=400, hide_index=True)
             
             # Professional summary metrics with safe calculations
             st.markdown("### 📊 Podsumowanie Portfolio")
