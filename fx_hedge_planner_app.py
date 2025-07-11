@@ -1,4 +1,858 @@
-import streamlit as st
+window_max_profit_per_eur = window_min_profit_per_eur + (pricing['swap_risk'] * hedging_savings_pct)
+            window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
+            
+            window_min_profit_total = window_min_profit_per_eur * nominal_amount
+            window_max_profit_total = window_max_profit_per_eur * nominal_amount
+            window_expected_profit_total = window_expected_profit_per_eur * nominal_amount
+            
+            portfolio_totals['total_min_profit'] += window_min_profit_total
+            portfolio_totals['total_max_profit'] += window_max_profit_total
+            portfolio_totals['total_expected_profit'] += window_expected_profit_total
+            portfolio_totals['total_notional'] += nominal_amount
+            portfolio_totals['total_points_to_window'] += pricing['forward_points'] * nominal_amount
+            portfolio_totals['total_swap_risk'] += pricing['swap_risk'] * nominal_amount
+            portfolio_totals['total_client_premium'] += (pricing['client_rate'] - spot_rate) * nominal_amount
+        
+        # Calculate percentage metrics
+        total_exposure_pln = spot_rate * portfolio_totals['total_notional']
+        min_profit_pct = (portfolio_totals['total_min_profit'] / total_exposure_pln) * 100
+        expected_profit_pct = (portfolio_totals['total_expected_profit'] / total_exposure_pln) * 100
+        max_profit_pct = (portfolio_totals['total_max_profit'] / total_exposure_pln) * 100
+        
+        # First row - PLN amounts
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "Portfolio Min Zysk", 
+                f"{portfolio_totals['total_min_profit']:,.0f} PLN",
+                help="Suma wszystkich gwarantowanych bank spreads"
+            )
+        
+        with col2:
+            st.metric(
+                "Portfolio Oczekiwany", 
+                f"{portfolio_totals['total_expected_profit']:,.0f} PLN",
+                help="Średnia scenariuszy min/max"
+            )
+        
+        with col3:
+            st.metric(
+                "Portfolio Max Zysk", 
+                f"{portfolio_totals['total_max_profit']:,.0f} PLN",
+                help="Suma bank spreads + oszczędności hedging"
+            )
+        
+        with col4:
+            st.metric(
+                "Zakres Zysku", 
+                f"{portfolio_totals['total_max_profit'] - portfolio_totals['total_min_profit']:,.0f} PLN",
+                help="Zmienność całego portfolio"
+            )
+        
+        # Second row - percentage metrics
+        st.markdown("### 📊 Marże Procentowe")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="profit-metric">
+                <h4 style="margin: 0; color: white;">Min Marża</h4>
+                <h2 style="margin: 0; color: white;">{min_profit_pct:.3f}%</h2>
+                <p style="margin: 0; color: #f8f9fa;">vs całkowita ekspozycja</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="profit-metric" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+                <h4 style="margin: 0; color: white;">Oczekiwana Marża</h4>
+                <h2 style="margin: 0; color: white;">{expected_profit_pct:.3f}%</h2>
+                <p style="margin: 0; color: #f8f9fa;">realistyczny scenariusz</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class="profit-metric" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <h4 style="margin: 0; color: white;">Max Marża</h4>
+                <h2 style="margin: 0; color: white;">{max_profit_pct:.3f}%</h2>
+                <p style="margin: 0; color: #f8f9fa;">optymistyczny scenariusz</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            margin_volatility = max_profit_pct - min_profit_pct
+            st.markdown(f"""
+            <div class="profit-metric" style="background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%); color: #2d3436;">
+                <h4 style="margin: 0;">Volatility Marży</h4>
+                <h2 style="margin: 0;">{margin_volatility:.3f}pp</h2>
+                <p style="margin: 0;">zakres zmienności</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Additional portfolio metrics
+        st.markdown("### ⚙️ Parametry Portfolio")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        portfolio_avg_points = portfolio_totals['total_points_to_window'] / portfolio_totals['total_notional']
+        portfolio_avg_swap_risk = portfolio_totals['total_swap_risk'] / portfolio_totals['total_notional']
+        portfolio_avg_client_rate = spot_rate + portfolio_avg_points * points_factor - portfolio_avg_swap_risk * risk_factor
+        
+        with col1:
+            st.metric(
+                "Średnie Punkty", 
+                f"{portfolio_avg_points:.4f}",
+                help="Średnia ważona punktów terminowych"
+            )
+        
+        with col2:
+            st.metric(
+                "Średnie Ryzyko Swap", 
+                f"{portfolio_avg_swap_risk:.4f}",
+                help=f"Średnie ryzyko swap dla {window_days}-dniowych okien"
+            )
+        
+        with col3:
+            st.metric(
+                "Średni Kurs Klienta", 
+                f"{portfolio_avg_client_rate:.4f}",
+                help="Średni kurs klienta w portfolio"
+            )
+        
+        with col4:
+            risk_reward_ratio = portfolio_totals['total_max_profit'] / portfolio_totals['total_min_profit'] if portfolio_totals['total_min_profit'] > 0 else float('inf')
+            st.metric(
+                "Risk/Reward", 
+                f"{risk_reward_ratio:.1f}x",
+                help="Stosunek max/min zysku"
+            )
+        
+        # Deal summary
+        st.markdown("---")
+        st.subheader("📋 Podsumowanie Transakcji")
+        
+        with st.container():
+            summary_col1, summary_col2 = st.columns([1, 1])
+            
+            with summary_col1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>💼 Strategia Portfolio Window Forward</h4>
+                    <p><strong>Strategia:</strong> 12 Window Forwards z {window_days}-dniową elastycznością</p>
+                    <p><strong>Całkowity Nominał:</strong> €{portfolio_totals['total_notional']:,}</p>
+                    <p><strong>Kurs Spot:</strong> {spot_rate:.4f} ({spot_source})</p>
+                    <p><strong>Średni Kurs Klienta:</strong> {portfolio_avg_client_rate:.4f}</p>
+                    <p><strong>Points Factor:</strong> {points_factor:.1%}</p>
+                    <p><strong>Risk Factor:</strong> {risk_factor:.1%}</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with summary_col2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>💰 Podsumowanie Finansowe</h4>
+                    <p><strong>Oczekiwany Zysk:</strong> {portfolio_totals['total_expected_profit']:,.0f} PLN ({expected_profit_pct:.3f}%)</p>
+                    <p><strong>Portfolio Minimum:</strong> {portfolio_totals['total_min_profit']:,.0f} PLN ({min_profit_pct:.3f}%)</p>
+                    <p><strong>Portfolio Maximum:</strong> {portfolio_totals['total_max_profit']:,.0f} PLN ({max_profit_pct:.3f}%)</p>
+                    <p><strong>Współczynnik Zmienności:</strong> {volatility_factor:.2f}</p>
+                    <p><strong>Oszczędności Hedging:</strong> {hedging_savings_pct:.0%}</p>
+                    <p><strong>Dźwignia:</strong> {leverage}x</p>
+                </div>
+                """, unsafe_allow_html=True)
+    else:
+        st.info("👆 Kliknij 'Zaktualizuj Wycenę' aby wygenerować kursy")
+
+def create_client_hedging_advisor():
+    st.header("🛡️ Panel Zabezpieczeń EUR/PLN")
+    st.markdown("*Kursy synchronizowane z panelem dealerskim*")
+    
+    if not st.session_state.dealer_pricing_data:
+        st.warning("⚠️ Brak wyceny dealerskiej! Przejdź do panelu dealerskiego.")
+        forex_data = get_eur_pln_rate()
+        st.info(f"Aktualny kurs EUR/PLN: {forex_data['rate']:.4f}")
+        return
+    
+    config = st.session_state.dealer_config
+    
+    st.markdown(f"""
+    <div class="pricing-sync">
+        <h4 style="margin: 0;">✅ Wycena Zsynchronizowana</h4>
+        <p style="margin: 0;">Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} dni</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Professional transaction interface
+    st.markdown("---")
+    st.subheader("💱 Nowa Transakcja Forward Elastyczny")
+    
+    # Transaction direction
+    col1, col2, col3 = st.columns([1, 1, 2])
+    
+    with col1:
+        st.markdown("**SPRZEDAJ**")
+        sell_currency = st.selectbox("", ["EUR"], key="sell_curr", help="Waluta sprzedaży")
+    
+    with col2:
+        st.markdown("**KUP**")
+        buy_currency = st.selectbox("", ["PLN"], key="buy_curr", help="Waluta zakupu")
+    
+    with col3:
+        st.markdown("**CAŁKOWITY WOLUMEN**")
+        volume = st.number_input(
+            "",
+            value=1_000_000,
+            min_value=10_000,
+            max_value=50_000_000,
+            step=10_000,
+            format="%d",
+            help="Kwota w EUR"
+        )
+    
+    # Date selection
+    st.markdown("### 📅 Wybór Terminów Wykonania")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        settlement_date = st.date_input(
+            "**Data pierwszego wykonania:**",
+            value=(datetime.now() + timedelta(days=90)).date(),
+            min_value=datetime.now().date(),
+            max_value=(datetime.now() + timedelta(days=730)).date(),
+            help="Data rozliczenia transakcji"
+        )
+    
+    with col2:
+        window_days = st.number_input(
+            "**Długość okna (dni):**",
+            value=config['window_days'],
+            min_value=30,
+            max_value=365,
+            step=5,
+            help="Okres elastyczności wykonania"
+        )
+    
+    with col3:
+        execution_type = st.selectbox(
+            "**Typ wykonania:**",
+            ["Forward Elastyczny", "Forward Standardowy", "Window Forward"],
+            help="Rodzaj kontraktu terminowego"
+        )
+    
+    # Calculate and display rates
+    settlement_datetime = datetime.combine(settlement_date, datetime.min.time())
+    today_datetime = datetime.now()
+    days_to_settlement = (settlement_datetime - today_datetime).days
+    
+    # Calculate forward rate for this specific date
+    calculator = APIIntegratedForwardCalculator(FREDAPIClient())
+    theoretical = calculator.calculate_theoretical_forward_points(
+        config['spot_rate'], 
+        config['pl_yield'], 
+        config['de_yield'], 
+        days_to_settlement
+    )
+    
+    forward_points = theoretical['forward_points']
+    tenor_window_swap_risk = abs(forward_points) * config['volatility_factor'] * np.sqrt(window_days / 90)
+    tenor_window_swap_risk = max(tenor_window_swap_risk, 0.015)
+    
+    calculator.points_factor = config['points_factor']
+    calculator.risk_factor = config['risk_factor']
+    
+    rates_result = calculator.calculate_professional_rates(
+        config['spot_rate'], 
+        forward_points, 
+        tenor_window_swap_risk, 
+        config['minimum_profit_floor']
+    )
+    
+    client_rate = rates_result['fwd_client']
+    
+    # Professional rate display
+    st.markdown("### 💰 Wycena Transakcji")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="client-summary">
+            <h4 style="margin: 0; color: #2e68a5;">Kurs Zabezpieczenia</h4>
+            <h2 style="margin: 0; color: #2c3e50;">{client_rate:.4f}</h2>
+            <p style="margin: 0; color: #666;">EUR/PLN</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="client-summary">
+            <h4 style="margin: 0; color: #2e68a5;">Kurs Końcowy</h4>
+            <h2 style="margin: 0; color: #2c3e50;">{client_rate:.4f}</h2>
+            <p style="margin: 0; color: #666;">Gwarantowany</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        pln_amount = client_rate * volume
+        st.markdown(f"""
+        <div class="client-summary">
+            <h4 style="margin: 0; color: #2e68a5;">Kwota PLN</h4>
+            <h2 style="margin: 0; color: #2c3e50;">{pln_amount:,.0f}</h2>
+            <p style="margin: 0; color: #666;">Do otrzymania</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        rate_advantage = ((client_rate - config['spot_rate']) / config['spot_rate']) * 100
+        advantage_pln = (client_rate - config['spot_rate']) * volume
+        color = "#28a745" if rate_advantage > 0 else "#dc3545"
+        st.markdown(f"""
+        <div class="client-summary">
+            <h4 style="margin: 0; color: #2e68a5;">Wycena do Rynku</h4>
+            <h2 style="margin: 0; color: {color};">{advantage_pln:+,.0f} PLN</h2>
+            <p style="margin: 0; color: #666;">{rate_advantage:+.2f}% vs spot</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Add transaction button
+    st.markdown("---")
+    if st.button("➕ Dodaj elastyczny kontrakt forwardowy", type="primary", use_container_width=True):
+        # Calculate execution window
+        execution_window_end = settlement_datetime
+        execution_window_start = execution_window_end - timedelta(days=window_days)
+        
+        # Determine tenor name
+        months_approx = days_to_settlement / 30
+        if months_approx < 1:
+            tenor_name = f"{days_to_settlement} dni"
+        else:
+            tenor_name = f"{months_approx:.0f}M+"
+        
+        # Add to transactions list
+        transaction_id = len(st.session_state.hedge_transactions) + 1
+        st.session_state.hedge_transactions.append({
+            "nr": transaction_id,
+            "typ": "Forward elastyczny",
+            "pierwsze_wykonanie": settlement_date.strftime("%d %b %Y"),
+            "data_wygasniecia": execution_window_end.strftime("%d %b %Y"),
+            "kwota_sprzedazy": f"(EUR) {volume:,.0f}",
+            "kwota_zakupu": f"(PLN) {pln_amount:,.0f}",
+            "kurs_zabezpieczenia": f"{client_rate:.4f}",
+            "kurs_koncowy": f"{client_rate:.4f}",
+            "wycena_do_rynku": f"{advantage_pln:+,.0f} PLN" if advantage_pln != 0 else "0,00 PLN",
+            "status": "PLANOWANE"
+        })
+        st.success(f"✅ Dodano kontrakt Forward Elastyczny na {volume:,.0f} EUR")
+        st.rerun()
+    
+    # Professional transaction list
+    if st.session_state.hedge_transactions:
+        st.markdown("---")
+        st.markdown("## Lista transakcji")
+        
+        # Summary header
+        total_volume_eur = 0
+        try:
+            for t in st.session_state.hedge_transactions:
+                kwota_str = str(t.get('kwota_sprzedazy', '0')).replace('(EUR) ', '').replace(',', '')
+                if kwota_str and kwota_str != 'nan':
+                    total_volume_eur += float(kwota_str)
+        except:
+            total_volume_eur = 0
+        
+        st.markdown(f"""
+        <div style="background: #f8f9fa; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #28a745; margin: 1rem 0;">
+            <h4 style="margin: 0; color: #28a745;">100% WOLUMENU ZABEZPIECZONE W FORWARD ELASTYCZNY</h4>
+            <p style="margin: 0.5rem 0 0 0; color: #666;">
+                Usługa Elastycznych kontraktów terminowych umożliwia korzystanie z zalet kontraktów terminowych, 
+                jednocześnie zapewniając elastyczność w terminach płatności.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Professional table header
+        st.markdown("### Otwarte i zaplanowane")
+        
+        # Create table data
+        transactions_data = []
+        
+        for i, transaction in enumerate(st.session_state.hedge_transactions, 1):
+            transactions_data.append({
+                "#": i,
+                "TYP": transaction.get('typ', 'Forward elastyczny'),
+                "PIERWSZE WYKONANIE": transaction.get('pierwsze_wykonanie', 'Brak daty'),
+                "DATA WYGAŚNIĘCIA": transaction.get('data_wygasniecia', 'Brak daty'),
+                "KWOTA SPRZEDAŻY": transaction.get('kwota_sprzedazy', '(EUR) 0'),
+                "KWOTA ZAKUPU": transaction.get('kwota_zakupu', '(PLN) 0'),
+                "KURS ZABEZPIECZENIA": transaction.get('kurs_zabezpieczenia', '0.0000'),
+                "KURS KOŃCOWY": transaction.get('kurs_koncowy', '0.0000'),
+                "WYCENA DO RYNKU": transaction.get('wycena_do_rynku', '0 PLN'),
+                "STATUS": transaction.get('status', 'PLANOWANE')
+            })
+        
+        # Display table
+        if transactions_data:
+            df_transactions = pd.DataFrame(transactions_data)
+            st.dataframe(df_transactions, use_container_width=True, height=400, hide_index=True)
+            
+            # Summary metrics
+            st.markdown("### 📊 Podsumowanie Portfolio")
+            
+            # Safe calculations
+            total_pln = 0
+            total_market_value = 0
+            
+            for t in st.session_state.hedge_transactions:
+                try:
+                    kwota_pln_str = str(t.get('kwota_zakupu', '0')).replace('(PLN) ', '').replace(',', '')
+                    if kwota_pln_str and kwota_pln_str != 'nan':
+                        total_pln += float(kwota_pln_str)
+                except:
+                    pass
+                
+                try:
+                    market_val_str = str(t.get('wycena_do_rynku', '0')).replace(' PLN', '').replace(',', '').replace('+', '').replace('-', '')
+                    if market_val_str and market_val_str != 'nan':
+                        total_market_value += float(market_val_str)
+                except:
+                    pass
+            
+            avg_rate = total_pln / total_volume_eur if total_volume_eur > 0 else 0
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric(
+                    "Łączny Wolumen",
+                    f"€{total_volume_eur:,.0f}",
+                    help="Suma wszystkich kontraktów"
+                )
+            
+            with col2:
+                if avg_rate > 0:
+                    delta_str = f"{((avg_rate - config['spot_rate']) / config['spot_rate'] * 100):+.2f}% vs spot"
+                else:
+                    delta_str = "N/A"
+                    
+                st.metric(
+                    "Średni Kurs",
+                    f"{avg_rate:.4f}" if avg_rate > 0 else "N/A",
+                    delta=delta_str,
+                    help="Średnia ważona kursów zabezpieczenia"
+                )
+            
+            with col3:
+                st.metric(
+                    "Łączna Kwota PLN",
+                    f"{total_pln:,.0f} PLN",
+                    help="Suma PLN do otrzymania"
+                )
+            
+            with col4:
+                st.metric(
+                    "Wycena Portfolio",
+                    f"{total_market_value:+,.0f} PLN",
+                    help="Łączna wycena do rynku"
+                )
+    else:
+        st.info("📋 Brak kontraktów. Dodaj pierwszy kontrakt Forward Elastyczny.")
+    
+    # Forward curve chart
+    st.markdown("---")
+    st.subheader("📈 Krzywa Forward EUR/PLN")
+    
+    if st.session_state.dealer_pricing_data:
+        tenors_list = [p['tenor_name'] for p in st.session_state.dealer_pricing_data]
+        forward_rates = [p['client_rate'] for p in st.session_state.dealer_pricing_data]
+        spot_rates = [config['spot_rate']] * len(tenors_list)
+        
+        fig = go.Figure()
+        
+        # Spot line
+        fig.add_trace(
+            go.Scatter(
+                x=tenors_list,
+                y=spot_rates,
+                mode='lines',
+                name=f'Kurs spot ({config["spot_rate"]:.4f})',
+                line=dict(color='red', width=2, dash='dash'),
+                hovertemplate='Spot: %{y:.4f}<extra></extra>'
+            )
+        )
+        
+        # Forward rates
+        fig.add_trace(
+            go.Scatter(
+                x=tenors_list,
+                y=forward_rates,
+                mode='lines+markers',
+                name='Kursy terminowe',
+                line=dict(color='#2e68a5', width=3),
+                marker=dict(size=10, color='#2e68a5'),
+                hovertemplate='%{x}: %{y:.4f}<extra></extra>'
+            )
+        )
+        
+        fig.update_layout(
+            title="Dostępne kursy terminowe vs kurs spot",
+            xaxis_title="Tenor",
+            yaxis_title="Kurs EUR/PLN",
+            height=400,
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+
+def create_binomial_model_panel():
+    st.header("📊 Drzewo Dwumianowe - 5 Dni")
+    st.markdown("*Krótkoterminowa prognoza EUR/PLN*")
+    
+    with st.spinner("📡 Pobieranie danych..."):
+        historical_data = get_historical_eur_pln_data(30)
+        current_forex = get_eur_pln_rate()
+    
+    # Data source info
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="alpha-api">
+            <h4 style="margin: 0;">📈 Kurs Bieżący</h4>
+            <p style="margin: 0;">Rate: {current_forex['rate']:.4f}</p>
+            <p style="margin: 0;">Source: {current_forex['source']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="alpha-api">
+            <h4 style="margin: 0;">📊 Dane Historyczne</h4>
+            <p style="margin: 0;">Points: {historical_data['count']}</p>
+            <p style="margin: 0;">Source: {historical_data['source']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Calculate volatility
+    try:
+        if historical_data['success'] and len(historical_data['rates']) >= 20:
+            rates = historical_data['rates']
+            last_20_rates = rates[-20:] if len(rates) >= 20 else rates
+            current_spot = last_20_rates[-1]
+            
+            mean_20_days = np.mean(last_20_rates)
+            std_20_days = np.std(last_20_rates)
+            
+            p_up_empirical = 1 - norm.cdf(current_spot, mean_20_days, std_20_days)
+            p_down_empirical = 1 - p_up_empirical
+            
+            rolling_vol = std_20_days / current_spot
+            data_count = len(last_20_rates)
+            
+            if rolling_vol > 0:
+                st.success(f"✅ Model z ostatnich {data_count} dni")
+                st.info(f"P(up): {p_up_empirical:.3f}, P(down): {p_down_empirical:.3f}")
+                st.info(f"Volatility: {rolling_vol*100:.2f}% dzienna")
+            else:
+                raise Exception("Zero volatility")
+        else:
+            raise Exception("Insufficient data")
+            
+    except Exception as e:
+        rolling_vol = 0.0034
+        current_spot = current_forex['rate']
+        mean_20_days = current_spot
+        std_20_days = current_spot * 0.0034
+        p_up_empirical = 0.5
+        p_down_empirical = 0.5
+        st.warning("⚠️ Używam domyślnych wartości")
+    
+    # Model parameters
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        spot_rate = st.number_input(
+            "Kurs spot:",
+            value=current_spot,
+            min_value=3.50,
+            max_value=6.00,
+            step=0.0001,
+            format="%.4f"
+        )
+    
+    with col2:
+        st.metric("Horyzont", "5 dni roboczych")
+        days = 5
+    
+    with col3:
+        use_empirical = st.checkbox("Użyj empirycznych prawdopodobieństw", value=True)
+        
+        if use_empirical:
+            p_up_display = p_up_empirical
+            p_down_display = p_down_empirical
+            st.success(f"P(up)={p_up_display:.3f}")
+        else:
+            daily_vol = st.slider("Zmienność (%):", 0.1, 2.0, rolling_vol*100, 0.05) / 100
+            dt = 1/252
+            u = np.exp(daily_vol * np.sqrt(dt))
+            d = 1/u
+            r = 0.02/252
+            p_up_display = (np.exp(r * dt) - d) / (u - d)
+            p_down_display = 1 - p_up_display
+            st.info(f"P(up)={p_up_display:.3f}")
+    
+    # Build tree
+    if use_empirical:
+        p = p_up_empirical
+        u = 1 + rolling_vol
+        d = 1 - rolling_vol
+    else:
+        dt = 1/252
+        u = np.exp(daily_vol * np.sqrt(dt))
+        d = 1/u
+        r = 0.02/252
+        p = (np.exp(r * dt) - d) / (u - d)
+    
+    tree = {}
+    
+    for day in range(6):
+        tree[day] = {}
+        
+        if day == 0:
+            tree[day][0] = spot_rate
+        else:
+            for j in range(day + 1):
+                ups = j
+                downs = day - j
+                rate = spot_rate * (u ** ups) * (d ** downs)
+                tree[day][j] = rate
+    
+    # Most probable path
+    most_probable_path = []
+    for day in range(6):
+        if day == 0:
+            most_probable_path.append(0)
+        else:
+            best_j = 0
+            best_prob = 0
+            
+            for j in range(day + 1):
+                if use_empirical:
+                    node_prob = comb(day, j) * (p_up_empirical ** j) * (p_down_empirical ** (day - j))
+                else:
+                    node_prob = comb(day, j) * (p ** j) * ((1 - p) ** (day - j))
+                
+                if node_prob > best_prob:
+                    best_prob = node_prob
+                    best_j = j
+            
+            most_probable_path.append(best_j)
+    
+    # Final prediction
+    st.subheader("🎯 Prognoza Finalna")
+    
+    final_day = days
+    final_j = most_probable_path[final_day]
+    final_predicted_rate = tree[final_day][final_j]
+    change_pct = ((final_predicted_rate - spot_rate) / spot_rate) * 100
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Prognoza (5 dni)", f"{final_predicted_rate:.4f}", delta=f"{change_pct:+.2f}%")
+    
+    with col2:
+        if use_empirical:
+            prob = comb(final_day, final_j) * (p_up_empirical ** final_j) * (p_down_empirical ** (final_day - final_j))
+        else:
+            prob = comb(final_day, final_j) * (p ** final_j) * ((1 - p) ** (final_day - final_j))
+        
+        st.metric("Prawdopodobieństwo", f"{prob*100:.1f}%")
+    
+    with col3:
+        final_rates = [tree[5][j] for j in range(6)]
+        min_rate = min(final_rates)
+        max_rate = max(final_rates)
+        st.metric("Zakres", f"{min_rate:.4f} - {max_rate:.4f}")
+    
+    # Binomial tree visualization
+    st.subheader("🌳 Drzewo Dwumianowe")
+    
+    fig = go.Figure()
+    
+    # Business days for labels
+    today = datetime.now()
+    business_days = []
+    current_date = today
+    
+    while len(business_days) < 5:
+        current_date += timedelta(days=1)
+        if current_date.weekday() < 5:
+            business_days.append(current_date)
+    
+    weekdays = ["Pon", "Wt", "Śr", "Czw", "Pt"]
+    
+    # Plot nodes
+    for day in range(6):
+        for j in range(day + 1):
+            rate = tree[day][j]
+            x = day
+            y = j - day/2
+            
+            is_most_probable = (j == most_probable_path[day])
+            
+            # Node
+            fig.add_trace(
+                go.Scatter(
+                    x=[x],
+                    y=[y],
+                    mode='markers',
+                    marker=dict(
+                        size=20 if is_most_probable else 15,
+                        color='#ff6b35' if is_most_probable else '#2e68a5',
+                        line=dict(width=3 if is_most_probable else 2, color='white')
+                    ),
+                    showlegend=False,
+                    hovertemplate=f"Dzień {day}<br>Kurs: {rate:.4f}<extra></extra>"
+                )
+            )
+            
+            # Label
+            fig.add_trace(
+                go.Scatter(
+                    x=[x],
+                    y=[y + 0.25],
+                    mode='text',
+                    text=f"{rate:.4f}",
+                    textposition="middle center",
+                    textfont=dict(
+                        color='#ff6b35' if is_most_probable else '#2e68a5',
+                        size=12 if is_most_probable else 10,
+                        family="Arial Black" if is_most_probable else "Arial"
+                    ),
+                    showlegend=False,
+                    hoverinfo='skip'
+                )
+            )
+            
+            # Connections
+            if day < 5:
+                # Up
+                if j < day + 1:
+                    next_y_up = (j + 1) - (day + 1)/2
+                    is_prob_connection = (j == most_probable_path[day] and (j + 1) == most_probable_path[day + 1])
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[x, x + 1],
+                            y=[y, next_y_up],
+                            mode='lines',
+                            line=dict(
+                                color='#ff6b35' if is_prob_connection else 'lightgray',
+                                width=4 if is_prob_connection else 1
+                            ),
+                            showlegend=False,
+                            hoverinfo='skip'
+                        )
+                    )
+                
+                # Down
+                if j >= 0:
+                    next_y_down = j - (day + 1)/2
+                    is_prob_connection = (j == most_probable_path[day] and j == most_probable_path[day + 1])
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[x, x + 1],
+                            y=[y, next_y_down],
+                            mode='lines',
+                            line=dict(
+                                color='#ff6b35' if is_prob_connection else 'lightgray',
+                                width=4 if is_prob_connection else 1
+                            ),
+                            showlegend=False,
+                            hoverinfo='skip'
+                        )
+                    )
+    
+    # Legend
+    fig.add_trace(
+        go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(size=20, color='#ff6b35'),
+            name='🎯 Najczęstsza ścieżka',
+            showlegend=True
+        )
+    )
+    
+    fig.add_trace(
+        go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(size=15, color='#2e68a5'),
+            name='Inne możliwe kursy',
+            showlegend=True
+        )
+    )
+    
+    # Layout
+    fig.update_layout(
+        title="Drzewo dwumianowe EUR/PLN - 5 dni roboczych",
+        xaxis_title="Dzień roboczy",
+        yaxis_title="Poziom w drzewie",
+        height=500,
+        xaxis=dict(
+            tickmode='array',
+            tickvals=list(range(6)),
+            ticktext=[f"Dzień {i}" if i == 0 else f"Dzień {i}\n{weekdays[i-1]}" for i in range(6)]
+        ),
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+# ============================================================================
+# MAIN APP
+# ============================================================================
+
+def main():
+    initialize_session_state()
+    
+    # Header
+    st.markdown("""
+    <div style="display: flex; align-items: center; margin-bottom: 2rem;">
+        <div style="background: linear-gradient(45deg, #667eea, #764ba2); width: 60px; height: 60px; border-radius: 10px; margin-right: 1rem; display: flex; align-items: center; justify-content: center;">
+            <span style="font-size: 2rem;">🚀</span>
+        </div>
+        <h1 style="margin: 0; color: #2c3e50;">Zintegrowana Platforma FX</h1>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("*Alpha Vantage + NBP + FRED APIs | Synchronizacja dealerska ↔ klient*")
+    
+    # Sync status
+    if st.session_state.dealer_pricing_data:
+        config = st.session_state.dealer_config
+        st.success(f"✅ System zsynchronizowany | Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} dni")
+    else:
+        st.info("🔄 Oczekiwanie na wycenę dealerską...")
+    
+    # Tabs
+    tab1, tab2, tab3 = st.tabs(["🔧 Panel Dealerski", "🛡️ Panel Zabezpieczeń", "📊 Model Dwumianowy"])
+    
+    with tab1:
+        create_dealer_panel()
+    
+    with tab2:
+        create_client_hedging_advisor()
+    
+    with tab3:
+        create_binomial_model_panel()
+
+if __name__ == "__main__":
+    main()import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -714,995 +1568,4 @@ def create_dealer_panel():
         for pricing in st.session_state.dealer_pricing_data:
             # Calculate window forward metrics
             window_min_profit_per_eur = pricing['profit_per_eur']
-            window_max_profit_per_eur = window_min_profit_per_eur + (pricing['swap_risk'] * hedging_savings_pct)
-            window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
-            
-            window_min_profit_total = window_min_profit_per_eur * nominal_amount
-            window_max_profit_total = window_max_profit_per_eur * nominal_amount
-            window_expected_profit_total = window_expected_profit_per_eur * nominal_amount
-            
-            portfolio_totals['total_min_profit'] += window_min_profit_total
-            portfolio_totals['total_max_profit'] += window_max_profit_total
-            portfolio_totals['total_expected_profit'] += window_expected_profit_total
-            portfolio_totals['total_notional'] += nominal_amount
-            portfolio_totals['total_points_to_window'] += pricing['forward_points'] * nominal_amount
-            portfolio_totals['total_swap_risk'] += pricing['swap_risk'] * nominal_amount
-            portfolio_totals['total_client_premium'] += (pricing['client_rate'] - spot_rate) * nominal_amount
-        
-        # Calculate percentage metrics
-        total_exposure_pln = spot_rate * portfolio_totals['total_notional']
-        min_profit_pct = (portfolio_totals['total_min_profit'] / total_exposure_pln) * 100
-        expected_profit_pct = (portfolio_totals['total_expected_profit'] / total_exposure_pln) * 100
-        max_profit_pct = (portfolio_totals['total_max_profit'] / total_exposure_pln) * 100
-        
-        # First row - PLN amounts
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric(
-                "Portfolio Min Zysk", 
-                f"{portfolio_totals['total_min_profit']:,.0f} PLN",
-                help="Suma wszystkich gwarantowanych bank spreads"
-            )
-        
-        with col2:
-            st.metric(
-                "Portfolio Oczekiwany", 
-                f"{portfolio_totals['total_expected_profit']:,.0f} PLN",
-                help="Średnia scenariuszy min/max"
-            )
-        
-        with col3:
-            st.metric(
-                "Portfolio Max Zysk", 
-                f"{portfolio_totals['total_max_profit']:,.0f} PLN",
-                help="Suma bank spreads + oszczędności hedging"
-            )
-        
-        with col4:
-            st.metric(
-                "Zakres Zysku", 
-                f"{portfolio_totals['total_max_profit'] - portfolio_totals['total_min_profit']:,.0f} PLN",
-                help="Zmienność całego portfolio"
-            )
-        
-        # Second row - percentage metrics (KAFELKI Z MARŻAMI)
-        st.markdown("### 📊 Marże Procentowe")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="profit-metric">
-                <h4 style="margin: 0; color: white;">Min Marża</h4>
-                <h2 style="margin: 0; color: white;">{min_profit_pct:.3f}%</h2>
-                <p style="margin: 0; color: #f8f9fa;">vs całkowita ekspozycja</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="profit-metric" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
-                <h4 style="margin: 0; color: white;">Oczekiwana Marża</h4>
-                <h2 style="margin: 0; color: white;">{expected_profit_pct:.3f}%</h2>
-                <p style="margin: 0; color: #f8f9fa;">realistyczny scenariusz</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="profit-metric" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
-                <h4 style="margin: 0; color: white;">Max Marża</h4>
-                <h2 style="margin: 0; color: white;">{max_profit_pct:.3f}%</h2>
-                <p style="margin: 0; color: #f8f9fa;">optymistyczny scenariusz</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            margin_volatility = max_profit_pct - min_profit_pct
-            st.markdown(f"""
-            <div class="profit-metric" style="background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%); color: #2d3436;">
-                <h4 style="margin: 0;">Volatility Marży</h4>
-                <h2 style="margin: 0;">{margin_volatility:.3f}pp</h2>
-                <p style="margin: 0;">zakres zmienności</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Additional portfolio metrics
-        st.markdown("### ⚙️ Parametry Portfolio")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        portfolio_avg_points = portfolio_totals['total_points_to_window'] / portfolio_totals['total_notional']
-        portfolio_avg_swap_risk = portfolio_totals['total_swap_risk'] / portfolio_totals['total_notional']
-        portfolio_avg_client_rate = spot_rate + portfolio_avg_points * points_factor - portfolio_avg_swap_risk * risk_factor
-        
-        with col1:
-            st.metric(
-                "Średnie Punkty", 
-                f"{portfolio_avg_points:.4f}",
-                help="Średnia ważona punktów terminowych"
-            )
-        
-        with col2:
-            st.metric(
-                "Średnie Ryzyko Swap", 
-                f"{portfolio_avg_swap_risk:.4f}",
-                help=f"Średnie ryzyko swap dla {window_days}-dniowych okien"
-            )
-        
-        with col3:
-            st.metric(
-                "Średni Kurs Klienta", 
-                f"{portfolio_avg_client_rate:.4f}",
-                help="Średni kurs klienta w portfolio"
-            )
-        
-        with col4:
-            risk_reward_ratio = portfolio_totals['total_max_profit'] / portfolio_totals['total_min_profit'] if portfolio_totals['total_min_profit'] > 0 else float('inf')
-            st.metric(
-                "Risk/Reward", 
-                f"{risk_reward_ratio:.1f}x",
-                help="Stosunek max/min zysku"
-            )
-        
-        # Deal summary
-        st.markdown("---")
-        st.subheader("📋 Podsumowanie Transakcji")
-        
-        with st.container():
-            summary_col1, summary_col2 = st.columns([1, 1])
-            
-            with summary_col1:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h4>💼 Strategia Portfolio Window Forward</h4>
-                    <p><strong>Strategia:</strong> 12 Window Forwards z {window_days}-dniową elastycznością</p>
-                    <p><strong>Całkowity Nominał:</strong> €{portfolio_totals['total_notional']:,}</p>
-                    <p><strong>Kurs Spot:</strong> {spot_rate:.4f} ({spot_source})</p>
-                    <p><strong>Średni Kurs Klienta:</strong> {portfolio_avg_client_rate:.4f}</p>
-                    <p><strong>Points Factor:</strong> {points_factor:.1%}</p>
-                    <p><strong>Risk Factor:</strong> {risk_factor:.1%}</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with summary_col2:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h4>💰 Podsumowanie Finansowe</h4>
-                    <p><strong>Oczekiwany Zysk:</strong> {portfolio_totals['total_expected_profit']:,.0f} PLN ({expected_profit_pct:.3f}%)</p>
-                    <p><strong>Portfolio Minimum:</strong> {portfolio_totals['total_min_profit']:,.0f} PLN ({min_profit_pct:.3f}%)</p>
-                    <p><strong>Portfolio Maximum:</strong> {portfolio_totals['total_max_profit']:,.0f} PLN ({max_profit_pct:.3f}%)</p>
-                    <p><strong>Współczynnik Zmienności:</strong> {volatility_factor:.2f}</p>
-                    <p><strong>Oszczędności Hedging:</strong> {hedging_savings_pct:.0%}</p>
-                    <p><strong>Dźwignia:</strong> {leverage}x</p>
-                </div>
-                """, unsafe_allow_html=True)
-    else:
-        st.info("👆 Kliknij 'Zaktualizuj Wycenę' aby wygenerować kursy")
-
-def create_client_hedging_advisor():
-    st.header("🛡️ Panel Zabezpieczeń EUR/PLN")
-    st.markdown("*Kursy synchronizowane z panelem dealerskim*")
-    
-    if not st.session_state.dealer_pricing_data:
-        st.warning("⚠️ Brak wyceny dealerskiej! Przejdź do panelu dealerskiego.")
-        forex_data = get_eur_pln_rate()
-        st.info(f"Aktualny kurs EUR/PLN: {forex_data['rate']:.4f}")
-        return
-    
-    config = st.session_state.dealer_config
-    
-    st.markdown(f"""
-    <div class="pricing-sync">
-        <h4 style="margin: 0;">✅ Wycena Zsynchronizowana</h4>
-        <p style="margin: 0;">Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} dni</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Professional transaction interface like the bank example
-    st.markdown("---")
-    st.subheader("💱 Nowa Transakcja Forward Elastyczny")
-    
-    # Transaction direction (like the bank interface)
-    col1, col2, col3 = st.columns([1, 1, 2])
-    
-    with col1:
-        st.markdown("**SPRZEDAJ**")
-        sell_currency = st.selectbox("", ["EUR"], key="sell_curr", help="Waluta sprzedaży")
-    
-    with col2:
-        st.markdown("**KUP**")
-        buy_currency = st.selectbox("", ["PLN"], key="buy_curr", help="Waluta zakupu")
-    
-    with col3:
-        st.markdown("**CAŁKOWITY WOLUMEN**")
-        volume = st.number_input(
-            "",
-            value=1_000_000,
-            min_value=10_000,
-            max_value=50_000_000,
-            step=10_000,
-            format="%d",
-            help="Kwota w EUR"
-        )
-    
-    # Date selection with timeline (similar to bank interface)
-    st.markdown("### 📅 Wybór Terminów Wykonania")
-    
-    # Professional date picker
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        settlement_date = st.date_input(
-            "**Data pierwszego wykonania:**",
-            value=(datetime.now() + timedelta(days=90)).date(),
-            min_value=datetime.now().date(),
-            max_value=(datetime.now() + timedelta(days=730)).date(),
-            help="Data rozliczenia transakcji"
-        )
-    
-    with col2:
-        window_days = st.number_input(
-            "**Długość okna (dni):**",
-            value=config['window_days'],
-            min_value=30,
-            max_value=365,
-            step=5,
-            help="Okres elastyczności wykonania"
-        )
-    
-    with col3:
-        execution_type = st.selectbox(
-            "**Typ wykonania:**",
-            ["Forward Elastyczny", "Forward Standardowy", "Window Forward"],
-            help="Rodzaj kontraktu terminowego"
-        )
-    
-    # Calculate and display rates
-    settlement_datetime = datetime.combine(settlement_date, datetime.min.time())
-    today_datetime = datetime.now()
-    days_to_settlement = (settlement_datetime - today_datetime).days
-    
-    # Calculate forward rate for this specific date
-    calculator = APIIntegratedForwardCalculator(FREDAPIClient())
-    theoretical = calculator.calculate_theoretical_forward_points(
-        config['spot_rate'], 
-        config['pl_yield'], 
-        config['de_yield'], 
-        days_to_settlement
-    )
-    
-    forward_points = theoretical['forward_points']
-    tenor_window_swap_risk = abs(forward_points) * config['volatility_factor'] * np.sqrt(window_days / 90)
-    tenor_window_swap_risk = max(tenor_window_swap_risk, 0.015)
-    
-    calculator.points_factor = config['points_factor']
-    calculator.risk_factor = config['risk_factor']
-    
-    rates_result = calculator.calculate_professional_rates(
-        config['spot_rate'], 
-        forward_points, 
-        tenor_window_swap_risk, 
-        config['minimum_profit_floor']
-    )
-    
-    client_rate = rates_result['fwd_client']
-    
-    # Professional rate display
-    st.markdown("### 💰 Wycena Transakcji")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f"""
-        <div class="client-summary">
-            <h4 style="margin: 0; color: #2e68a5;">Kurs Zabezpieczenia</h4>
-            <h2 style="margin: 0; color: #2c3e50;">{client_rate:.4f}</h2>
-            <p style="margin: 0; color: #666;">EUR/PLN</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class="client-summary">
-            <h4 style="margin: 0; color: #2e68a5;">Kurs Końcowy</h4>
-            <h2 style="margin: 0; color: #2c3e50;">{client_rate:.4f}</h2>
-            <p style="margin: 0; color: #666;">Gwarantowany</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        pln_amount = client_rate * volume
-        st.markdown(f"""
-        <div class="client-summary">
-            <h4 style="margin: 0; color: #2e68a5;">Kwota PLN</h4>
-            <h2 style="margin: 0; color: #2c3e50;">{pln_amount:,.0f}</h2>
-            <p style="margin: 0; color: #666;">Do otrzymania</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        rate_advantage = ((client_rate - config['spot_rate']) / config['spot_rate']) * 100
-        advantage_pln = (client_rate - config['spot_rate']) * volume
-        color = "#28a745" if rate_advantage > 0 else "#dc3545"
-        st.markdown(f"""
-        <div class="client-summary">
-            <h4 style="margin: 0; color: #2e68a5;">Wycena do Rynku</h4>
-            <h2 style="margin: 0; color: {color};">{advantage_pln:+,.0f} PLN</h2>
-            <p style="margin: 0; color: #666;">{rate_advantage:+.2f}% vs spot</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Professional add transaction button
-    st.markdown("---")
-    if st.button("➕ Dodaj elastyczny kontrakt forwardowy", type="primary", use_container_width=True):
-        # Calculate execution window
-        execution_window_end = settlement_datetime
-        execution_window_start = execution_window_end - timedelta(days=window_days)
-        
-        # Determine tenor name
-        months_approx = days_to_settlement / 30
-        if months_approx < 1:
-            tenor_name = f"{days_to_settlement} dni"
-        else:
-            tenor_name = f"{months_approx:.0f}M+"
-        
-        # Add to transactions list
-        transaction_id = len(st.session_state.hedge_transactions) + 1
-        st.session_state.hedge_transactions.append({
-            "nr": transaction_id,
-            "typ": "Forward elastyczny",
-            "pierwsze_wykonanie": settlement_date.strftime("%d %b %Y"),
-            "data_wygasniecia": execution_window_end.strftime("%d %b %Y"),
-            "kwota_sprzedazy": f"(EUR) {volume:,.0f}",
-            "kwota_zakupu": f"(PLN) {pln_amount:,.0f}",
-            "kurs_zabezpieczenia": f"{client_rate:.4f}",
-            "kurs_koncowy": f"{client_rate:.4f}",
-            "wycena_do_rynku": f"{advantage_pln:+,.0f} PLN" if advantage_pln != 0 else "0,00 PLN",
-            "status": "PLANOWANE",
-            "tenor": tenor_name,
-            "window_days": window_days,
-            "days_to_settlement": days_to_settlement
-        })
-        st.success(f"✅ Dodano kontrakt Forward Elastyczny na {volume:,.0f} EUR")
-        st.rerun()
-    
-    # Professional transaction list (like bank interface)
-    if st.session_state.hedge_transactions:
-        st.markdown("---")
-        st.markdown("## Lista transakcji")
-        
-        # Summary header like in bank interface - with error handling
-        try:
-            total_volume_eur = sum(
-                float(str(t['kwota_sprzedazy']).replace('(EUR) ', '').replace(',', '')) 
-                for t in st.session_state.hedge_transactions
-                if 'kwota_sprzedazy' in t
-            )
-        except (KeyError, ValueError, TypeError):
-            total_volume_eur = 0
-        
-        st.markdown(f"""
-        <div style="background: #f8f9fa; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #28a745; margin: 1rem 0;">
-            <h4 style="margin: 0; color: #28a745;">100% WOLUMENU ZABEZPIECZONE W FORWARD ELASTYCZNY</h4>
-            <p style="margin: 0.5rem 0 0 0; color: #666;">
-                Usługa Elastycznych kontraktów terminowych umożliwia korzystanie z zalet kontraktów terminowych, 
-                jednocześnie zapewniając elastyczność w terminach płatności. Dzięki Elastycznym kontraktom terminowym 
-                można <strong>uzyskać korzystny kurs</strong> walutowy po kilku dni od ustalenia kursu i wykorzystywać je do jednej lub kilku przyszłych płatności z elastycznymi terminami.
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Professional table header
-        st.markdown("### Otwarte i zaplanowane")
-        
-        # Create professional table layout
-        transactions_data = []
-        
-        for i, transaction in enumerate(st.session_state.hedge_transactions, 1):
-            # Safely get values with defaults - ensure no NaN values
-            status = str(transaction.get('status', 'PLANOWANE')).replace('nan', 'PLANOWANE')
-            typ = str(transaction.get('typ', 'Forward elastyczny')).replace('nan', 'Forward elastyczny')
-            pierwsze_wykonanie = str(transaction.get('pierwsze_wykonanie', 'Brak daty')).replace('nan', 'Brak daty')
-            data_wygasniecia = str(transaction.get('data_wygasniecia', 'Brak daty')).replace('nan', 'Brak daty')
-            kwota_sprzedazy = str(transaction.get('kwota_sprzedazy', '(EUR) 0')).replace('nan', '(EUR) 0')
-            kwota_zakupu = str(transaction.get('kwota_zakupu', '(PLN) 0')).replace('nan', '(PLN) 0')
-            kurs_zabezpieczenia = str(transaction.get('kurs_zabezpieczenia', '0.0000')).replace('nan', '0.0000')
-            kurs_koncowy = str(transaction.get('kurs_koncowy', '0.0000')).replace('nan', '0.0000')
-            wycena_do_rynku = str(transaction.get('wycena_do_rynku', '0 PLN')).replace('nan', '0 PLN')
-            
-            transactions_data.append({
-                "#": i,
-                "TYP": typ,
-                "PIERWSZE WYKONANIE": pierwsze_wykonanie,
-                "DATA WYGAŚNIĘCIA": data_wygasniecia,
-                "KWOTA SPRZEDAŻY": kwota_sprzedazy,
-                "KWOTA ZAKUPU": kwota_zakupu,
-                "KURS ZABEZPIECZENIA": kurs_zabezpieczenia,
-                "KURS KOŃCOWY": kurs_koncowy,
-                "WYCENA DO RYNKU": wycena_do_rynku,
-                "STATUS": status
-            })
-        
-        # Display table if we have data
-        if transactions_data:
-            df_transactions = pd.DataFrame(transactions_data)
-            
-            # Display the professional table without complex styling to avoid errors
-            st.dataframe(df_transactions, use_container_width=True, height=400, hide_index=True)
-            
-            # Professional summary metrics with safe calculations
-            st.markdown("### 📊 Podsumowanie Portfolio")
-            
-            try:
-                # Safe calculation of totals
-                total_pln = 0
-                total_volume_eur_calc = 0
-                total_market_value = 0
-                
-                for t in st.session_state.hedge_transactions:
-                    # Safely parse EUR volume
-                    try:
-                        kwota_eur_str = str(t.get('kwota_sprzedazy', '0')).replace('(EUR) ', '').replace(',', '')
-                        if kwota_eur_str and kwota_eur_str != 'nan':
-                            total_volume_eur_calc += float(kwota_eur_str)
-                    except (ValueError, TypeError):
-                        pass
-                    
-                    # Safely parse PLN amount
-                    try:
-                        kwota_pln_str = str(t.get('kwota_zakupu', '0')).replace('(PLN) ', '').replace(',', '')
-                        if kwota_pln_str and kwota_pln_str != 'nan':
-                            total_pln += float(kwota_pln_str)
-                    except (ValueError, TypeError):
-                        pass
-                    
-                    # Safely parse market value
-                    try:
-                        market_val_str = str(t.get('wycena_do_rynku', '0')).replace(' PLN', '').replace(',', '').replace('+', '').replace('-', '')
-                        if market_val_str and market_val_str != 'nan':
-                            total_market_value += float(market_val_str)
-                    except (ValueError, TypeError):
-                        pass
-                
-                # Calculate average rate safely
-                avg_rate = total_pln / total_volume_eur_calc if total_volume_eur_calc > 0 else 0
-                
-            except Exception:
-                # Fallback values if any calculation fails
-                total_volume_eur_calc = 0
-                total_pln = 0
-                avg_rate = 0
-                total_market_value = 0
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric(
-                    "Łączny Wolumen",
-                    f"€{total_volume_eur:,.0f}",
-                    help="Suma wszystkich kontraktów"
-                )
-            
-            with col2:
-                st.metric(
-                    "Średni Kurs",
-                    f"{avg_rate:.4f}",
-                    delta=f"{((avg_rate - config['spot_rate']) / config['spot_rate'] * 100):+.2f}% vs spot",
-                    help="Średnia ważona kursów zabezpieczenia"
-                )
-            
-            with col3:
-                st.metric(
-                    "Łączna Kwota PLN",
-                    f"{total_pln:,.0f} PLN",
-                    help="Suma PLN do otrzymania"
-                )
-            
-            with col4:
-                st.metric(
-                    "Wycena Portfolio",
-                    f"{total_market_value:+,.0f} PLN",
-                    help="Łączna wycena do rynku"
-                )
-    # Add a simple chart showing forward curve
-    st.markdown("---")
-    st.subheader("📈 Krzywa Forward EUR/PLN")
-    
-    if st.session_state.dealer_pricing_data:
-        tenors_list = [p['tenor_name'] for p in st.session_state.dealer_pricing_data]
-        forward_rates = [p['client_rate'] for p in st.session_state.dealer_pricing_data]
-        spot_rates = [config['spot_rate']] * len(tenors_list)
-        
-        fig = go.Figure()
-        
-        # Spot line
-        fig.add_trace(
-            go.Scatter(
-                x=tenors_list,
-                y=spot_rates,
-                mode='lines',
-                name=f'Kurs spot ({config["spot_rate"]:.4f})',
-                line=dict(color='red', width=2, dash='dash'),
-                hovertemplate='Spot: %{y:.4f}<extra></extra>'
-            )
-        )
-        
-        # Forward rates
-        fig.add_trace(
-            go.Scatter(
-                x=tenors_list,
-                y=forward_rates,
-                mode='lines+markers',
-                name='Kursy terminowe',
-                line=dict(color='#2e68a5', width=3),
-                marker=dict(size=10, color='#2e68a5'),
-                hovertemplate='%{x}: %{y:.4f}<extra></extra>'
-            )
-        )
-        
-        fig.update_layout(
-            title="Dostępne kursy terminowe vs kurs spot",
-            xaxis_title="Tenor",
-            yaxis_title="Kurs EUR/PLN",
-            height=400,
-            hovermode='x unified'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Color coding for transactions
-        def highlight_transactions(row):
-            profit_str = str(row['Profit PLN']).replace(',', '').replace('+', '').replace(' PLN', '')
-            try:
-                profit = float(profit_str)
-                if profit > 0:
-                    return ['background-color: #d4edda'] * len(row)  # Green for profit
-                elif profit < 0:
-                    return ['background-color: #f8d7da'] * len(row)  # Red for loss
-                else:
-                    return ['background-color: #fff3cd'] * len(row)  # Yellow for neutral
-            except:
-                return [''] * len(row)
-        
-        st.dataframe(
-            display_df.style.apply(highlight_transactions, axis=1),
-            use_container_width=True,
-            hide_index=True
-        )
-        
-        # Transactions summary
-        st.markdown("### 📊 Podsumowanie Transakcji")
-        
-        total_planned = sum(float(str(row['Kwota EUR']).replace(',', '')) for row in st.session_state.hedge_transactions)
-        total_profit = sum(float(str(row['Profit PLN']).replace(',', '').replace('+', '').replace(' PLN', '')) for row in st.session_state.hedge_transactions)
-        avg_rate = sum(float(row['Kurs']) * float(str(row['Kwota EUR']).replace(',', '')) for row in st.session_state.hedge_transactions) / total_planned if total_planned > 0 else 0
-        
-        # Calculate window diversity metrics
-        window_lengths = [row.get('Długość okna', 0) for row in st.session_state.hedge_transactions if 'Długość okna' in row]
-        avg_window = np.mean(window_lengths) if window_lengths else 0
-        min_window = min(window_lengths) if window_lengths else 0
-        max_window = max(window_lengths) if window_lengths else 0
-        
-        # Calculate tenor diversity
-        days_to_settlements = [row.get('Dni do rozliczenia', 0) for row in st.session_state.hedge_transactions if 'Dni do rozliczenia' in row]
-        avg_tenor_days = np.mean(days_to_settlements) if days_to_settlements else 0
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric(
-                "Łączna Kwota",
-                f"€{total_planned:,.0f}",
-                help="Suma wszystkich transakcji"
-            )
-        
-        with col2:
-            st.metric(
-                "Średni Kurs",
-                f"{avg_rate:.4f}",
-                delta=f"{((avg_rate - config['spot_rate']) / config['spot_rate'] * 100):+.2f}% vs spot" if avg_rate > 0 else "N/A",
-                help="Średnia ważona kursów"
-            )
-        
-        with col3:
-            st.metric(
-                "Łączny Profit",
-                f"{total_profit:+,.0f} PLN",
-                help="Suma korzyści vs pozostanie na spot"
-            )
-        
-        with col4:
-            st.metric(
-                "Średni Tenor",
-                f"{avg_tenor_days:.0f} dni",
-                help="Średnia liczba dni do rozliczenia"
-            )
-        
-        # Window analysis
-        if window_lengths:
-            st.markdown("### 🪟 Analiza Okien Wykonania")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric(
-                    "Średnie Okno",
-                    f"{avg_window:.0f} dni",
-                    help="Średnia długość okien wykonania"
-                )
-            
-            with col2:
-                st.metric(
-                    "Zakres Okien",
-                    f"{min_window}-{max_window} dni",
-                    help="Minimalne i maksymalne okno"
-                )
-            
-            with col3:
-                unique_windows = len(set(window_lengths))
-                st.metric(
-                    "Różne Okna",
-                    f"{unique_windows}",
-                    help="Liczba różnych długości okien"
-                )
-            
-            with col4:
-                window_flexibility = "Wysoka" if unique_windows > 2 else "Średnia" if unique_windows > 1 else "Niska"
-                flexibility_color = "🟢" if unique_windows > 2 else "🟡" if unique_windows > 1 else "🔴"
-                st.metric(
-                    "Elastyczność",
-                    f"{flexibility_color} {window_flexibility}",
-                    help="Ocena różnorodności okien"
-                )
-    else:
-        st.info("📋 Brak dodanych transakcji. Użyj przycisku 'Dodaj Transakcję' aby rozpocząć.")
-
-def create_binomial_model_panel():
-    st.header("📊 Drzewo Dwumianowe - 5 Dni")
-    st.markdown("*Krótkoterminowa prognoza EUR/PLN*")
-    
-    with st.spinner("📡 Pobieranie danych..."):
-        historical_data = get_historical_eur_pln_data(30)
-        current_forex = get_eur_pln_rate()
-    
-    # Data source info
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown(f"""
-        <div class="alpha-api">
-            <h4 style="margin: 0;">📈 Kurs Bieżący</h4>
-            <p style="margin: 0;">Rate: {current_forex['rate']:.4f}</p>
-            <p style="margin: 0;">Source: {current_forex['source']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class="alpha-api">
-            <h4 style="margin: 0;">📊 Dane Historyczne</h4>
-            <p style="margin: 0;">Points: {historical_data['count']}</p>
-            <p style="margin: 0;">Source: {historical_data['source']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Calculate volatility
-    try:
-        if historical_data['success'] and len(historical_data['rates']) >= 20:
-            rates = historical_data['rates']
-            last_20_rates = rates[-20:] if len(rates) >= 20 else rates
-            current_spot = last_20_rates[-1]
-            
-            mean_20_days = np.mean(last_20_rates)
-            std_20_days = np.std(last_20_rates)
-            
-            p_up_empirical = 1 - norm.cdf(current_spot, mean_20_days, std_20_days)
-            p_down_empirical = 1 - p_up_empirical
-            
-            rolling_vol = std_20_days / current_spot
-            data_count = len(last_20_rates)
-            
-            if rolling_vol > 0:
-                st.success(f"✅ Model z ostatnich {data_count} dni")
-                st.info(f"P(up): {p_up_empirical:.3f}, P(down): {p_down_empirical:.3f}")
-                st.info(f"Volatility: {rolling_vol*100:.2f}% dzienna")
-            else:
-                raise Exception("Zero volatility")
-        else:
-            raise Exception("Insufficient data")
-            
-    except Exception as e:
-        rolling_vol = 0.0034
-        current_spot = current_forex['rate']
-        mean_20_days = current_spot
-        std_20_days = current_spot * 0.0034
-        p_up_empirical = 0.5
-        p_down_empirical = 0.5
-        st.warning("⚠️ Używam domyślnych wartości")
-    
-    # Model parameters
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        spot_rate = st.number_input(
-            "Kurs spot:",
-            value=current_spot,
-            min_value=3.50,
-            max_value=6.00,
-            step=0.0001,
-            format="%.4f"
-        )
-    
-    with col2:
-        st.metric("Horyzont", "5 dni roboczych")
-        days = 5
-    
-    with col3:
-        use_empirical = st.checkbox("Użyj empirycznych prawdopodobieństw", value=True)
-        
-        if use_empirical:
-            p_up_display = p_up_empirical
-            p_down_display = p_down_empirical
-            st.success(f"P(up)={p_up_display:.3f}")
-        else:
-            daily_vol = st.slider("Zmienność (%):", 0.1, 2.0, rolling_vol*100, 0.05) / 100
-            dt = 1/252
-            u = np.exp(daily_vol * np.sqrt(dt))
-            d = 1/u
-            r = 0.02/252
-            p_up_display = (np.exp(r * dt) - d) / (u - d)
-            p_down_display = 1 - p_up_display
-            st.info(f"P(up)={p_up_display:.3f}")
-    
-    # Build tree
-    if use_empirical:
-        p = p_up_empirical
-        u = 1 + rolling_vol
-        d = 1 - rolling_vol
-    else:
-        dt = 1/252
-        u = np.exp(daily_vol * np.sqrt(dt))
-        d = 1/u
-        r = 0.02/252
-        p = (np.exp(r * dt) - d) / (u - d)
-    
-    tree = {}
-    
-    for day in range(6):
-        tree[day] = {}
-        
-        if day == 0:
-            tree[day][0] = spot_rate
-        else:
-            for j in range(day + 1):
-                ups = j
-                downs = day - j
-                rate = spot_rate * (u ** ups) * (d ** downs)
-                tree[day][j] = rate
-    
-    # Most probable path
-    most_probable_path = []
-    for day in range(6):
-        if day == 0:
-            most_probable_path.append(0)
-        else:
-            best_j = 0
-            best_prob = 0
-            
-            for j in range(day + 1):
-                if use_empirical:
-                    node_prob = comb(day, j) * (p_up_empirical ** j) * (p_down_empirical ** (day - j))
-                else:
-                    node_prob = comb(day, j) * (p ** j) * ((1 - p) ** (day - j))
-                
-                if node_prob > best_prob:
-                    best_prob = node_prob
-                    best_j = j
-            
-            most_probable_path.append(best_j)
-    
-    # Final prediction
-    st.subheader("🎯 Prognoza Finalna")
-    
-    final_day = days
-    final_j = most_probable_path[final_day]
-    final_predicted_rate = tree[final_day][final_j]
-    change_pct = ((final_predicted_rate - spot_rate) / spot_rate) * 100
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Prognoza (5 dni)", f"{final_predicted_rate:.4f}", delta=f"{change_pct:+.2f}%")
-    
-    with col2:
-        if use_empirical:
-            prob = comb(final_day, final_j) * (p_up_empirical ** final_j) * (p_down_empirical ** (final_day - final_j))
-        else:
-            prob = comb(final_day, final_j) * (p ** final_j) * ((1 - p) ** (final_day - final_j))
-        
-        st.metric("Prawdopodobieństwo", f"{prob*100:.1f}%")
-    
-    with col3:
-        final_rates = [tree[5][j] for j in range(6)]
-        min_rate = min(final_rates)
-        max_rate = max(final_rates)
-        st.metric("Zakres", f"{min_rate:.4f} - {max_rate:.4f}")
-    
-    # Binomial tree visualization
-    st.subheader("🌳 Drzewo Dwumianowe")
-    
-    fig = go.Figure()
-    
-    # Business days for labels
-    today = datetime.now()
-    business_days = []
-    current_date = today
-    
-    while len(business_days) < 5:
-        current_date += timedelta(days=1)
-        if current_date.weekday() < 5:
-            business_days.append(current_date)
-    
-    weekdays = ["Pon", "Wt", "Śr", "Czw", "Pt"]
-    
-    # Plot nodes
-    for day in range(6):
-        for j in range(day + 1):
-            rate = tree[day][j]
-            x = day
-            y = j - day/2
-            
-            is_most_probable = (j == most_probable_path[day])
-            
-            # Node
-            fig.add_trace(
-                go.Scatter(
-                    x=[x],
-                    y=[y],
-                    mode='markers',
-                    marker=dict(
-                        size=20 if is_most_probable else 15,
-                        color='#ff6b35' if is_most_probable else '#2e68a5',
-                        line=dict(width=3 if is_most_probable else 2, color='white')
-                    ),
-                    showlegend=False,
-                    hovertemplate=f"Dzień {day}<br>Kurs: {rate:.4f}<extra></extra>"
-                )
-            )
-            
-            # Label
-            fig.add_trace(
-                go.Scatter(
-                    x=[x],
-                    y=[y + 0.25],
-                    mode='text',
-                    text=f"{rate:.4f}",
-                    textposition="middle center",
-                    textfont=dict(
-                        color='#ff6b35' if is_most_probable else '#2e68a5',
-                        size=12 if is_most_probable else 10,
-                        family="Arial Black" if is_most_probable else "Arial"
-                    ),
-                    showlegend=False,
-                    hoverinfo='skip'
-                )
-            )
-            
-            # Connections
-            if day < 5:
-                # Up
-                if j < day + 1:
-                    next_y_up = (j + 1) - (day + 1)/2
-                    is_prob_connection = (j == most_probable_path[day] and (j + 1) == most_probable_path[day + 1])
-                    
-                    fig.add_trace(
-                        go.Scatter(
-                            x=[x, x + 1],
-                            y=[y, next_y_up],
-                            mode='lines',
-                            line=dict(
-                                color='#ff6b35' if is_prob_connection else 'lightgray',
-                                width=4 if is_prob_connection else 1
-                            ),
-                            showlegend=False,
-                            hoverinfo='skip'
-                        )
-                    )
-                
-                # Down
-                if j >= 0:
-                    next_y_down = j - (day + 1)/2
-                    is_prob_connection = (j == most_probable_path[day] and j == most_probable_path[day + 1])
-                    
-                    fig.add_trace(
-                        go.Scatter(
-                            x=[x, x + 1],
-                            y=[y, next_y_down],
-                            mode='lines',
-                            line=dict(
-                                color='#ff6b35' if is_prob_connection else 'lightgray',
-                                width=4 if is_prob_connection else 1
-                            ),
-                            showlegend=False,
-                            hoverinfo='skip'
-                        )
-                    )
-    
-    # Legend
-    fig.add_trace(
-        go.Scatter(
-            x=[None], y=[None],
-            mode='markers',
-            marker=dict(size=20, color='#ff6b35'),
-            name='🎯 Najczęstsza ścieżka',
-            showlegend=True
-        )
-    )
-    
-    fig.add_trace(
-        go.Scatter(
-            x=[None], y=[None],
-            mode='markers',
-            marker=dict(size=15, color='#2e68a5'),
-            name='Inne możliwe kursy',
-            showlegend=True
-        )
-    )
-    
-    # Layout
-    fig.update_layout(
-        title="Drzewo dwumianowe EUR/PLN - 5 dni roboczych",
-        xaxis_title="Dzień roboczy",
-        yaxis_title="Poziom w drzewie",
-        height=500,
-        xaxis=dict(
-            tickmode='array',
-            tickvals=list(range(6)),
-            ticktext=[f"Dzień {i}" if i == 0 else f"Dzień {i}\n{weekdays[i-1]}" for i in range(6)]
-        ),
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-# ============================================================================
-# MAIN APP
-# ============================================================================
-
-def main():
-    initialize_session_state()
-    
-    # Header
-    st.markdown("""
-    <div style="display: flex; align-items: center; margin-bottom: 2rem;">
-        <div style="background: linear-gradient(45deg, #667eea, #764ba2); width: 60px; height: 60px; border-radius: 10px; margin-right: 1rem; display: flex; align-items: center; justify-content: center;">
-            <span style="font-size: 2rem;">🚀</span>
-        </div>
-        <h1 style="margin: 0; color: #2c3e50;">Zintegrowana Platforma FX</h1>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("*Alpha Vantage + NBP + FRED APIs | Synchronizacja dealerska ↔ klient*")
-    
-    # Sync status
-    if st.session_state.dealer_pricing_data:
-        config = st.session_state.dealer_config
-        st.success(f"✅ System zsynchronizowany | Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} dni")
-    else:
-        st.info("🔄 Oczekiwanie na wycenę dealerską...")
-    
-    # Tabs
-    tab1, tab2, tab3 = st.tabs(["🔧 Panel Dealerski", "🛡️ Panel Zabezpieczeń", "📊 Model Dwumianowy"])
-    
-    with tab1:
-        create_dealer_panel()
-    
-    with tab2:
-        create_client_hedging_advisor()
-    
-    with tab3:
-        create_binomial_model_panel()
-
-if __name__ == "__main__":
-    main()
+            window_max_profit_per_eur = window_min_profit_per_eur + (pricing['swap_risk'] * hedging_savings_pct
