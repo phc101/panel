@@ -431,6 +431,107 @@ def create_dealer_panel():
         
         df_pricing = pd.DataFrame(pricing_df_data)
         st.dataframe(df_pricing, use_container_width=True, height=400)
+        
+        # Portfolio summary metrics
+        st.subheader("📊 Podsumowanie Portfolio")
+        
+        # Calculate portfolio totals
+        portfolio_totals = {
+            'total_min_profit': 0,
+            'total_max_profit': 0,
+            'total_expected_profit': 0,
+            'total_notional': 0
+        }
+        
+        hedging_savings_pct = st.session_state.dealer_config['hedging_savings_pct']
+        
+        for pricing in st.session_state.dealer_pricing_data:
+            window_min_profit_per_eur = pricing['profit_per_eur']
+            window_max_profit_per_eur = window_min_profit_per_eur + (pricing['swap_risk'] * hedging_savings_pct)
+            window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
+            
+            window_min_profit_total = window_min_profit_per_eur * nominal_amount
+            window_max_profit_total = window_max_profit_per_eur * nominal_amount
+            window_expected_profit_total = window_expected_profit_per_eur * nominal_amount
+            
+            portfolio_totals['total_min_profit'] += window_min_profit_total
+            portfolio_totals['total_max_profit'] += window_max_profit_total
+            portfolio_totals['total_expected_profit'] += window_expected_profit_total
+            portfolio_totals['total_notional'] += nominal_amount
+        
+        total_exposure_pln = spot_rate * portfolio_totals['total_notional']
+        min_profit_pct = (portfolio_totals['total_min_profit'] / total_exposure_pln) * 100
+        expected_profit_pct = (portfolio_totals['total_expected_profit'] / total_exposure_pln) * 100
+        max_profit_pct = (portfolio_totals['total_max_profit'] / total_exposure_pln) * 100
+        
+        # Portfolio metrics in columns
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "Portfolio Min Zysk", 
+                f"{portfolio_totals['total_min_profit']:,.0f} PLN"
+            )
+        
+        with col2:
+            st.metric(
+                "Portfolio Oczekiwany", 
+                f"{portfolio_totals['total_expected_profit']:,.0f} PLN"
+            )
+        
+        with col3:
+            st.metric(
+                "Portfolio Max Zysk", 
+                f"{portfolio_totals['total_max_profit']:,.0f} PLN"
+            )
+        
+        with col4:
+            st.metric(
+                "Zakres Zysku", 
+                f"{portfolio_totals['total_max_profit'] - portfolio_totals['total_min_profit']:,.0f} PLN"
+            )
+        
+        # Percentage metrics
+        st.markdown("### 📊 Marże Procentowe")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="profit-metric">
+                <h4 style="margin: 0; color: white;">Min Marża</h4>
+                <h2 style="margin: 0; color: white;">{min_profit_pct:.3f}%</h2>
+                <p style="margin: 0; color: #f8f9fa;">vs całkowita ekspozycja</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="profit-metric" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+                <h4 style="margin: 0; color: white;">Oczekiwana Marża</h4>
+                <h2 style="margin: 0; color: white;">{expected_profit_pct:.3f}%</h2>
+                <p style="margin: 0; color: #f8f9fa;">realistyczny scenariusz</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class="profit-metric" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <h4 style="margin: 0; color: white;">Max Marża</h4>
+                <h2 style="margin: 0; color: white;">{max_profit_pct:.3f}%</h2>
+                <p style="margin: 0; color: #f8f9fa;">optymistyczny scenariusz</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            margin_volatility = max_profit_pct - min_profit_pct
+            st.markdown(f"""
+            <div class="profit-metric" style="background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%); color: #2d3436;">
+                <h4 style="margin: 0;">Volatility Marży</h4>
+                <h2 style="margin: 0;">{margin_volatility:.3f}pp</h2>
+                <p style="margin: 0;">zakres zmienności</p>
+            </div>
+            """, unsafe_allow_html=True)
     else:
         st.info("👆 Kliknij 'Zaktualizuj Wycenę' aby wygenerować kursy")
 
@@ -622,6 +723,88 @@ def create_client_hedging_advisor():
         if transactions_data:
             df_transactions = pd.DataFrame(transactions_data)
             st.dataframe(df_transactions, use_container_width=True, height=400, hide_index=True)
+            
+            # Portfolio summary for client
+            st.markdown("### 📊 Podsumowanie Zabezpieczeń")
+            
+            # Calculate totals
+            total_volume_eur = 0
+            total_volume_pln = 0
+            weighted_rate_sum = 0
+            
+            for transaction in st.session_state.hedge_transactions:
+                try:
+                    # Extract EUR volume
+                    eur_str = str(transaction.get('kwota_sprzedazy', '0')).replace('(EUR) ', '').replace(',', '')
+                    if eur_str and eur_str != 'nan':
+                        eur_amount = float(eur_str)
+                        total_volume_eur += eur_amount
+                        
+                        # Extract rate for weighted average
+                        rate_str = str(transaction.get('kurs_zabezpieczenia', '0'))
+                        if rate_str and rate_str != 'nan':
+                            rate = float(rate_str)
+                            weighted_rate_sum += rate * eur_amount
+                    
+                    # Extract PLN volume
+                    pln_str = str(transaction.get('kwota_zakupu', '0')).replace('(PLN) ', '').replace(',', '')
+                    if pln_str and pln_str != 'nan':
+                        total_volume_pln += float(pln_str)
+                except (ValueError, TypeError):
+                    pass
+            
+            # Calculate weighted average rate
+            avg_hedging_rate = weighted_rate_sum / total_volume_eur if total_volume_eur > 0 else 0
+            
+            # Display summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.markdown(f"""
+                <div class="client-summary">
+                    <h4 style="margin: 0; color: #2e68a5;">Suma Zabezpieczenia</h4>
+                    <h2 style="margin: 0; color: #2c3e50;">€{total_volume_eur:,.0f}</h2>
+                    <p style="margin: 0; color: #666;">Łączny wolumen</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                <div class="client-summary">
+                    <h4 style="margin: 0; color: #2e68a5;">Średni Ważony Kurs</h4>
+                    <h2 style="margin: 0; color: #2c3e50;">{avg_hedging_rate:.4f}</h2>
+                    <p style="margin: 0; color: #666;">Kurs zabezpieczenia</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                st.markdown(f"""
+                <div class="client-summary">
+                    <h4 style="margin: 0; color: #2e68a5;">Łączna Kwota PLN</h4>
+                    <h2 style="margin: 0; color: #2c3e50;">{total_volume_pln:,.0f}</h2>
+                    <p style="margin: 0; color: #666;">Do otrzymania</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col4:
+                # Calculate advantage vs spot
+                spot_rate = config['spot_rate']
+                if avg_hedging_rate > 0:
+                    advantage_pct = ((avg_hedging_rate - spot_rate) / spot_rate) * 100
+                    advantage_pln = (avg_hedging_rate - spot_rate) * total_volume_eur
+                    color = "#28a745" if advantage_pct > 0 else "#dc3545"
+                else:
+                    advantage_pct = 0
+                    advantage_pln = 0
+                    color = "#666"
+                
+                st.markdown(f"""
+                <div class="client-summary">
+                    <h4 style="margin: 0; color: #2e68a5;">Korzyść vs Spot</h4>
+                    <h2 style="margin: 0; color: {color};">{advantage_pct:+.2f}%</h2>
+                    <p style="margin: 0; color: #666;">{advantage_pln:+,.0f} PLN</p>
+                </div>
+                """, unsafe_allow_html=True)
     else:
         st.info("📋 Brak kontraktów. Dodaj pierwszy kontrakt Forward Elastyczny.")
 
