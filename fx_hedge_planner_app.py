@@ -1229,9 +1229,6 @@ def create_client_hedging_advisor():
                     f"{total_market_value:+,.0f} PLN",
                     help="Łączna wycena do rynku"
                 )
-    else:
-        st.info("📋 Brak kontraktów. Dodaj pierwszy kontrakt Forward Elastyczny.")
-    
     # Add a simple chart showing forward curve
     st.markdown("---")
     st.subheader("📈 Krzywa Forward EUR/PLN")
