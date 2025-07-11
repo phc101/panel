@@ -1,56 +1,11 @@
-window_max_profit_per_eur = window_min_profit_per_eur + (pricing['swap_risk'] * hedging_savings_pct)
-            window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
-            
-            window_min_profit_total = window_min_profit_per_eur * nominal_amount
-            window_max_profit_total = window_max_profit_per_eur * nominal_amount
-            window_expected_profit_total = window_expected_profit_per_eur * nominal_amount
-            
-            portfolio_totals['total_min_profit'] += window_min_profit_total
-            portfolio_totals['total_max_profit'] += window_max_profit_total
-            portfolio_totals['total_expected_profit'] += window_expected_profit_total
-            portfolio_totals['total_notional'] += nominal_amount
-            portfolio_totals['total_points_to_window'] += pricing['forward_points'] * nominal_amount
-            portfolio_totals['total_swap_risk'] += pricing['swap_risk'] * nominal_amount
-            portfolio_totals['total_client_premium'] += (pricing['client_rate'] - spot_rate) * nominal_amount
-        
-        # Calculate percentage metrics
-        total_exposure_pln = spot_rate * portfolio_totals['total_notional']
-        min_profit_pct = (portfolio_totals['total_min_profit'] / total_exposure_pln) * 100
-        expected_profit_pct = (portfolio_totals['total_expected_profit'] / total_exposure_pln) * 100
-        max_profit_pct = (portfolio_totals['total_max_profit'] / total_exposure_pln) * 100
-        
-        # First row - PLN amounts
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric(
-                "Portfolio Min Zysk", 
-                f"{portfolio_totals['total_min_profit']:,.0f} PLN",
-                help="Suma wszystkich gwarantowanych bank spreads"
-            )
-        
-        with col2:
-            st.metric(
-                "Portfolio Oczekiwany", 
-                f"{portfolio_totals['total_expected_profit']:,.0f} PLN",
-                help="Średnia scenariuszy min/max"
-            )
-        
-        with col3:
-            st.metric(
-                "Portfolio Max Zysk", 
-                f"{portfolio_totals['total_max_profit']:,.0f} PLN",
-                help="Suma bank spreads + oszczędności hedging"
-            )
+)
         
         with col4:
             st.metric(
                 "Zakres Zysku", 
-                f"{portfolio_totals['total_max_profit'] - portfolio_totals['total_min_profit']:,.0f} PLN",
-                help="Zmienność całego portfolio"
+                f"{portfolio_totals['total_max_profit'] - portfolio_totals['total_min_profit']:,.0f} PLN"
             )
         
-        # Second row - percentage metrics
         st.markdown("### 📊 Marże Procentowe")
         
         col1, col2, col3, col4 = st.columns(4)
@@ -91,76 +46,6 @@ window_max_profit_per_eur = window_min_profit_per_eur + (pricing['swap_risk'] * 
                 <p style="margin: 0;">zakres zmienności</p>
             </div>
             """, unsafe_allow_html=True)
-        
-        # Additional portfolio metrics
-        st.markdown("### ⚙️ Parametry Portfolio")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        portfolio_avg_points = portfolio_totals['total_points_to_window'] / portfolio_totals['total_notional']
-        portfolio_avg_swap_risk = portfolio_totals['total_swap_risk'] / portfolio_totals['total_notional']
-        portfolio_avg_client_rate = spot_rate + portfolio_avg_points * points_factor - portfolio_avg_swap_risk * risk_factor
-        
-        with col1:
-            st.metric(
-                "Średnie Punkty", 
-                f"{portfolio_avg_points:.4f}",
-                help="Średnia ważona punktów terminowych"
-            )
-        
-        with col2:
-            st.metric(
-                "Średnie Ryzyko Swap", 
-                f"{portfolio_avg_swap_risk:.4f}",
-                help=f"Średnie ryzyko swap dla {window_days}-dniowych okien"
-            )
-        
-        with col3:
-            st.metric(
-                "Średni Kurs Klienta", 
-                f"{portfolio_avg_client_rate:.4f}",
-                help="Średni kurs klienta w portfolio"
-            )
-        
-        with col4:
-            risk_reward_ratio = portfolio_totals['total_max_profit'] / portfolio_totals['total_min_profit'] if portfolio_totals['total_min_profit'] > 0 else float('inf')
-            st.metric(
-                "Risk/Reward", 
-                f"{risk_reward_ratio:.1f}x",
-                help="Stosunek max/min zysku"
-            )
-        
-        # Deal summary
-        st.markdown("---")
-        st.subheader("📋 Podsumowanie Transakcji")
-        
-        with st.container():
-            summary_col1, summary_col2 = st.columns([1, 1])
-            
-            with summary_col1:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h4>💼 Strategia Portfolio Window Forward</h4>
-                    <p><strong>Strategia:</strong> 12 Window Forwards z {window_days}-dniową elastycznością</p>
-                    <p><strong>Całkowity Nominał:</strong> €{portfolio_totals['total_notional']:,}</p>
-                    <p><strong>Kurs Spot:</strong> {spot_rate:.4f} ({spot_source})</p>
-                    <p><strong>Średni Kurs Klienta:</strong> {portfolio_avg_client_rate:.4f}</p>
-                    <p><strong>Points Factor:</strong> {points_factor:.1%}</p>
-                    <p><strong>Risk Factor:</strong> {risk_factor:.1%}</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with summary_col2:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h4>💰 Podsumowanie Finansowe</h4>
-                    <p><strong>Oczekiwany Zysk:</strong> {portfolio_totals['total_expected_profit']:,.0f} PLN ({expected_profit_pct:.3f}%)</p>
-                    <p><strong>Portfolio Minimum:</strong> {portfolio_totals['total_min_profit']:,.0f} PLN ({min_profit_pct:.3f}%)</p>
-                    <p><strong>Portfolio Maximum:</strong> {portfolio_totals['total_max_profit']:,.0f} PLN ({max_profit_pct:.3f}%)</p>
-                    <p><strong>Współczynnik Zmienności:</strong> {volatility_factor:.2f}</p>
-                    <p><strong>Oszczędności Hedging:</strong> {hedging_savings_pct:.0%}</p>
-                    <p><strong>Dźwignia:</strong> {leverage}x</p>
-                </div>
-                """, unsafe_allow_html=True)
     else:
         st.info("👆 Kliknij 'Zaktualizuj Wycenę' aby wygenerować kursy")
 
@@ -183,20 +68,18 @@ def create_client_hedging_advisor():
     </div>
     """, unsafe_allow_html=True)
     
-    # Professional transaction interface
     st.markdown("---")
     st.subheader("💱 Nowa Transakcja Forward Elastyczny")
     
-    # Transaction direction
     col1, col2, col3 = st.columns([1, 1, 2])
     
     with col1:
         st.markdown("**SPRZEDAJ**")
-        sell_currency = st.selectbox("", ["EUR"], key="sell_curr", help="Waluta sprzedaży")
+        sell_currency = st.selectbox("", ["EUR"], key="sell_curr")
     
     with col2:
         st.markdown("**KUP**")
-        buy_currency = st.selectbox("", ["PLN"], key="buy_curr", help="Waluta zakupu")
+        buy_currency = st.selectbox("", ["PLN"], key="buy_curr")
     
     with col3:
         st.markdown("**CAŁKOWITY WOLUMEN**")
@@ -206,11 +89,9 @@ def create_client_hedging_advisor():
             min_value=10_000,
             max_value=50_000_000,
             step=10_000,
-            format="%d",
-            help="Kwota w EUR"
+            format="%d"
         )
     
-    # Date selection
     st.markdown("### 📅 Wybór Terminów Wykonania")
     
     col1, col2, col3 = st.columns(3)
@@ -220,8 +101,7 @@ def create_client_hedging_advisor():
             "**Data pierwszego wykonania:**",
             value=(datetime.now() + timedelta(days=90)).date(),
             min_value=datetime.now().date(),
-            max_value=(datetime.now() + timedelta(days=730)).date(),
-            help="Data rozliczenia transakcji"
+            max_value=(datetime.now() + timedelta(days=730)).date()
         )
     
     with col2:
@@ -230,23 +110,19 @@ def create_client_hedging_advisor():
             value=config['window_days'],
             min_value=30,
             max_value=365,
-            step=5,
-            help="Okres elastyczności wykonania"
+            step=5
         )
     
     with col3:
         execution_type = st.selectbox(
             "**Typ wykonania:**",
-            ["Forward Elastyczny", "Forward Standardowy", "Window Forward"],
-            help="Rodzaj kontraktu terminowego"
+            ["Forward Elastyczny", "Forward Standardowy", "Window Forward"]
         )
     
-    # Calculate and display rates
     settlement_datetime = datetime.combine(settlement_date, datetime.min.time())
     today_datetime = datetime.now()
     days_to_settlement = (settlement_datetime - today_datetime).days
     
-    # Calculate forward rate for this specific date
     calculator = APIIntegratedForwardCalculator(FREDAPIClient())
     theoretical = calculator.calculate_theoretical_forward_points(
         config['spot_rate'], 
@@ -271,7 +147,6 @@ def create_client_hedging_advisor():
     
     client_rate = rates_result['fwd_client']
     
-    # Professional rate display
     st.markdown("### 💰 Wycena Transakcji")
     
     col1, col2, col3, col4 = st.columns(4)
@@ -316,21 +191,17 @@ def create_client_hedging_advisor():
         </div>
         """, unsafe_allow_html=True)
     
-    # Add transaction button
     st.markdown("---")
     if st.button("➕ Dodaj elastyczny kontrakt forwardowy", type="primary", use_container_width=True):
-        # Calculate execution window
         execution_window_end = settlement_datetime
         execution_window_start = execution_window_end - timedelta(days=window_days)
         
-        # Determine tenor name
         months_approx = days_to_settlement / 30
         if months_approx < 1:
             tenor_name = f"{days_to_settlement} dni"
         else:
             tenor_name = f"{months_approx:.0f}M+"
         
-        # Add to transactions list
         transaction_id = len(st.session_state.hedge_transactions) + 1
         st.session_state.hedge_transactions.append({
             "nr": transaction_id,
@@ -347,12 +218,10 @@ def create_client_hedging_advisor():
         st.success(f"✅ Dodano kontrakt Forward Elastyczny na {volume:,.0f} EUR")
         st.rerun()
     
-    # Professional transaction list
     if st.session_state.hedge_transactions:
         st.markdown("---")
         st.markdown("## Lista transakcji")
         
-        # Summary header
         total_volume_eur = 0
         try:
             for t in st.session_state.hedge_transactions:
@@ -372,10 +241,8 @@ def create_client_hedging_advisor():
         </div>
         """, unsafe_allow_html=True)
         
-        # Professional table header
         st.markdown("### Otwarte i zaplanowane")
         
-        # Create table data
         transactions_data = []
         
         for i, transaction in enumerate(st.session_state.hedge_transactions, 1):
@@ -392,15 +259,12 @@ def create_client_hedging_advisor():
                 "STATUS": transaction.get('status', 'PLANOWANE')
             })
         
-        # Display table
         if transactions_data:
             df_transactions = pd.DataFrame(transactions_data)
             st.dataframe(df_transactions, use_container_width=True, height=400, hide_index=True)
             
-            # Summary metrics
             st.markdown("### 📊 Podsumowanie Portfolio")
             
-            # Safe calculations
             total_pln = 0
             total_market_value = 0
             
@@ -426,8 +290,7 @@ def create_client_hedging_advisor():
             with col1:
                 st.metric(
                     "Łączny Wolumen",
-                    f"€{total_volume_eur:,.0f}",
-                    help="Suma wszystkich kontraktów"
+                    f"€{total_volume_eur:,.0f}"
                 )
             
             with col2:
@@ -439,27 +302,23 @@ def create_client_hedging_advisor():
                 st.metric(
                     "Średni Kurs",
                     f"{avg_rate:.4f}" if avg_rate > 0 else "N/A",
-                    delta=delta_str,
-                    help="Średnia ważona kursów zabezpieczenia"
+                    delta=delta_str
                 )
             
             with col3:
                 st.metric(
                     "Łączna Kwota PLN",
-                    f"{total_pln:,.0f} PLN",
-                    help="Suma PLN do otrzymania"
+                    f"{total_pln:,.0f} PLN"
                 )
             
             with col4:
                 st.metric(
                     "Wycena Portfolio",
-                    f"{total_market_value:+,.0f} PLN",
-                    help="Łączna wycena do rynku"
+                    f"{total_market_value:+,.0f} PLN"
                 )
     else:
         st.info("📋 Brak kontraktów. Dodaj pierwszy kontrakt Forward Elastyczny.")
     
-    # Forward curve chart
     st.markdown("---")
     st.subheader("📈 Krzywa Forward EUR/PLN")
     
@@ -470,7 +329,6 @@ def create_client_hedging_advisor():
         
         fig = go.Figure()
         
-        # Spot line
         fig.add_trace(
             go.Scatter(
                 x=tenors_list,
@@ -482,7 +340,6 @@ def create_client_hedging_advisor():
             )
         )
         
-        # Forward rates
         fig.add_trace(
             go.Scatter(
                 x=tenors_list,
@@ -513,7 +370,6 @@ def create_binomial_model_panel():
         historical_data = get_historical_eur_pln_data(30)
         current_forex = get_eur_pln_rate()
     
-    # Data source info
     col1, col2 = st.columns(2)
     
     with col1:
@@ -534,7 +390,6 @@ def create_binomial_model_panel():
         </div>
         """, unsafe_allow_html=True)
     
-    # Calculate volatility
     try:
         if historical_data['success'] and len(historical_data['rates']) >= 20:
             rates = historical_data['rates']
@@ -568,7 +423,6 @@ def create_binomial_model_panel():
         p_down_empirical = 0.5
         st.warning("⚠️ Używam domyślnych wartości")
     
-    # Model parameters
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -602,7 +456,6 @@ def create_binomial_model_panel():
             p_down_display = 1 - p_up_display
             st.info(f"P(up)={p_up_display:.3f}")
     
-    # Build tree
     if use_empirical:
         p = p_up_empirical
         u = 1 + rolling_vol
@@ -628,7 +481,6 @@ def create_binomial_model_panel():
                 rate = spot_rate * (u ** ups) * (d ** downs)
                 tree[day][j] = rate
     
-    # Most probable path
     most_probable_path = []
     for day in range(6):
         if day == 0:
@@ -649,7 +501,6 @@ def create_binomial_model_panel():
             
             most_probable_path.append(best_j)
     
-    # Final prediction
     st.subheader("🎯 Prognoza Finalna")
     
     final_day = days
@@ -676,24 +527,12 @@ def create_binomial_model_panel():
         max_rate = max(final_rates)
         st.metric("Zakres", f"{min_rate:.4f} - {max_rate:.4f}")
     
-    # Binomial tree visualization
     st.subheader("🌳 Drzewo Dwumianowe")
     
     fig = go.Figure()
     
-    # Business days for labels
-    today = datetime.now()
-    business_days = []
-    current_date = today
-    
-    while len(business_days) < 5:
-        current_date += timedelta(days=1)
-        if current_date.weekday() < 5:
-            business_days.append(current_date)
-    
     weekdays = ["Pon", "Wt", "Śr", "Czw", "Pt"]
     
-    # Plot nodes
     for day in range(6):
         for j in range(day + 1):
             rate = tree[day][j]
@@ -702,7 +541,6 @@ def create_binomial_model_panel():
             
             is_most_probable = (j == most_probable_path[day])
             
-            # Node
             fig.add_trace(
                 go.Scatter(
                     x=[x],
@@ -718,7 +556,6 @@ def create_binomial_model_panel():
                 )
             )
             
-            # Label
             fig.add_trace(
                 go.Scatter(
                     x=[x],
@@ -736,9 +573,7 @@ def create_binomial_model_panel():
                 )
             )
             
-            # Connections
             if day < 5:
-                # Up
                 if j < day + 1:
                     next_y_up = (j + 1) - (day + 1)/2
                     is_prob_connection = (j == most_probable_path[day] and (j + 1) == most_probable_path[day + 1])
@@ -757,7 +592,6 @@ def create_binomial_model_panel():
                         )
                     )
                 
-                # Down
                 if j >= 0:
                     next_y_down = j - (day + 1)/2
                     is_prob_connection = (j == most_probable_path[day] and j == most_probable_path[day + 1])
@@ -776,7 +610,6 @@ def create_binomial_model_panel():
                         )
                     )
     
-    # Legend
     fig.add_trace(
         go.Scatter(
             x=[None], y=[None],
@@ -797,7 +630,6 @@ def create_binomial_model_panel():
         )
     )
     
-    # Layout
     fig.update_layout(
         title="Drzewo dwumianowe EUR/PLN - 5 dni roboczych",
         xaxis_title="Dzień roboczy",
@@ -813,14 +645,9 @@ def create_binomial_model_panel():
     
     st.plotly_chart(fig, use_container_width=True)
 
-# ============================================================================
-# MAIN APP
-# ============================================================================
-
 def main():
     initialize_session_state()
     
-    # Header
     st.markdown("""
     <div style="display: flex; align-items: center; margin-bottom: 2rem;">
         <div style="background: linear-gradient(45deg, #667eea, #764ba2); width: 60px; height: 60px; border-radius: 10px; margin-right: 1rem; display: flex; align-items: center; justify-content: center;">
@@ -832,14 +659,12 @@ def main():
     
     st.markdown("*Alpha Vantage + NBP + FRED APIs | Synchronizacja dealerska ↔ klient*")
     
-    # Sync status
     if st.session_state.dealer_pricing_data:
         config = st.session_state.dealer_config
         st.success(f"✅ System zsynchronizowany | Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} dni")
     else:
         st.info("🔄 Oczekiwanie na wycenę dealerską...")
     
-    # Tabs
     tab1, tab2, tab3 = st.tabs(["🔧 Panel Dealerski", "🛡️ Panel Zabezpieczeń", "📊 Model Dwumianowy"])
     
     with tab1:
@@ -921,10 +746,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# ============================================================================
-# API CLASSES
-# ============================================================================
 
 class AlphaVantageAPI:
     def __init__(self, api_key=ALPHA_VANTAGE_API_KEY):
@@ -1093,10 +914,6 @@ class FREDAPIClient:
                 results[name] = data
         return results
 
-# ============================================================================
-# SESSION STATE
-# ============================================================================
-
 def initialize_session_state():
     if 'dealer_pricing_data' not in st.session_state:
         st.session_state.dealer_pricing_data = None
@@ -1116,10 +933,6 @@ def initialize_session_state():
         }
     if 'hedge_transactions' not in st.session_state:
         st.session_state.hedge_transactions = []
-
-# ============================================================================
-# CACHED DATA FUNCTIONS
-# ============================================================================
 
 @st.cache_data(ttl=3600)
 def get_fred_bond_data():
@@ -1154,10 +967,6 @@ def get_eur_pln_rate():
 def get_historical_eur_pln_data(days=30):
     alpha_api = AlphaVantageAPI()
     return alpha_api.get_historical_eur_pln(days)
-
-# ============================================================================
-# FORWARD CALCULATOR
-# ============================================================================
 
 class APIIntegratedForwardCalculator:
     def __init__(self, fred_client):
@@ -1263,10 +1072,6 @@ class APIIntegratedForwardCalculator:
             }
         }
 
-# ============================================================================
-# SUPPORT FUNCTIONS
-# ============================================================================
-
 def calculate_dealer_pricing(config):
     calculator = APIIntegratedForwardCalculator(FREDAPIClient())
     calculator.points_factor = config['points_factor']
@@ -1328,10 +1133,6 @@ def update_dealer_config(spot_rate, spot_source, pl_yield, de_yield, window_days
     }
     
     st.session_state.dealer_pricing_data = calculate_dealer_pricing(st.session_state.dealer_config)
-
-# ============================================================================
-# UI FUNCTIONS
-# ============================================================================
 
 def create_dealer_panel():
     st.header("🚀 Panel Dealerski - Wycena Master")
@@ -1551,21 +1352,49 @@ def create_dealer_panel():
         df_pricing = pd.DataFrame(pricing_df_data)
         st.dataframe(df_pricing, use_container_width=True, height=400)
         
-        # Portfolio summary with percentage metrics
         st.subheader("📊 Podsumowanie Portfolio")
         
-        # Calculate portfolio totals
         portfolio_totals = {
             'total_min_profit': 0,
             'total_max_profit': 0,
             'total_expected_profit': 0,
-            'total_notional': 0,
-            'total_points_to_window': 0,
-            'total_swap_risk': 0,
-            'total_client_premium': 0
+            'total_notional': 0
         }
         
         for pricing in st.session_state.dealer_pricing_data:
-            # Calculate window forward metrics
             window_min_profit_per_eur = pricing['profit_per_eur']
-            window_max_profit_per_eur = window_min_profit_per_eur + (pricing['swap_risk'] * hedging_savings_pct
+            window_max_profit_per_eur = window_min_profit_per_eur + (pricing['swap_risk'] * hedging_savings_pct)
+            window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
+            
+            window_min_profit_total = window_min_profit_per_eur * nominal_amount
+            window_max_profit_total = window_max_profit_per_eur * nominal_amount
+            window_expected_profit_total = window_expected_profit_per_eur * nominal_amount
+            
+            portfolio_totals['total_min_profit'] += window_min_profit_total
+            portfolio_totals['total_max_profit'] += window_max_profit_total
+            portfolio_totals['total_expected_profit'] += window_expected_profit_total
+            portfolio_totals['total_notional'] += nominal_amount
+        
+        total_exposure_pln = spot_rate * portfolio_totals['total_notional']
+        min_profit_pct = (portfolio_totals['total_min_profit'] / total_exposure_pln) * 100
+        expected_profit_pct = (portfolio_totals['total_expected_profit'] / total_exposure_pln) * 100
+        max_profit_pct = (portfolio_totals['total_max_profit'] / total_exposure_pln) * 100
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "Portfolio Min Zysk", 
+                f"{portfolio_totals['total_min_profit']:,.0f} PLN"
+            )
+        
+        with col2:
+            st.metric(
+                "Portfolio Oczekiwany", 
+                f"{portfolio_totals['total_expected_profit']:,.0f} PLN"
+            )
+        
+        with col3:
+            st.metric(
+                "Portfolio Max Zysk", 
+                f"{portfolio_totals['total_max_profit']:,.0f} PLN
