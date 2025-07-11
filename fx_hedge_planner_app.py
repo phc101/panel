@@ -572,14 +572,17 @@ def create_client_hedging_advisor():
     
     st.markdown("---")
     if st.button("➕ Dodaj elastyczny kontrakt forwardowy", type="primary", use_container_width=True):
-        execution_window_end = settlement_datetime
-        execution_window_start = execution_window_end - timedelta(days=window_days)
+        execution_window_start = settlement_datetime
+        execution_window_end = execution_window_start + timedelta(days=window_days)
         
         months_approx = days_to_settlement / 30
         if months_approx < 1:
             tenor_name = f"{days_to_settlement} dni"
         else:
             tenor_name = f"{months_approx:.0f}M+"
+        
+        # Calculate percentage result vs spot
+        pct_vs_spot = ((client_rate - config['spot_rate']) / config['spot_rate']) * 100
         
         transaction_id = len(st.session_state.hedge_transactions) + 1
         st.session_state.hedge_transactions.append({
@@ -590,7 +593,7 @@ def create_client_hedging_advisor():
             "kwota_sprzedazy": f"(EUR) {volume:,.0f}",
             "kwota_zakupu": f"(PLN) {pln_amount:,.0f}",
             "kurs_zabezpieczenia": f"{client_rate:.4f}",
-            "kurs_koncowy": f"{client_rate:.4f}",
+            "pct_vs_spot": f"{pct_vs_spot:+.2f}%",
             "wycena_do_rynku": f"{advantage_pln:+,.0f} PLN" if advantage_pln != 0 else "0,00 PLN",
             "status": "PLANOWANE"
         })
