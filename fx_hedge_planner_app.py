@@ -320,6 +320,11 @@ def get_eur_pln_rate():
     alpha_api = AlphaVantageAPI()
     return alpha_api.get_eur_pln_rate()
 
+@st.cache_data(ttl=1800)
+def get_historical_eur_pln_data(days=30):
+    alpha_api = AlphaVantageAPI()
+    return alpha_api.get_historical_eur_pln(days)
+
 def create_dealer_panel():
     st.header("🚀 Panel Dealerski - Wycena Master")
     st.markdown("*Ustaw parametry wyceny - te kursy będą widoczne w panelu zabezpieczeń*")
@@ -889,7 +894,9 @@ def create_binomial_model_panel():
     st.markdown("*Krótkoterminowa prognoza EUR/PLN*")
     
     with st.spinner("📡 Pobieranie danych..."):
-        historical_data = get_historical_eur_pln_data(30)
+        # Direct API call instead of cached function to avoid issues
+        alpha_api = AlphaVantageAPI()
+        historical_data = alpha_api.get_historical_eur_pln(30)
         current_forex = get_eur_pln_rate()
     
     # Data source info
