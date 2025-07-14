@@ -817,22 +817,68 @@ def create_binomial_model_panel():
     st.markdown("*Krótkoterminowa prognoza EUR/PLN*")
     
     with st.spinner("📡 Pobieranie danych..."):
+        historical_data = get_historical_eur_pln_data(30)
         current_forex = get_eur_pln_rate()
     
-    st.markdown(f"""
-    <div class="alpha-api">
-        <h4 style="margin: 0;">📈 Kurs Bieżący</h4>
-        <p style="margin: 0;">Rate: {current_forex['rate']:.4f}</p>
-        <p style="margin: 0;">Source: {current_forex['source']}</p>
-    </div>
-    """, unsafe_allow_html=True)
+    # Data source info
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="alpha-api">
+            <h4 style="margin: 0;">📈 Kurs Bieżący</h4>
+            <p style="margin: 0;">Rate: {current_forex['rate']:.4f}</p>
+            <p style="margin: 0;">Source: {current_forex['source']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="alpha-api">
+            <h4 style="margin: 0;">📊 Dane Historyczne</h4>
+            <p style="margin: 0;">Points: {historical_data['count']}</p>
+            <p style="margin: 0;">Source: {historical_data['source']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Calculate volatility from historical data
+    try:
+        if historical_data['success'] and len(historical_data['rates']) >= 20:
+            rates = historical_data['rates']
+            last_20_rates = rates[-20:] if len(rates) >= 20 else rates
+            current_spot = last_20_rates[-1]
+            
+            # Calculate daily returns
+            daily_returns = []
+            for i in range(1, len(last_20_rates)):
+                daily_return = np.log(last_20_rates[i] / last_20_rates[i-1])
+                daily_returns.append(daily_return)
+            
+            # Historical volatility (annualized)
+            if len(daily_returns) > 1:
+                historical_volatility = np.std(daily_returns) * np.sqrt(252)  # Annualized
+                daily_vol_historical = historical_volatility / np.sqrt(252)  # Daily
+                
+                st.success(f"✅ Volatility z Alpha Vantage: {historical_volatility*100:.2f}% rocznie")
+                st.info(f"Dzienna volatility: {daily_vol_historical*100:.2f}%")
+                st.info(f"Bazuje na {len(daily_returns)} dziennych zwrotach")
+            else:
+                raise Exception("Insufficient returns data")
+        else:
+            raise Exception("Insufficient historical data")
+            
+    except Exception as e:
+        daily_vol_historical = 0.0034  # Fallback daily volatility (0.34%)
+        historical_volatility = daily_vol_historical * np.sqrt(252)
+        current_spot = current_forex['rate']
+        st.warning(f"⚠️ Używam domyślnej volatility: {historical_volatility*100:.2f}% rocznie")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
         spot_rate = st.number_input(
             "Kurs spot:",
-            value=current_forex['rate'],
+            value=current_spot,
             min_value=3.50,
             max_value=6.00,
             step=0.0001,
@@ -844,13 +890,20 @@ def create_binomial_model_panel():
         days = 5
     
     with col3:
-        daily_vol = st.slider("Zmienność (%):", 0.1, 2.0, 0.34, 0.05) / 100
+        use_historical_vol = st.checkbox("Użyj historycznej volatility z Alpha Vantage", value=True)
+        
+        if use_historical_vol:
+            daily_vol = daily_vol_historical
+            st.success(f"Volatility: {daily_vol*100:.3f}% dziennie")
+        else:
+            daily_vol = st.slider("Volatility manualna (%):", 0.1, 2.0, daily_vol_historical*100, 0.05) / 100
+            st.info(f"Volatility: {daily_vol*100:.3f}% dziennie")
     
-    # Build binomial tree
-    dt = 1/252
+    # Build binomial tree with historical volatility
+    dt = 1/252  # Daily time step
     u = np.exp(daily_vol * np.sqrt(dt))
     d = 1/u
-    r = 0.02/252
+    r = 0.02/252  # Daily risk-free rate
     p = (np.exp(r * dt) - d) / (u - d)
     
     tree = {}
@@ -899,6 +952,13 @@ def create_binomial_model_panel():
     
     with col2:
         prob = comb(final_day, final_j) * (p ** final_j) * ((1 - p) ** (final_day - final_j))
+        st.metric("Prawdopodobieństwo", f"{prob*100:.1f}%")
+    
+    with col3:
+        final_rates = [tree[5][j] for j in range(6)]
+        min_rate = min(final_rates)
+        max_rate = max(final_rates)
+        st.metric("Zakres", f"{min_rate:.4f} - {max_rate:.4f}")
         st.metric("Prawdopodobieństwo", f"{prob*100:.1f}%")
     
     with col3:
