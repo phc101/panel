@@ -101,6 +101,7 @@ class AlphaVantageAPI:
             return self._get_nbp_fallback()
     
     def get_historical_eur_pln(self, days=30):
+        # Try Alpha Vantage first
         try:
             params = {
                 'function': 'FX_DAILY',
@@ -123,7 +124,7 @@ class AlphaVantageAPI:
                     rate = float(time_series[date]['4. close'])
                     rates.append(rate)
                 
-                if len(rates) >= 10:
+                if len(rates) >= 20:
                     return {
                         'rates': rates,
                         'dates': dates[:len(rates)],
@@ -132,9 +133,96 @@ class AlphaVantageAPI:
                         'count': len(rates)
                     }
             
-            return self._get_nbp_historical_fallback(days)
+            # If Alpha Vantage fails, try alternative APIs
+            return self._get_freeforex_historical(days)
             
         except Exception as e:
+            return self._get_freeforex_historical(days)
+    
+    def _get_freeforex_historical(self, days=30):
+        """Alternative free forex API for historical data"""
+        try:
+            # Try FreeCurrency API (no key required)
+            url = "https://api.freecurrencyapi.com/v1/historical"
+            params = {
+                'base_currency': 'EUR',
+                'currencies': 'PLN'
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'data' in data:
+                rates = []
+                dates = []
+                
+                # Get last 30 days of data
+                for date_str, currencies in sorted(data['data'].items(), reverse=True):
+                    if len(rates) >= days:
+                        break
+                    if 'PLN' in currencies:
+                        rates.append(float(currencies['PLN']))
+                        dates.append(date_str)
+                
+                if len(rates) >= 20:
+                    return {
+                        'rates': rates,
+                        'dates': dates,
+                        'source': 'FreeCurrency API',
+                        'success': True,
+                        'count': len(rates)
+                    }
+            
+            # If that fails, try ExchangeRate-API
+            return self._get_exchangerate_historical(days)
+            
+        except Exception:
+            return self._get_exchangerate_historical(days)
+    
+    def _get_exchangerate_historical(self, days=30):
+        """ExchangeRate-API alternative"""
+        try:
+            rates = []
+            dates = []
+            
+            # Get data for last 30 days
+            for i in range(days):
+                date = datetime.now() - timedelta(days=i)
+                date_str = date.strftime('%Y-%m-%d')
+                
+                # Skip weekends for forex data
+                if date.weekday() >= 5:
+                    continue
+                
+                try:
+                    url = f"https://api.exchangerate-api.com/v4/historical/EUR/{date_str}"
+                    response = requests.get(url, timeout=5)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        if 'rates' in data and 'PLN' in data['rates']:
+                            rates.append(float(data['rates']['PLN']))
+                            dates.append(date_str)
+                            
+                            if len(rates) >= 20:
+                                break
+                except:
+                    continue
+            
+            if len(rates) >= 15:
+                return {
+                    'rates': rates,
+                    'dates': dates,
+                    'source': 'ExchangeRate-API',
+                    'success': True,
+                    'count': len(rates)
+                }
+            
+            # Final fallback to NBP
+            return self._get_nbp_historical_fallback(days)
+            
+        except Exception:
             return self._get_nbp_historical_fallback(days)
     
     def _get_nbp_fallback(self):
@@ -173,7 +261,7 @@ class AlphaVantageAPI:
             response.raise_for_status()
             data = response.json()
             
-            if data.get('rates') and len(data['rates']) >= 10:
+            if data.get('rates') and len(data['rates']) >= 15:
                 rates = [rate_data['mid'] for rate_data in data['rates']]
                 dates = [rate_data['effectiveDate'] for rate_data in data['rates']]
                 take_count = min(days, len(rates))
@@ -188,10 +276,24 @@ class AlphaVantageAPI:
         except Exception:
             pass
         
+        # Ultimate fallback - synthetic data with realistic volatility
+        base_rate = 4.25
+        rates = []
+        dates = []
+        
+        for i in range(20):
+            # Add realistic daily volatility (~0.5% daily)
+            daily_change = np.random.normal(0, 0.005)
+            rate = base_rate * (1 + daily_change * i * 0.1)
+            rates.append(rate)
+            
+            date = datetime.now() - timedelta(days=i)
+            dates.append(date.strftime('%Y-%m-%d'))
+        
         return {
-            'rates': [4.25] * 20,
-            'dates': [(datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(20)],
-            'source': 'Synthetic Data',
+            'rates': rates,
+            'dates': dates,
+            'source': 'Synthetic Historical Data',
             'success': False,
             'count': 20
         }
