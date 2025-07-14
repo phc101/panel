@@ -100,6 +100,43 @@ class AlphaVantageAPI:
         except Exception as e:
             return self._get_nbp_fallback()
     
+    def get_historical_eur_pln(self, days=30):
+        try:
+            params = {
+                'function': 'FX_DAILY',
+                'from_symbol': 'EUR',
+                'to_symbol': 'PLN',
+                'apikey': self.api_key,
+                'outputsize': 'compact'
+            }
+            
+            response = requests.get(self.base_url, params=params, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'Time Series (FX)' in data:
+                time_series = data['Time Series (FX)']
+                rates = []
+                dates = sorted(time_series.keys(), reverse=True)
+                
+                for date in dates[:days]:
+                    rate = float(time_series[date]['4. close'])
+                    rates.append(rate)
+                
+                if len(rates) >= 10:
+                    return {
+                        'rates': rates,
+                        'dates': dates[:len(rates)],
+                        'source': 'Alpha Vantage Historical',
+                        'success': True,
+                        'count': len(rates)
+                    }
+            
+            return self._get_nbp_historical_fallback(days)
+            
+        except Exception as e:
+            return self._get_nbp_historical_fallback(days)
+    
     def _get_nbp_fallback(self):
         try:
             url = "https://api.nbp.pl/api/exchangerates/rates/a/eur/"
@@ -122,6 +159,41 @@ class AlphaVantageAPI:
             'date': datetime.now().strftime('%Y-%m-%d'),
             'source': 'Fallback',
             'success': False
+        }
+    
+    def _get_nbp_historical_fallback(self, days=30):
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days+10)
+            start_str = start_date.strftime('%Y-%m-%d')
+            end_str = end_date.strftime('%Y-%m-%d')
+            
+            url = f"https://api.nbp.pl/api/exchangerates/rates/a/eur/{start_str}/{end_str}/"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get('rates') and len(data['rates']) >= 10:
+                rates = [rate_data['mid'] for rate_data in data['rates']]
+                dates = [rate_data['effectiveDate'] for rate_data in data['rates']]
+                take_count = min(days, len(rates))
+                
+                return {
+                    'rates': rates[-take_count:],
+                    'dates': dates[-take_count:],
+                    'source': 'NBP Historical Backup',
+                    'success': True,
+                    'count': take_count
+                }
+        except Exception:
+            pass
+        
+        return {
+            'rates': [4.25] * 20,
+            'dates': [(datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(20)],
+            'source': 'Synthetic Data',
+            'success': False,
+            'count': 20
         }
 
 class FREDAPIClient:
