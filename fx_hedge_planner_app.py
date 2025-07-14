@@ -676,6 +676,10 @@ def create_client_hedging_advisor():
         execution_window_start = settlement_datetime
         execution_window_end = execution_window_start + timedelta(days=window_days)
         
+        # Skip weekends for expiration date - if Saturday (5) or Sunday (6), move to Monday
+        while execution_window_end.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            execution_window_end += timedelta(days=1)
+        
         months_approx = days_to_settlement / 30
         if months_approx < 1:
             tenor_name = f"{days_to_settlement} dni"
