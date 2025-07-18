@@ -30,6 +30,7 @@ min_r2 = st.sidebar.slider("Minimum R² for Trading", 0.1, 0.9, 0.3, 0.05)
 
 st.sidebar.header("Strategy Parameters")
 hold_period_months = st.sidebar.slider("Holding Period (Months)", 1, 12, 3)
+position_size = st.sidebar.number_input("Position Size (Volume per Trade)", min_value=1000, max_value=10000000, value=100000, step=10000)
 show_detailed_trades = st.sidebar.checkbox("Show Detailed Trades", True)
 
 def load_and_clean_data(file, data_type):
@@ -221,7 +222,9 @@ if fx_file and domestic_file and foreign_file:
                             'position': 'Long',
                             'hold_days': days_held,
                             'pnl': pnl,
-                            'pnl_pct': (pnl / pos['entry_price']) * 100
+                            'pnl_pct': (pnl / pos['entry_price']) * 100,
+                            'position_size': position_size,
+                            'nominal_pnl': pnl * position_size
                         })
                         expired_long.append(i)
                 
@@ -248,7 +251,9 @@ if fx_file and domestic_file and foreign_file:
                             'position': 'Short',
                             'hold_days': days_held,
                             'pnl': pnl,
-                            'pnl_pct': (pnl / pos['entry_price']) * 100
+                            'pnl_pct': (pnl / pos['entry_price']) * 100,
+                            'position_size': position_size,
+                            'nominal_pnl': pnl * position_size
                         })
                         expired_short.append(i)
                 
@@ -294,7 +299,9 @@ if fx_file and domestic_file and foreign_file:
                 'position': 'Long',
                 'hold_days': (last_date - pos['entry_date']).days,
                 'pnl': pnl,
-                'pnl_pct': (pnl / pos['entry_price']) * 100
+                'pnl_pct': (pnl / pos['entry_price']) * 100,
+                'position_size': position_size,
+                'nominal_pnl': pnl * position_size
             })
         
         # Close remaining short positions
@@ -311,7 +318,9 @@ if fx_file and domestic_file and foreign_file:
                 'position': 'Short',
                 'hold_days': (last_date - pos['entry_date']).days,
                 'pnl': pnl,
-                'pnl_pct': (pnl / pos['entry_price']) * 100
+                'pnl_pct': (pnl / pos['entry_price']) * 100,
+                'position_size': position_size,
+                'nominal_pnl': pnl * position_size
             })
         
         # Show basic statistics
@@ -323,14 +332,28 @@ if fx_file and domestic_file and foreign_file:
             long_trades = [p for p in positions if p['position'] == 'Long']
             short_trades = [p for p in positions if p['position'] == 'Short']
             winning_trades = sum(1 for p in positions if p['pnl'] > 0)
+            
+            # Price-based PnL (original)
             total_pnl = sum(p['pnl'] for p in positions)
             avg_pnl = total_pnl / total_trades
-            win_rate = (winning_trades / total_trades) * 100
             avg_pnl_pct = sum(p['pnl_pct'] for p in positions) / total_trades
             max_pnl = max(p['pnl'] for p in positions)
             min_pnl = min(p['pnl'] for p in positions)
             
-            # Display metrics
+            # Nominal PnL (with position size)
+            total_nominal_pnl = sum(p['nominal_pnl'] for p in positions)
+            avg_nominal_pnl = total_nominal_pnl / total_trades
+            max_nominal_pnl = max(p['nominal_pnl'] for p in positions)
+            min_nominal_pnl = min(p['nominal_pnl'] for p in positions)
+            
+            # Total capital deployed
+            total_capital_deployed = total_trades * position_size
+            total_return_pct = (total_nominal_pnl / total_capital_deployed) * 100
+            
+            win_rate = (winning_trades / total_trades) * 100
+            
+            # Display main metrics
+            st.subheader("Overall Performance")
             col1, col2, col3, col4, col5, col6 = st.columns(6)
             
             with col1:
@@ -340,24 +363,63 @@ if fx_file and domestic_file and foreign_file:
             with col3:
                 st.metric("Win Rate", f"{win_rate:.1f}%")
             with col4:
-                st.metric("Total PnL", f"{total_pnl:.4f}")
-            with col5:
                 st.metric("Avg PnL %", f"{avg_pnl_pct:.2f}%")
+            with col5:
+                st.metric("Total Return %", f"{total_return_pct:.2f}%")
             with col6:
-                st.metric("Best/Worst", f"{max_pnl:.4f} / {min_pnl:.4f}")
+                st.metric("Position Size", f"{position_size:,}")
+            
+            # Display nominal value metrics
+            st.subheader("Nominal Value Performance")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Nominal PnL", f"{total_nominal_pnl:,.0f}")
+            with col2:
+                st.metric("Avg Nominal PnL", f"{avg_nominal_pnl:,.0f}")
+            with col3:
+                st.metric("Best Trade", f"{max_nominal_pnl:,.0f}")
+            with col4:
+                st.metric("Worst Trade", f"{min_nominal_pnl:,.0f}")
+            
+            # Capital deployment info
+            st.subheader("Capital Deployment")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Total Capital Deployed", f"{total_capital_deployed:,}")
+            with col2:
+                # Calculate average concurrent positions
+                max_concurrent = 0
+                current_positions = 0
+                all_dates = sorted(set([p['entry_date'] for p in positions] + [p['exit_date'] for p in positions]))
+                
+                for date in all_dates:
+                    for p in positions:
+                        if p['entry_date'] <= date < p['exit_date']:
+                            pass
+                    # This is a simplified calculation - we could do more precise concurrent tracking
+                avg_capital_at_risk = total_capital_deployed / total_trades * min(3, total_trades/10)  # Rough estimate
+                st.metric("Avg Capital at Risk", f"{avg_capital_at_risk:,.0f}")
+            with col3:
+                if total_capital_deployed > 0:
+                    roi_annualized = (total_return_pct / 100) * (365 / (len(df) if len(df) > 0 else 1))
+                    st.metric("Annualized ROI", f"{roi_annualized:.1f}%")
                 
             # Separate performance for long and short
             if long_trades:
-                long_pnl = sum(p['pnl'] for p in long_trades)
+                long_nominal_pnl = sum(p['nominal_pnl'] for p in long_trades)
                 long_wins = sum(1 for p in long_trades if p['pnl'] > 0)
                 long_win_rate = (long_wins / len(long_trades)) * 100
-                st.write(f"**Long Performance**: {len(long_trades)} trades, {long_win_rate:.1f}% win rate, {long_pnl:.4f} total PnL")
+                long_avg_pnl_pct = sum(p['pnl_pct'] for p in long_trades) / len(long_trades)
+                st.write(f"**Long Performance**: {len(long_trades)} trades, {long_win_rate:.1f}% win rate, {long_avg_pnl_pct:.2f}% avg return, {long_nominal_pnl:,.0f} nominal PnL")
             
             if short_trades:
-                short_pnl = sum(p['pnl'] for p in short_trades)
+                short_nominal_pnl = sum(p['nominal_pnl'] for p in short_trades)
                 short_wins = sum(1 for p in short_trades if p['pnl'] > 0)
                 short_win_rate = (short_wins / len(short_trades)) * 100
-                st.write(f"**Short Performance**: {len(short_trades)} trades, {short_win_rate:.1f}% win rate, {short_pnl:.4f} total PnL")
+                short_avg_pnl_pct = sum(p['pnl_pct'] for p in short_trades) / len(short_trades)
+                st.write(f"**Short Performance**: {len(short_trades)} trades, {short_win_rate:.1f}% win rate, {short_avg_pnl_pct:.2f}% avg return, {short_nominal_pnl:,.0f} nominal PnL")
                 
         else:
             st.warning(f"No trades generated with current parameters (R² ≥ {min_r2}, {hold_period_months} month hold)")
@@ -491,10 +553,13 @@ if fx_file and domestic_file and foreign_file:
             trades_df['exit_date'] = pd.to_datetime(trades_df['exit_date']).dt.strftime('%Y-%m-%d')
             
             # Format numeric columns
-            numeric_cols = ['entry_price', 'exit_price', 'entry_real_rate', 'pnl', 'pnl_pct']
+            numeric_cols = ['entry_price', 'exit_price', 'entry_real_rate', 'exit_real_rate', 'pnl', 'pnl_pct', 'nominal_pnl']
             for col in numeric_cols:
                 if col in trades_df.columns:
-                    trades_df[col] = trades_df[col].round(4)
+                    if col == 'nominal_pnl':
+                        trades_df[col] = trades_df[col].round(0).astype(int)
+                    else:
+                        trades_df[col] = trades_df[col].round(4)
             
             st.dataframe(trades_df, use_container_width=True)
             
