@@ -625,7 +625,27 @@ if fx_file and domestic_file and foreign_file:
                 
                 margin_calls = pnl_df[pnl_df['margin_call_triggered']]
                 
-                if len(margin_calls) > 0:
+                # Check for complete capital wipeout
+                capital_wiped_out = pnl_df['portfolio_equity'] <= 0
+                wipeout_occurred = capital_wiped_out.any()
+                
+                if wipeout_occurred:
+                    wipeout_date = pnl_df[capital_wiped_out].iloc[0]['date']
+                    st.error(f"💀 CAPITAL WIPEOUT: Your entire capital would be lost on {wipeout_date.strftime('%Y-%m-%d')}!")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Wipeout Date", wipeout_date.strftime('%Y-%m-%d'))
+                    with col2:
+                        final_equity = pnl_df[capital_wiped_out].iloc[0]['portfolio_equity']
+                        st.metric("Final Equity", f"{final_equity:,.0f}")
+                    with col3:
+                        days_to_wipeout = (wipeout_date - pnl_df['date'].iloc[0]).days
+                        st.metric("Days to Wipeout", f"{days_to_wipeout}")
+                    
+                    st.write("**⚠️ This leverage level is EXTREMELY DANGEROUS and would result in total loss of capital!**")
+                    
+                elif len(margin_calls) > 0:
                     st.error(f"⚠️ WARNING: {len(margin_calls)} margin calls would have occurred!")
                     
                     # Show margin call details
@@ -683,12 +703,29 @@ if fx_file and domestic_file and foreign_file:
                 # Leverage safety recommendations
                 st.subheader("Leverage Safety Recommendations")
                 
-                if len(margin_calls) > 0:
+                if wipeout_occurred:
+                    st.error("🚨 **TOTAL CAPITAL LOSS RISK**: This leverage/capital combination is lethal!")
+                    st.write("**Immediate Actions Required:**")
+                    st.write("- 🔴 Reduce leverage immediately")
+                    st.write("- 🔴 Increase initial capital")
+                    st.write("- 🔴 Consider this strategy too risky for leveraged trading")
+                    
+                    # Calculate minimum safe capital for current leverage
+                    max_single_loss = abs(pnl_df['pnl'].min())
+                    min_safe_capital = max_single_loss * leverage / margin_call_threshold * 2  # 2x safety margin
+                    st.write(f"**Minimum Safe Capital for {leverage}:1 leverage**: {min_safe_capital:,.0f}")
+                    
+                elif len(margin_calls) > 0:
                     # Calculate safe leverage
                     max_single_loss = abs(pnl_df['pnl'].min())
                     safe_leverage = max(1, int((initial_capital * margin_call_threshold) / max_single_loss))
                     st.warning(f"💡 **Recommended Max Leverage**: {safe_leverage}:1 to avoid margin calls")
                     st.write(f"Current leverage of {leverage}:1 is too high for this strategy with {initial_capital:,} initial capital.")
+                    
+                    # Show what capital would be needed for current leverage
+                    required_capital = (max_single_loss * leverage / margin_call_threshold) * 1.5  # 1.5x safety buffer
+                    st.write(f"**Capital needed for {leverage}:1 leverage**: {required_capital:,.0f}")
+                    
                 else:
                     if leverage < 5:
                         st.info(f"✅ Current leverage of {leverage}:1 appears safe with {initial_capital:,} initial capital")
@@ -696,6 +733,48 @@ if fx_file and domestic_file and foreign_file:
                         st.warning(f"⚠️ Moderate risk: {leverage}:1 leverage - monitor closely")
                     else:
                         st.error(f"🔥 High risk: {leverage}:1 leverage - consider reducing")
+                
+                # Risk categorization
+                st.subheader("Risk Assessment Summary")
+                
+                lowest_equity = pnl_df['portfolio_equity'].min()
+                equity_drop_pct = ((initial_capital - lowest_equity) / initial_capital) * 100
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    if wipeout_occurred:
+                        risk_level = "🔴 LETHAL"
+                        risk_color = "error"
+                    elif equity_drop_pct > 80:
+                        risk_level = "🔴 EXTREME"
+                        risk_color = "error" 
+                    elif equity_drop_pct > 60:
+                        risk_level = "🟠 HIGH"
+                        risk_color = "warning"
+                    elif equity_drop_pct > 40:
+                        risk_level = "🟡 MODERATE"
+                        risk_color = "warning"
+                    elif equity_drop_pct > 20:
+                        risk_level = "🟢 LOW"
+                        risk_color = "success"
+                    else:
+                        risk_level = "🟢 MINIMAL"
+                        risk_color = "success"
+                    
+                    if risk_color == "error":
+                        st.error(f"Risk Level: {risk_level}")
+                    elif risk_color == "warning":
+                        st.warning(f"Risk Level: {risk_level}")
+                    else:
+                        st.success(f"Risk Level: {risk_level}")
+                
+                with col2:
+                    st.metric("Max Equity Drop", f"{equity_drop_pct:.1f}%")
+                
+                with col3:
+                    survival_rate = (1 - (1 if wipeout_occurred else 0)) * 100
+                    st.metric("Capital Survival", f"{survival_rate:.0f}%")
                 
                 # Capital requirements
                 st.write("**Capital Requirements Analysis:**")
