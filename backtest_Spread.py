@@ -500,17 +500,26 @@ if fx_file and domestic_file and foreign_file:
         plt.tight_layout()
         st.pyplot(fig)
         
-        # PnL Over Time Chart
+        # PnL Over Time Chart with Margin Call Analysis
         if positions:
-            st.header("Cumulative PnL Over Time")
+            st.header("Cumulative PnL Over Time with Margin Call Analysis")
             
-            # Create PnL timeline
+            # Create detailed PnL timeline with margin tracking
             pnl_timeline = []
+            running_balance = 0
+            running_margin_used = 0
+            
             for pos in positions:
+                # Track margin usage during the trade
+                margin_for_trade = pos['margin_used']
+                
                 pnl_timeline.append({
                     'date': pos['exit_date'],
                     'pnl': pos['nominal_pnl'],
-                    'position_type': pos['position']
+                    'position_type': pos['position'],
+                    'margin_used': margin_for_trade,
+                    'position_size': pos['position_size'],
+                    'leverage': pos['leverage']
                 })
             
             if pnl_timeline:
@@ -518,6 +527,16 @@ if fx_file and domestic_file and foreign_file:
                 pnl_df['date'] = pd.to_datetime(pnl_df['date'])
                 pnl_df = pnl_df.sort_values('date')
                 pnl_df['cumulative_pnl'] = pnl_df['pnl'].cumsum()
+                
+                # Calculate portfolio equity and margin call levels
+                initial_capital = st.sidebar.number_input("Initial Capital", min_value=10000, max_value=100000000, value=500000, step=10000)
+                margin_call_threshold = st.sidebar.slider("Margin Call Threshold (%)", 10, 90, 50, 5) / 100
+                
+                pnl_df['portfolio_equity'] = initial_capital + pnl_df['cumulative_pnl']
+                pnl_df['cumulative_margin'] = pnl_df['margin_used'].cumsum()
+                pnl_df['margin_ratio'] = pnl_df['portfolio_equity'] / pnl_df['cumulative_margin']
+                pnl_df['margin_call_level'] = pnl_df['cumulative_margin'] * margin_call_threshold
+                pnl_df['margin_call_triggered'] = pnl_df['portfolio_equity'] < pnl_df['margin_call_level']
                 
                 # Create separate cumulative for long and short
                 long_pnl = pnl_df[pnl_df['position_type'] == 'Long'].copy()
@@ -528,57 +547,112 @@ if fx_file and domestic_file and foreign_file:
                 if len(short_pnl) > 0:
                     short_pnl['cumulative_short'] = short_pnl['pnl'].cumsum()
                 
-                fig2, ax2 = plt.subplots(figsize=(15, 8))
+                # Create two subplots
+                fig2, (ax2a, ax2b) = plt.subplots(2, 1, figsize=(15, 12))
                 
-                # Plot total cumulative PnL
-                ax2.plot(pnl_df['date'], pnl_df['cumulative_pnl'], 
-                        label=f'Total Cumulative PnL ({strategy_type})', 
-                        color='blue', linewidth=3, alpha=0.8)
+                # Top plot: Portfolio Equity vs Margin Call Level
+                ax2a.plot(pnl_df['date'], pnl_df['portfolio_equity'], 
+                         label='Portfolio Equity', color='blue', linewidth=3)
+                ax2a.plot(pnl_df['date'], pnl_df['margin_call_level'], 
+                         label=f'Margin Call Level ({margin_call_threshold*100:.0f}%)', 
+                         color='red', linewidth=2, linestyle='--')
+                ax2a.axhline(initial_capital, color='gray', linestyle='-', alpha=0.5, label='Initial Capital')
+                
+                # Highlight margin call periods
+                margin_call_dates = pnl_df[pnl_df['margin_call_triggered']]
+                if len(margin_call_dates) > 0:
+                    ax2a.scatter(margin_call_dates['date'], margin_call_dates['portfolio_equity'],
+                               color='red', s=100, marker='X', label='Margin Call!', zorder=10)
+                    for _, row in margin_call_dates.iterrows():
+                        ax2a.annotate('MARGIN CALL', 
+                                    xy=(row['date'], row['portfolio_equity']),
+                                    xytext=(10, 10), textcoords='offset points',
+                                    bbox=dict(boxstyle='round,pad=0.3', facecolor='red', alpha=0.7),
+                                    arrowprops=dict(arrowstyle='->', color='red'))
+                
+                ax2a.set_title(f'Portfolio Equity vs Margin Call Level ({leverage}:1 Leverage)', 
+                              fontsize=14, fontweight='bold')
+                ax2a.set_ylabel('Capital', fontsize=12)
+                ax2a.legend(fontsize=10)
+                ax2a.grid(True, alpha=0.3)
+                ax2a.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
+                
+                # Bottom plot: Cumulative PnL
+                ax2b.plot(pnl_df['date'], pnl_df['cumulative_pnl'], 
+                         label=f'Total Cumulative PnL ({strategy_type})', 
+                         color='blue', linewidth=3, alpha=0.8)
                 
                 # Plot long cumulative PnL if strategy allows
                 if strategy_type in ["Long and Short", "Long Only"] and len(long_pnl) > 0:
-                    ax2.plot(long_pnl['date'], long_pnl['cumulative_long'], 
-                            label='Long Positions', color='green', 
-                            linewidth=2, alpha=0.7, linestyle='--')
+                    ax2b.plot(long_pnl['date'], long_pnl['cumulative_long'], 
+                             label='Long Positions', color='green', 
+                             linewidth=2, alpha=0.7, linestyle='--')
                 
                 # Plot short cumulative PnL if strategy allows
                 if strategy_type in ["Long and Short", "Short Only"] and len(short_pnl) > 0:
-                    ax2.plot(short_pnl['date'], short_pnl['cumulative_short'], 
-                            label='Short Positions', color='red', 
-                            linewidth=2, alpha=0.7, linestyle='--')
+                    ax2b.plot(short_pnl['date'], short_pnl['cumulative_short'], 
+                             label='Short Positions', color='red', 
+                             linewidth=2, alpha=0.7, linestyle='--')
                 
                 # Add zero line
-                ax2.axhline(0, color='gray', linestyle='-', alpha=0.5)
+                ax2b.axhline(0, color='gray', linestyle='-', alpha=0.5)
                 
                 # Mark individual trade exits
                 for i, row in pnl_df.iterrows():
                     color = 'green' if row['pnl'] > 0 else 'red'
                     marker = '^' if row['position_type'] == 'Long' else 'v'
-                    ax2.scatter(row['date'], row['cumulative_pnl'], 
-                              color=color, marker=marker, s=30, alpha=0.6, zorder=5)
+                    ax2b.scatter(row['date'], row['cumulative_pnl'], 
+                               color=color, marker=marker, s=30, alpha=0.6, zorder=5)
                 
-                # Formatting
-                ax2.set_title(f'Cumulative PnL Over Time ({strategy_type})', 
-                            fontsize=16, fontweight='bold')
-                ax2.set_xlabel('Date', fontsize=12)
-                ax2.set_ylabel('Cumulative PnL', fontsize=12)
-                ax2.legend(fontsize=12)
-                ax2.grid(True, alpha=0.3)
+                ax2b.set_title('Cumulative PnL Over Time', fontsize=14, fontweight='bold')
+                ax2b.set_xlabel('Date', fontsize=12)
+                ax2b.set_ylabel('Cumulative PnL', fontsize=12)
+                ax2b.legend(fontsize=10)
+                ax2b.grid(True, alpha=0.3)
+                ax2b.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
                 
-                # Format y-axis with currency formatting
-                ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
-                
-                # Format x-axis
-                ax2.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
-                ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+                # Format x-axis for both plots
+                for ax in [ax2a, ax2b]:
+                    ax.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+                    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
                 
                 plt.xticks(rotation=45)
                 plt.tight_layout()
                 st.pyplot(fig2)
                 
-                # PnL Statistics
-                st.subheader("PnL Analysis")
-                col1, col2, col3, col4 = st.columns(4)
+                # Margin Call Analysis
+                st.subheader("Margin Call Risk Analysis")
+                
+                margin_calls = pnl_df[pnl_df['margin_call_triggered']]
+                
+                if len(margin_calls) > 0:
+                    st.error(f"⚠️ WARNING: {len(margin_calls)} margin calls would have occurred!")
+                    
+                    # Show margin call details
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        first_margin_call = margin_calls.iloc[0]
+                        st.metric("First Margin Call", first_margin_call['date'].strftime('%Y-%m-%d'))
+                    with col2:
+                        lowest_equity = pnl_df['portfolio_equity'].min()
+                        st.metric("Lowest Portfolio Value", f"{lowest_equity:,.0f}")
+                    with col3:
+                        min_margin_ratio = pnl_df['margin_ratio'].min()
+                        st.metric("Worst Margin Ratio", f"{min_margin_ratio:.1f}x")
+                    
+                    # Show critical periods
+                    st.write("**Margin Call Events:**")
+                    margin_call_summary = margin_calls[['date', 'portfolio_equity', 'margin_call_level', 'cumulative_margin']].copy()
+                    margin_call_summary['equity_deficit'] = margin_call_summary['margin_call_level'] - margin_call_summary['portfolio_equity']
+                    margin_call_summary['date'] = margin_call_summary['date'].dt.strftime('%Y-%m-%d')
+                    st.dataframe(margin_call_summary.round(0))
+                    
+                else:
+                    st.success("✅ No margin calls would have occurred with this leverage level!")
+                
+                # Enhanced PnL Statistics
+                st.subheader("Risk-Adjusted Performance Analysis")
+                col1, col2, col3, col4, col5 = st.columns(5)
                 
                 with col1:
                     max_drawdown = (pnl_df['cumulative_pnl'] - pnl_df['cumulative_pnl'].cummax()).min()
@@ -589,22 +663,51 @@ if fx_file and domestic_file and foreign_file:
                     st.metric("Peak PnL", f"{peak_pnl:,.0f}")
                 
                 with col3:
-                    if len(pnl_df) > 1:
-                        total_days = (pnl_df['date'].max() - pnl_df['date'].min()).days
-                        if total_days > 0:
-                            daily_return = (total_nominal_pnl / total_capital_deployed) / total_days
-                            st.metric("Daily Return", f"{daily_return*100:.4f}%")
-                    else:
-                        st.metric("Daily Return", "N/A")
+                    final_equity = pnl_df['portfolio_equity'].iloc[-1]
+                    total_return_pct = ((final_equity - initial_capital) / initial_capital) * 100
+                    st.metric("Total Return %", f"{total_return_pct:.1f}%")
                 
                 with col4:
-                    positive_trades = len(pnl_df[pnl_df['pnl'] > 0])
-                    negative_trades = len(pnl_df[pnl_df['pnl'] < 0])
-                    if negative_trades > 0:
-                        profit_factor = abs(pnl_df[pnl_df['pnl'] > 0]['pnl'].sum() / pnl_df[pnl_df['pnl'] < 0]['pnl'].sum())
-                        st.metric("Profit Factor", f"{profit_factor:.2f}")
+                    max_margin_used = pnl_df['cumulative_margin'].max()
+                    capital_efficiency = (abs(total_nominal_pnl) / max_margin_used) * 100 if max_margin_used > 0 else 0
+                    st.metric("Capital Efficiency", f"{capital_efficiency:.1f}%")
+                
+                with col5:
+                    if len(pnl_df) > 1:
+                        volatility = pnl_df['pnl'].std()
+                        sharpe_ratio = pnl_df['pnl'].mean() / volatility if volatility > 0 else 0
+                        st.metric("Sharpe Ratio", f"{sharpe_ratio:.2f}")
                     else:
-                        st.metric("Profit Factor", "∞")
+                        st.metric("Sharpe Ratio", "N/A")
+                
+                # Leverage safety recommendations
+                st.subheader("Leverage Safety Recommendations")
+                
+                if len(margin_calls) > 0:
+                    # Calculate safe leverage
+                    max_single_loss = abs(pnl_df['pnl'].min())
+                    safe_leverage = max(1, int((initial_capital * margin_call_threshold) / max_single_loss))
+                    st.warning(f"💡 **Recommended Max Leverage**: {safe_leverage}:1 to avoid margin calls")
+                    st.write(f"Current leverage of {leverage}:1 is too high for this strategy with {initial_capital:,} initial capital.")
+                else:
+                    if leverage < 5:
+                        st.info(f"✅ Current leverage of {leverage}:1 appears safe with {initial_capital:,} initial capital")
+                    elif leverage < 10:
+                        st.warning(f"⚠️ Moderate risk: {leverage}:1 leverage - monitor closely")
+                    else:
+                        st.error(f"🔥 High risk: {leverage}:1 leverage - consider reducing")
+                
+                # Capital requirements
+                st.write("**Capital Requirements Analysis:**")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.write(f"Initial Capital: **{initial_capital:,}**")
+                with col2:
+                    max_concurrent_margin = max_margin_used
+                    st.write(f"Max Margin Used: **{max_concurrent_margin:,.0f}**")
+                with col3:
+                    margin_utilization = (max_concurrent_margin / initial_capital) * 100
+                    st.write(f"Peak Margin Utilization: **{margin_utilization:.1f}%**")
         
         # Secondary Chart: Yield Spread
         st.header("Yield Spread Over Time")
@@ -667,10 +770,10 @@ if fx_file and domestic_file and foreign_file:
             trades_df['exit_date'] = pd.to_datetime(trades_df['exit_date']).dt.strftime('%Y-%m-%d')
             
             # Format numeric columns
-            numeric_cols = ['entry_price', 'exit_price', 'entry_real_rate', 'exit_real_rate', 'pnl', 'pnl_pct', 'nominal_pnl']
+            numeric_cols = ['entry_price', 'exit_price', 'entry_real_rate', 'exit_real_rate', 'pnl', 'pnl_pct', 'nominal_pnl', 'margin_used']
             for col in numeric_cols:
                 if col in trades_df.columns:
-                    if col == 'nominal_pnl':
+                    if col in ['nominal_pnl', 'margin_used']:
                         trades_df[col] = trades_df[col].round(0).astype(int)
                     else:
                         trades_df[col] = trades_df[col].round(4)
