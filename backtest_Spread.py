@@ -177,88 +177,130 @@ if fx_file and domestic_file and foreign_file:
         df['is_monday'] = df['weekday'] == 0
         
         # Generate trading signals
-        df['signal'] = ''
-        df['position'] = 0
+        df['buy_signal'] = ''
+        df['sell_signal'] = ''
+        df['long_position'] = 0
+        df['short_position'] = 0
         
         # Get Monday dates where we can trade
         monday_dates = df[(df['is_monday']) & (df['tradeable']) & (~df['real_rate'].isna())].index
         
         st.write(f"Tradeable Mondays (R² ≥ {min_r2}): {len(monday_dates)} out of {len(df[df['is_monday']])} total Mondays")
         
-        # Execute strategy
+        # Execute strategy - separate tracking for long and short positions
         hold_days = hold_period_months * 30
         positions = []
-        current_position = 0
-        entry_date = None
-        entry_price = None
-        entry_real_rate = None
+        
+        # Track long and short positions separately
+        current_long = {'active': False, 'entry_date': None, 'entry_price': None, 'entry_real_rate': None}
+        current_short = {'active': False, 'entry_date': None, 'entry_price': None, 'entry_real_rate': None}
         
         for monday in monday_dates:
-            # Check if we should close existing position
-            if current_position != 0 and entry_date is not None:
-                days_held = (monday - entry_date).days
-                if days_held >= hold_days:
-                    # Close position
-                    exit_price = df.loc[monday, 'fx_price']
-                    pnl = (exit_price - entry_price) * current_position
-                    
-                    positions.append({
-                        'entry_date': entry_date,
-                        'exit_date': monday,
-                        'entry_price': entry_price,
-                        'exit_price': exit_price,
-                        'entry_real_rate': entry_real_rate,
-                        'position': 'Long' if current_position == 1 else 'Short',
-                        'hold_days': days_held,
-                        'pnl': pnl,
-                        'pnl_pct': (pnl / entry_price) * 100
-                    })
-                    current_position = 0
-                    entry_date = None
-                    entry_price = None
-                    entry_real_rate = None
+            real_rate = df.loc[monday, 'real_rate']
+            fx_price = df.loc[monday, 'fx_price']
+            r2 = df.loc[monday, 'r_squared']
             
-            # Only enter new position if not currently holding
-            if current_position == 0:
-                real_rate = df.loc[monday, 'real_rate']
-                fx_price = df.loc[monday, 'fx_price']
-                r2 = df.loc[monday, 'r_squared']
+            if pd.notna(real_rate) and r2 >= min_r2:
                 
-                if pd.notna(real_rate) and r2 >= min_r2:
-                    if real_rate > fx_price:
-                        # Buy signal - real rate suggests FX should be higher
-                        current_position = 1
-                        entry_date = monday
-                        entry_price = fx_price
-                        entry_real_rate = real_rate
-                        df.loc[monday, 'signal'] = 'Buy'
-                        df.loc[monday, 'position'] = 1
+                # Check if we should close existing long position
+                if current_long['active'] and current_long['entry_date'] is not None:
+                    days_held = (monday - current_long['entry_date']).days
+                    if days_held >= hold_days:
+                        # Close long position
+                        exit_price = fx_price
+                        pnl = exit_price - current_long['entry_price']  # Long: profit when price goes up
                         
-                    elif real_rate < fx_price:
-                        # Sell signal - real rate suggests FX should be lower
-                        current_position = -1
-                        entry_date = monday
-                        entry_price = fx_price
-                        entry_real_rate = real_rate
-                        df.loc[monday, 'signal'] = 'Sell'
-                        df.loc[monday, 'position'] = -1
+                        positions.append({
+                            'entry_date': current_long['entry_date'],
+                            'exit_date': monday,
+                            'entry_price': current_long['entry_price'],
+                            'exit_price': exit_price,
+                            'entry_real_rate': current_long['entry_real_rate'],
+                            'exit_real_rate': real_rate,
+                            'position': 'Long',
+                            'hold_days': days_held,
+                            'pnl': pnl,
+                            'pnl_pct': (pnl / current_long['entry_price']) * 100
+                        })
+                        current_long = {'active': False, 'entry_date': None, 'entry_price': None, 'entry_real_rate': None}
+                
+                # Check if we should close existing short position
+                if current_short['active'] and current_short['entry_date'] is not None:
+                    days_held = (monday - current_short['entry_date']).days
+                    if days_held >= hold_days:
+                        # Close short position
+                        exit_price = fx_price
+                        pnl = current_short['entry_price'] - exit_price  # Short: profit when price goes down
+                        
+                        positions.append({
+                            'entry_date': current_short['entry_date'],
+                            'exit_date': monday,
+                            'entry_price': current_short['entry_price'],
+                            'exit_price': exit_price,
+                            'entry_real_rate': current_short['entry_real_rate'],
+                            'exit_real_rate': real_rate,
+                            'position': 'Short',
+                            'hold_days': days_held,
+                            'pnl': pnl,
+                            'pnl_pct': (pnl / current_short['entry_price']) * 100
+                        })
+                        current_short = {'active': False, 'entry_date': None, 'entry_price': None, 'entry_real_rate': None}
+                
+                # New entry logic: BUY when historical price < real price
+                if fx_price < real_rate and not current_long['active']:
+                    current_long = {
+                        'active': True,
+                        'entry_date': monday,
+                        'entry_price': fx_price,
+                        'entry_real_rate': real_rate
+                    }
+                    df.loc[monday, 'buy_signal'] = 'Buy'
+                    df.loc[monday, 'long_position'] = 1
+                
+                # New entry logic: SELL when historical price > real price  
+                if fx_price > real_rate and not current_short['active']:
+                    current_short = {
+                        'active': True,
+                        'entry_date': monday,
+                        'entry_price': fx_price,
+                        'entry_real_rate': real_rate
+                    }
+                    df.loc[monday, 'sell_signal'] = 'Sell'
+                    df.loc[monday, 'short_position'] = -1
         
-        # Close any remaining position at the end
-        if current_position != 0 and entry_date is not None:
-            last_date = df.index[-1]
+        # Close any remaining positions at the end
+        last_date = df.index[-1]
+        
+        if current_long['active']:
             exit_price = df.loc[last_date, 'fx_price']
-            pnl = (exit_price - entry_price) * current_position
-            
+            pnl = exit_price - current_long['entry_price']
             positions.append({
-                'entry_date': entry_date,
+                'entry_date': current_long['entry_date'],
                 'exit_date': last_date,
-                'entry_price': entry_price,
+                'entry_price': current_long['entry_price'],
                 'exit_price': exit_price,
-                'entry_real_rate': entry_real_rate,
-                'position': 'Long' if current_position == 1 else 'Short',
-                'hold_days': (last_date - entry_date).days,
+                'entry_real_rate': current_long['entry_real_rate'],
+                'exit_real_rate': df.loc[last_date, 'real_rate'],
+                'position': 'Long',
+                'hold_days': (last_date - current_long['entry_date']).days,
                 'pnl': pnl,
-                'pnl_pct': (pnl / entry_price) * 100
+                'pnl_pct': (pnl / current_long['entry_price']) * 100
+            })
+        
+        if current_short['active']:
+            exit_price = df.loc[last_date, 'fx_price']
+            pnl = current_short['entry_price'] - exit_price
+            positions.append({
+                'entry_date': current_short['entry_date'],
+                'exit_date': last_date,
+                'entry_price': current_short['entry_price'],
+                'exit_price': exit_price,
+                'entry_real_rate': current_short['entry_real_rate'],
+                'exit_real_rate': df.loc[last_date, 'real_rate'],
+                'position': 'Short',
+                'hold_days': (last_date - current_short['entry_date']).days,
+                'pnl': pnl,
+                'pnl_pct': (pnl / current_short['entry_price']) * 100
             })
         
         # Show basic statistics
@@ -267,6 +309,8 @@ if fx_file and domestic_file and foreign_file:
         if positions:
             # Calculate performance metrics
             total_trades = len(positions)
+            long_trades = [p for p in positions if p['position'] == 'Long']
+            short_trades = [p for p in positions if p['position'] == 'Short']
             winning_trades = sum(1 for p in positions if p['pnl'] > 0)
             total_pnl = sum(p['pnl'] for p in positions)
             avg_pnl = total_pnl / total_trades
@@ -276,18 +320,33 @@ if fx_file and domestic_file and foreign_file:
             min_pnl = min(p['pnl'] for p in positions)
             
             # Display metrics
-            col1, col2, col3, col4, col5 = st.columns(5)
+            col1, col2, col3, col4, col5, col6 = st.columns(6)
             
             with col1:
                 st.metric("Total Trades", total_trades)
             with col2:
-                st.metric("Win Rate", f"{win_rate:.1f}%")
+                st.metric("Long/Short", f"{len(long_trades)}/{len(short_trades)}")
             with col3:
-                st.metric("Total PnL", f"{total_pnl:.4f}")
+                st.metric("Win Rate", f"{win_rate:.1f}%")
             with col4:
-                st.metric("Avg PnL %", f"{avg_pnl_pct:.2f}%")
+                st.metric("Total PnL", f"{total_pnl:.4f}")
             with col5:
+                st.metric("Avg PnL %", f"{avg_pnl_pct:.2f}%")
+            with col6:
                 st.metric("Best/Worst", f"{max_pnl:.4f} / {min_pnl:.4f}")
+                
+            # Separate performance for long and short
+            if long_trades:
+                long_pnl = sum(p['pnl'] for p in long_trades)
+                long_wins = sum(1 for p in long_trades if p['pnl'] > 0)
+                long_win_rate = (long_wins / len(long_trades)) * 100
+                st.write(f"**Long Performance**: {len(long_trades)} trades, {long_win_rate:.1f}% win rate, {long_pnl:.4f} total PnL")
+            
+            if short_trades:
+                short_pnl = sum(p['pnl'] for p in short_trades)
+                short_wins = sum(1 for p in short_trades if p['pnl'] > 0)
+                short_win_rate = (short_wins / len(short_trades)) * 100
+                st.write(f"**Short Performance**: {len(short_trades)} trades, {short_win_rate:.1f}% win rate, {short_pnl:.4f} total PnL")
                 
         else:
             st.warning(f"No trades generated with current parameters (R² ≥ {min_r2}, {hold_period_months} month hold)")
@@ -331,8 +390,8 @@ if fx_file and domestic_file and foreign_file:
                 alpha=0.7)
         
         # Add buy/sell signals
-        buy_signals = df[df['signal'] == 'Buy']
-        sell_signals = df[df['signal'] == 'Sell']
+        buy_signals = df[df['buy_signal'] == 'Buy']
+        sell_signals = df[df['sell_signal'] == 'Sell']
         
         if len(buy_signals) > 0:
             ax.scatter(buy_signals.index, buy_signals['fx_price'], 
@@ -454,18 +513,21 @@ if fx_file and domestic_file and foreign_file:
                 st.metric("Current R²", f"{current_r2:.3f}")
             with col4:
                 if current_r2 >= min_r2:
-                    if difference > 0:
-                        st.success("BUY Signal")
-                    elif difference < 0:
-                        st.error("SELL Signal")
+                    current_signal = ""
+                    if difference < 0:  # fx_price > real_rate
+                        current_signal += "BUY (FX < Real) "
+                    if difference > 0:  # fx_price < real_rate  
+                        current_signal += "SELL (FX > Real)"
+                    if current_signal:
+                        st.success(current_signal)
                     else:
                         st.info("NEUTRAL")
                 else:
                     st.warning("Low R² - No Signal")
                     
-        # Show sample data
+        # Show recent data
         st.header("Recent Data Sample")
-        sample_data = df[['fx_price', 'domestic_yield', 'foreign_yield', 'yield_spread', 'real_rate', 'r_squared', 'signal']].tail(10)
+        sample_data = df[['fx_price', 'domestic_yield', 'foreign_yield', 'yield_spread', 'real_rate', 'r_squared', 'buy_signal', 'sell_signal']].tail(10)
         st.dataframe(sample_data.round(4))
         
 else:
