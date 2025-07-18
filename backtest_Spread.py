@@ -45,10 +45,14 @@ if fx_file and domestic_file and foreign_file:
         predicted.append([df.iloc[i]["Date"], df.iloc[i]["FX"], pred])
 
     reg_df = pd.DataFrame(predicted, columns=["Date", "FX", "Predicted"])
-    reg_df["ValuationGap"] = reg_df["FX"] - reg_df["Predicted"]
+    # Ensure Date is datetime before filtering
+    reg_df["Date"] = pd.to_datetime(reg_df["Date"], errors='coerce')
+    reg_df.dropna(subset=["Date"], inplace=True)
 
-    # Ensure only trades initiated on Mondays
+    # Filter only Monday signals
     reg_df = reg_df[reg_df["Date"].dt.weekday == 0].copy()
+
+    reg_df["ValuationGap"] = reg_df["FX"] - reg_df["Predicted"]
 
     trade_amount = 250000
     results_all = []
@@ -56,7 +60,6 @@ if fx_file and domestic_file and foreign_file:
     yearly_summary = {}
 
     st.subheader("🔍 FX vs Predicted Price")
-        # Enhanced FX vs Predicted Chart
     plt.figure(figsize=(14, 5))
     plt.plot(reg_df['Date'], reg_df['FX'], label='FX Market Price', color='green')
     plt.plot(reg_df['Date'], reg_df['Predicted'], label='Predicted Price', linestyle='--', color='red')
@@ -78,25 +81,11 @@ if fx_file and domestic_file and foreign_file:
     plt.grid(True)
     plt.legend()
     st.pyplot(plt)
-        # Improved FX vs Predicted chart for better readability
-    plt.figure(figsize=(14, 5))
-    plt.plot(reg_df['Date'], reg_df['FX'], label='FX Market Price', color='green')
-    plt.plot(reg_df['Date'], reg_df['Predicted'], label='Predicted Price', linestyle='--', color='red')
-    plt.title('Historical FX vs Predicted Valuation')
-    plt.xlabel('Date')
-    plt.ylabel('Price')
-    plt.ylim(min(reg_df[['FX', 'Predicted']].min()) * 0.995, max(reg_df[['FX', 'Predicted']].max()) * 1.005)
-    plt.legend()
-    plt.grid(True)
-    st.pyplot(plt)
 
     st.subheader("📈 Cumulative PnL (% of Base Currency)")
     fig, ax = plt.subplots(figsize=(14, 6))
-
     for days in [30, 60, 90, 120, 180]:
         temp = reg_df.copy()
-
-        # Ensure exit happens exactly after X calendar days
         temp["ExitDate"] = temp["Date"] + pd.to_timedelta(days, unit="D")
         fx_renamed = fx.rename(columns={"Date": "ExitDate", "FX": "Future"})
         temp = pd.merge_asof(temp.sort_values("ExitDate"), fx_renamed.sort_values("ExitDate"), on="ExitDate")
@@ -113,9 +102,7 @@ if fx_file and domestic_file and foreign_file:
         temp = temp[temp["PnL"] != 0]
         temp["CumPnL_pct"] = temp["PnL"].cumsum() / (trade_amount * len(temp)) * 100
 
-        yearly_trades = temp.groupby(temp["Date"].dt.year).size()
-        yearly_hedged = yearly_trades * trade_amount
-        yearly_returns = temp.groupby(temp["Date"].dt.year)["PnL"].sum() / yearly_hedged * 100
+        yearly_returns = temp.groupby(temp["Date"].dt.year)["PnL"].sum() / (len(temp) * trade_amount) * 100
         yearly_summary[f"{days}-Day Hold"] = yearly_returns
 
         ax.plot(temp["Date"], temp["CumPnL_pct"], label=f"{days}-Day Hold", color=colors[days])
@@ -131,9 +118,9 @@ if fx_file and domestic_file and foreign_file:
 
     st.subheader("📉 Strategy Drawdown Chart")
     plt.figure(figsize=(14, 4))
-    for days, temp in zip([30, 60, 90, 180], results_all):
+    for days, temp in zip([30, 60, 90, 120, 180], results_all):
         temp_sorted = temp.sort_values("Date").copy()
-        temp_sorted["Drawdown"] = (temp_sorted["CumPnL_pct"] - temp_sorted["CumPnL_pct"].cummax())
+        temp_sorted["Drawdown"] = temp_sorted["CumPnL_pct"] - temp_sorted["CumPnL_pct"].cummax()
         plt.plot(temp_sorted["Date"], temp_sorted["Drawdown"], label=f"{days}-Day Hold", linestyle="--")
     plt.axhline(0, color='gray', linestyle='--')
     plt.title("Drawdown Over Time by Strategy")
@@ -144,12 +131,8 @@ if fx_file and domestic_file and foreign_file:
     st.pyplot(plt)
 
     st.subheader("📊 Yearly Revenue Summary (%) and Notional Hedged")
-    st.write("Total notional hedged each year based on number of trades × trade size:")
     yearly_df = pd.DataFrame(yearly_summary).fillna(0)
-    notional_data = {
-        f"{days}-Day Hold": df.groupby(df["Date"].dt.year).size() * trade_amount
-        for days, df in zip([30, 60, 90, 180], results_all)
-    }
+    notional_data = {f"{days}-Day Hold": df.groupby(df["Date"].dt.year).size() * trade_amount for days, df in zip([30, 60, 90, 120, 180], results_all)}
     notional_df = pd.DataFrame(notional_data).fillna(0)
     notional_df["Total Hedged (EUR)"] = notional_df.sum(axis=1)
     notional_df["Revenue (%)"] = yearly_df.mean(axis=1)
@@ -160,15 +143,10 @@ if fx_file and domestic_file and foreign_file:
 
     final_results_df = pd.concat(results_all).reset_index(drop=True)
 
-
-
     st.subheader("📋 Trade Summary Info")
-    total_signals = len(reg_df)
-    executed_trades = len(final_results_df)
-    st.write(f"Total signal dates (Mondays): **{total_signals}**")
-    st.write(f"Executed trades with valid exit FX data: **{executed_trades}**")
+    st.write(f"Total signal dates (Mondays): **{len(reg_df)}**")
+    st.write(f"Executed trades with valid exit FX data: **{len(final_results_df)}**")
     st.subheader("📊 Detailed Trade Results")
-    final_results_df = pd.concat(results_all).reset_index(drop=True)
     st.dataframe(final_results_df)
 else:
     st.info("📂 Please upload all three CSV files to begin.")
