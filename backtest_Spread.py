@@ -66,7 +66,10 @@ if fx_file and domestic_file and foreign_file:
     plt.title('Historical FX vs Predicted Valuation')
     plt.xlabel('Date')
     plt.ylabel('Price')
-    plt.ylim(min(reg_df[['FX', 'Predicted']].min()) * 0.995, max(reg_df[['FX', 'Predicted']].max()) * 1.005)
+    fx_min = reg_df[['FX', 'Predicted']].min().min()
+    fx_max = reg_df[['FX', 'Predicted']].max().max()
+    if pd.notna(fx_min) and pd.notna(fx_max):
+        plt.ylim(fx_min * 0.995, fx_max * 1.005)
     plt.legend()
     plt.grid(True)
     st.pyplot(plt)
