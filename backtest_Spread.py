@@ -167,6 +167,9 @@ if fx_file and domestic_file and foreign_file:
         for hold_months in [1, 2, 3]:
             df_temp = df.copy()
             
+            # Initialize signal column
+            df_temp['signal'] = ''
+            
             # Calculate holding period in days (approximate)
             hold_days = hold_months * 30
             
@@ -300,14 +303,15 @@ if fx_file and domestic_file and foreign_file:
         ax1.plot(valid_data.index, valid_data['fx_price'], label='FX Price', color='black', linewidth=1)
         ax1.plot(valid_data.index, valid_data['real_rate'], label='Real Rate (Predicted)', color='blue', linewidth=1, alpha=0.7)
         
-        # Add buy/sell signals
-        buy_signals = df_plot[df_plot['signal'] == 'Buy']
-        sell_signals = df_plot[df_plot['signal'] == 'Sell']
-        
-        if len(buy_signals) > 0:
-            ax1.scatter(buy_signals.index, buy_signals['fx_price'], marker='^', color='green', s=100, label='Buy Signal', zorder=5)
-        if len(sell_signals) > 0:
-            ax1.scatter(sell_signals.index, sell_signals['fx_price'], marker='v', color='red', s=100, label='Sell Signal', zorder=5)
+        # Add buy/sell signals (check if signal column exists and has data)
+        if 'signal' in df_plot.columns:
+            buy_signals = df_plot[df_plot['signal'] == 'Buy']
+            sell_signals = df_plot[df_plot['signal'] == 'Sell']
+            
+            if len(buy_signals) > 0:
+                ax1.scatter(buy_signals.index, buy_signals['fx_price'], marker='^', color='green', s=100, label='Buy Signal', zorder=5)
+            if len(sell_signals) > 0:
+                ax1.scatter(sell_signals.index, sell_signals['fx_price'], marker='v', color='red', s=100, label='Sell Signal', zorder=5)
         
         ax1.set_title(f'FX Price vs Real Rate ({selected_period} Month Hold)')
         ax1.set_ylabel('Price')
