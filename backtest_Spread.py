@@ -116,7 +116,32 @@ if fx_file and domestic_file and foreign_file:
         # Merge all data on date
         df = fx_data.join(domestic_data, how='inner').join(foreign_data, how='inner')
         
-        # Remove rows with missing data
+        # Show data info before merging
+        st.write("**Individual Dataset Info:**")
+        st.write(f"- FX data: {len(fx_data)} rows, from {fx_data.index[0].strftime('%Y-%m-%d')} to {fx_data.index[-1].strftime('%Y-%m-%d')}")
+        st.write(f"- Domestic bond: {len(domestic_data)} rows, from {domestic_data.index[0].strftime('%Y-%m-%d')} to {domestic_data.index[-1].strftime('%Y-%m-%d')}")
+        st.write(f"- Foreign bond: {len(foreign_data)} rows, from {foreign_data.index[0].strftime('%Y-%m-%d')} to {foreign_data.index[-1].strftime('%Y-%m-%d')}")
+        
+        # Try different merge strategies
+        st.write("**Trying different merge strategies:**")
+        
+        # Show overlap analysis
+        all_dates = set(fx_data.index) | set(domestic_data.index) | set(foreign_data.index)
+        fx_dates = set(fx_data.index)
+        domestic_dates = set(domestic_data.index)
+        foreign_dates = set(foreign_data.index)
+        
+        overlap_all = fx_dates & domestic_dates & foreign_dates
+        st.write(f"- Exact date overlap: {len(overlap_all)} days")
+        
+        # Try outer join first to see all data
+        df_outer = fx_data.join(domestic_data, how='outer').join(foreign_data, how='outer')
+        st.write(f"- Total unique dates: {len(df_outer)} days")
+        
+        # Use forward fill to handle missing data
+        df = df_outer.fillna(method='ffill').fillna(method='bfill')
+        
+        # Remove rows where we still have NaN (beginning/end of series)
         df = df.dropna()
         
         if len(df) == 0:
@@ -126,8 +151,8 @@ if fx_file and domestic_file and foreign_file:
         # Calculate yield spread
         df['yield_spread'] = df['domestic_yield'] - df['foreign_yield']
         
-        st.write(f"Data loaded: {len(df)} days")
-        st.write(f"Date range: {df.index[0].strftime('%Y-%m-%d')} to {df.index[-1].strftime('%Y-%m-%d')}")
+        st.write(f"**Final merged data: {len(df)} days**")
+        st.write(f"**Date range: {df.index[0].strftime('%Y-%m-%d')} to {df.index[-1].strftime('%Y-%m-%d')}**")
         
         # Perform rolling regression: FX_Price = f(Yield_Spread)
         fx_prices = df['fx_price'].values
