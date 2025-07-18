@@ -31,6 +31,7 @@ min_r2 = st.sidebar.slider("Minimum R² for Trading", 0.1, 0.9, 0.3, 0.05)
 st.sidebar.header("Strategy Parameters")
 hold_period_months = st.sidebar.slider("Holding Period (Months)", 1, 12, 3)
 position_size = st.sidebar.number_input("Position Size (Volume per Trade)", min_value=1000, max_value=10000000, value=100000, step=10000)
+strategy_type = st.sidebar.selectbox("Strategy Type", ["Long and Short", "Long Only", "Short Only"])
 show_detailed_trades = st.sidebar.checkbox("Show Detailed Trades", True)
 
 def load_and_clean_data(file, data_type):
@@ -262,7 +263,7 @@ if fx_file and domestic_file and foreign_file:
                     active_short_positions.pop(i)
                 
                 # Enter new long position if conditions are met (every Monday if FX < Real Rate)
-                if fx_price < real_rate:
+                if fx_price < real_rate and strategy_type in ["Long and Short", "Long Only"]:
                     active_long_positions.append({
                         'entry_date': monday,
                         'entry_price': fx_price,
@@ -272,7 +273,7 @@ if fx_file and domestic_file and foreign_file:
                     df.loc[monday, 'long_position'] = len(active_long_positions)
                 
                 # Enter new short position if conditions are met (every Monday if FX > Real Rate)
-                if fx_price > real_rate:
+                if fx_price > real_rate and strategy_type in ["Long and Short", "Short Only"]:
                     active_short_positions.append({
                         'entry_date': monday,
                         'entry_price': fx_price,
@@ -441,7 +442,7 @@ if fx_file and domestic_file and foreign_file:
             st.metric("Current Spread", f"{df['yield_spread'].iloc[-1]:.2f}%")
         
         # Main Chart: Real Rate vs Historical Rate with Signals
-        st.header("Real Rate vs Historical FX Rate with Trading Signals")
+        st.header(f"Real Rate vs Historical FX Rate with Trading Signals ({strategy_type})")
         
         fig, ax = plt.subplots(figsize=(15, 8))
         
@@ -462,22 +463,22 @@ if fx_file and domestic_file and foreign_file:
                 linewidth=2, 
                 alpha=0.7)
         
-        # Add buy/sell signals
+        # Add buy/sell signals based on strategy type
         buy_signals = df[df['buy_signal'] == 'Buy']
         sell_signals = df[df['sell_signal'] == 'Sell']
         
-        if len(buy_signals) > 0:
+        if strategy_type in ["Long and Short", "Long Only"] and len(buy_signals) > 0:
             ax.scatter(buy_signals.index, buy_signals['fx_price'], 
                       marker='^', color='green', s=150, 
                       label=f'Buy Signals ({len(buy_signals)})', zorder=5)
         
-        if len(sell_signals) > 0:
+        if strategy_type in ["Long and Short", "Short Only"] and len(sell_signals) > 0:
             ax.scatter(sell_signals.index, sell_signals['fx_price'], 
                       marker='v', color='red', s=150, 
                       label=f'Sell Signals ({len(sell_signals)})', zorder=5)
         
         # Add title and labels
-        ax.set_title(f'Real Rate vs Historical FX Rate ({hold_period_months} Month Hold Period)', 
+        ax.set_title(f'Real Rate vs Historical FX Rate ({strategy_type}, {hold_period_months} Month Hold)', 
                     fontsize=16, fontweight='bold')
         ax.set_xlabel('Date', fontsize=12)
         ax.set_ylabel('FX Rate', fontsize=12)
@@ -491,6 +492,112 @@ if fx_file and domestic_file and foreign_file:
         plt.xticks(rotation=45)
         plt.tight_layout()
         st.pyplot(fig)
+        
+        # PnL Over Time Chart
+        if positions:
+            st.header("Cumulative PnL Over Time")
+            
+            # Create PnL timeline
+            pnl_timeline = []
+            for pos in positions:
+                pnl_timeline.append({
+                    'date': pos['exit_date'],
+                    'pnl': pos['nominal_pnl'],
+                    'position_type': pos['position']
+                })
+            
+            if pnl_timeline:
+                pnl_df = pd.DataFrame(pnl_timeline)
+                pnl_df['date'] = pd.to_datetime(pnl_df['date'])
+                pnl_df = pnl_df.sort_values('date')
+                pnl_df['cumulative_pnl'] = pnl_df['pnl'].cumsum()
+                
+                # Create separate cumulative for long and short
+                long_pnl = pnl_df[pnl_df['position_type'] == 'Long'].copy()
+                short_pnl = pnl_df[pnl_df['position_type'] == 'Short'].copy()
+                
+                if len(long_pnl) > 0:
+                    long_pnl['cumulative_long'] = long_pnl['pnl'].cumsum()
+                if len(short_pnl) > 0:
+                    short_pnl['cumulative_short'] = short_pnl['pnl'].cumsum()
+                
+                fig2, ax2 = plt.subplots(figsize=(15, 8))
+                
+                # Plot total cumulative PnL
+                ax2.plot(pnl_df['date'], pnl_df['cumulative_pnl'], 
+                        label=f'Total Cumulative PnL ({strategy_type})', 
+                        color='blue', linewidth=3, alpha=0.8)
+                
+                # Plot long cumulative PnL if strategy allows
+                if strategy_type in ["Long and Short", "Long Only"] and len(long_pnl) > 0:
+                    ax2.plot(long_pnl['date'], long_pnl['cumulative_long'], 
+                            label='Long Positions', color='green', 
+                            linewidth=2, alpha=0.7, linestyle='--')
+                
+                # Plot short cumulative PnL if strategy allows
+                if strategy_type in ["Long and Short", "Short Only"] and len(short_pnl) > 0:
+                    ax2.plot(short_pnl['date'], short_pnl['cumulative_short'], 
+                            label='Short Positions', color='red', 
+                            linewidth=2, alpha=0.7, linestyle='--')
+                
+                # Add zero line
+                ax2.axhline(0, color='gray', linestyle='-', alpha=0.5)
+                
+                # Mark individual trade exits
+                for i, row in pnl_df.iterrows():
+                    color = 'green' if row['pnl'] > 0 else 'red'
+                    marker = '^' if row['position_type'] == 'Long' else 'v'
+                    ax2.scatter(row['date'], row['cumulative_pnl'], 
+                              color=color, marker=marker, s=30, alpha=0.6, zorder=5)
+                
+                # Formatting
+                ax2.set_title(f'Cumulative PnL Over Time ({strategy_type})', 
+                            fontsize=16, fontweight='bold')
+                ax2.set_xlabel('Date', fontsize=12)
+                ax2.set_ylabel('Cumulative PnL', fontsize=12)
+                ax2.legend(fontsize=12)
+                ax2.grid(True, alpha=0.3)
+                
+                # Format y-axis with currency formatting
+                ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
+                
+                # Format x-axis
+                ax2.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+                ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+                
+                plt.xticks(rotation=45)
+                plt.tight_layout()
+                st.pyplot(fig2)
+                
+                # PnL Statistics
+                st.subheader("PnL Analysis")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    max_drawdown = (pnl_df['cumulative_pnl'] - pnl_df['cumulative_pnl'].cummax()).min()
+                    st.metric("Max Drawdown", f"{max_drawdown:,.0f}")
+                
+                with col2:
+                    peak_pnl = pnl_df['cumulative_pnl'].max()
+                    st.metric("Peak PnL", f"{peak_pnl:,.0f}")
+                
+                with col3:
+                    if len(pnl_df) > 1:
+                        total_days = (pnl_df['date'].max() - pnl_df['date'].min()).days
+                        if total_days > 0:
+                            daily_return = (total_nominal_pnl / total_capital_deployed) / total_days
+                            st.metric("Daily Return", f"{daily_return*100:.4f}%")
+                    else:
+                        st.metric("Daily Return", "N/A")
+                
+                with col4:
+                    positive_trades = len(pnl_df[pnl_df['pnl'] > 0])
+                    negative_trades = len(pnl_df[pnl_df['pnl'] < 0])
+                    if negative_trades > 0:
+                        profit_factor = abs(pnl_df[pnl_df['pnl'] > 0]['pnl'].sum() / pnl_df[pnl_df['pnl'] < 0]['pnl'].sum())
+                        st.metric("Profit Factor", f"{profit_factor:.2f}")
+                    else:
+                        st.metric("Profit Factor", "∞")
         
         # Secondary Chart: Yield Spread
         st.header("Yield Spread Over Time")
@@ -547,7 +654,7 @@ if fx_file and domestic_file and foreign_file:
         
         # Show detailed trades if requested
         if show_detailed_trades and positions:
-            st.header(f"Detailed Trading Results ({hold_period_months} Month Hold)")
+            st.header(f"Detailed Trading Results ({strategy_type}, {hold_period_months} Month Hold)")
             trades_df = pd.DataFrame(positions)
             trades_df['entry_date'] = pd.to_datetime(trades_df['entry_date']).dt.strftime('%Y-%m-%d')
             trades_df['exit_date'] = pd.to_datetime(trades_df['exit_date']).dt.strftime('%Y-%m-%d')
@@ -568,7 +675,7 @@ if fx_file and domestic_file and foreign_file:
             st.download_button(
                 label="Download Trade Results as CSV",
                 data=csv,
-                file_name=f"trading_results_{hold_period_months}m.csv",
+                file_name=f"trading_results_{strategy_type.lower().replace(' ', '_')}_{hold_period_months}m.csv",
                 mime="text/csv"
             )
         
@@ -590,14 +697,19 @@ if fx_file and domestic_file and foreign_file:
             with col4:
                 if current_r2 >= min_r2:
                     current_signal = ""
-                    if difference < 0:  # fx_price > real_rate
+                    if difference < 0 and strategy_type in ["Long and Short", "Long Only"]:  # fx_price < real_rate
                         current_signal += "BUY (FX < Real) "
-                    if difference > 0:  # fx_price < real_rate  
+                    if difference > 0 and strategy_type in ["Long and Short", "Short Only"]:  # fx_price > real_rate  
                         current_signal += "SELL (FX > Real)"
                     if current_signal:
                         st.success(current_signal)
                     else:
-                        st.info("NEUTRAL")
+                        if strategy_type == "Long Only":
+                            st.info("WAIT (FX > Real)")
+                        elif strategy_type == "Short Only":
+                            st.info("WAIT (FX < Real)")
+                        else:
+                            st.info("NEUTRAL")
                 else:
                     st.warning("Low R² - No Signal")
                     
