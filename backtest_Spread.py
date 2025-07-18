@@ -5,11 +5,10 @@ import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter
 import matplotlib.dates as mdates
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score
 import warnings
 warnings.filterwarnings('ignore')
 
-st.title("Regression-Based Real Rate Strategy")
+st.title("Real Rate vs Historical Rate Analysis")
 st.write("Upload CSV files for currency pair, domestic bond yield, and foreign bond yield")
 
 # File uploaders
@@ -24,10 +23,9 @@ with col2:
 with col3:
     foreign_file = st.file_uploader("Foreign Bond Yield CSV", type="csv", key="foreign")
 
-# Strategy parameters
+# Model parameters
 st.sidebar.header("Model Parameters")
 lookback_days = st.sidebar.slider("Regression Lookback Days", 30, 252, 126)
-min_r2 = st.sidebar.slider("Minimum R² for Trading", 0.1, 0.9, 0.3, 0.05)
 
 def load_and_clean_data(file, data_type):
     """Load and clean data from uploaded CSV"""
@@ -71,7 +69,6 @@ def rolling_regression(y, x, window):
     """Perform rolling regression and return predictions"""
     predictions = np.full(len(y), np.nan)
     r_squared = np.full(len(y), np.nan)
-    coefficients = np.full((len(y), 2), np.nan)  # intercept, slope
     
     for i in range(window-1, len(y)):
         start_idx = i - window + 1
@@ -98,13 +95,9 @@ def rolling_regression(y, x, window):
         
         # Calculate R²
         y_pred_all = model.predict(x_clean)
-        r_squared[i] = r2_score(y_clean, y_pred_all)
-        
-        # Store coefficients
-        coefficients[i, 0] = model.intercept_
-        coefficients[i, 1] = model.coef_[0]
+        r_squared[i] = np.corrcoef(y_clean, y_pred_all)[0, 1] ** 2
     
-    return predictions, r_squared, coefficients
+    return predictions, r_squared
 
 # Load all data
 if fx_file and domestic_file and foreign_file:
@@ -141,245 +134,152 @@ if fx_file and domestic_file and foreign_file:
         yield_spreads = df['yield_spread'].values
         
         st.write("Running rolling regression analysis...")
-        real_rates, r_squared_values, coeffs = rolling_regression(fx_prices, yield_spreads, lookback_days)
+        with st.spinner("Calculating real rates..."):
+            real_rates, r_squared_values = rolling_regression(fx_prices, yield_spreads, lookback_days)
         
         # Add results to dataframe
         df['real_rate'] = real_rates
         df['r_squared'] = r_squared_values
-        df['intercept'] = coeffs[:, 0]
-        df['slope'] = coeffs[:, 1]
         
-        # Find Mondays for trading signals
-        df['weekday'] = df.index.weekday
-        df['is_monday'] = df['weekday'] == 0
+        # Show basic statistics
+        st.header("Data Summary")
+        col1, col2, col3, col4 = st.columns(4)
         
-        # Filter out low R² periods
-        df['tradeable'] = df['r_squared'] >= min_r2
-        
-        # Get Monday dates where we can trade
-        monday_dates = df[(df['is_monday']) & (df['tradeable']) & (~df['real_rate'].isna())].index
-        
-        st.write(f"Tradeable Mondays (R² ≥ {min_r2}): {len(monday_dates)} out of {len(df[df['is_monday']])} total Mondays")
-        
-        # Strategy execution for different holding periods
-        results = {}
-        
-        for hold_months in [1, 2, 3]:
-            df_temp = df.copy()
-            
-            # Initialize signal column
-            df_temp['signal'] = ''
-            
-            # Calculate holding period in days (approximate)
-            hold_days = hold_months * 30
-            
-            positions = []
-            current_position = 0
-            entry_date = None
-            entry_price = None
-            entry_real_rate = None
-            
-            for monday in monday_dates:
-                # Check if we should close existing position
-                if current_position != 0 and entry_date is not None:
-                    days_held = (monday - entry_date).days
-                    if days_held >= hold_days:
-                        # Close position
-                        exit_price = df_temp.loc[monday, 'fx_price']
-                        pnl = (exit_price - entry_price) * current_position
-                        
-                        positions.append({
-                            'entry_date': entry_date,
-                            'exit_date': monday,
-                            'entry_price': entry_price,
-                            'exit_price': exit_price,
-                            'entry_real_rate': entry_real_rate,
-                            'position': 'Long' if current_position == 1 else 'Short',
-                            'hold_days': days_held,
-                            'pnl': pnl,
-                            'pnl_pct': (pnl / entry_price) * 100
-                        })
-                        current_position = 0
-                        entry_date = None
-                        entry_price = None
-                        entry_real_rate = None
-                
-                # Only enter new position if not currently holding
-                if current_position == 0:
-                    real_rate = df_temp.loc[monday, 'real_rate']
-                    fx_price = df_temp.loc[monday, 'fx_price']
-                    r2 = df_temp.loc[monday, 'r_squared']
-                    
-                    if pd.notna(real_rate) and r2 >= min_r2:
-                        if real_rate > fx_price:
-                            # Buy signal - real rate suggests FX should be higher
-                            current_position = 1
-                            entry_date = monday
-                            entry_price = fx_price
-                            entry_real_rate = real_rate
-                            df_temp.loc[monday, 'signal'] = 'Buy'
-                            
-                        elif real_rate < fx_price:
-                            # Sell signal - real rate suggests FX should be lower
-                            current_position = -1
-                            entry_date = monday
-                            entry_price = fx_price
-                            entry_real_rate = real_rate
-                            df_temp.loc[monday, 'signal'] = 'Sell'
-            
-            # Close any remaining position at the end
-            if current_position != 0 and entry_date is not None:
-                last_date = df_temp.index[-1]
-                exit_price = df_temp.loc[last_date, 'fx_price']
-                pnl = (exit_price - entry_price) * current_position
-                
-                positions.append({
-                    'entry_date': entry_date,
-                    'exit_date': last_date,
-                    'entry_price': entry_price,
-                    'exit_price': exit_price,
-                    'entry_real_rate': entry_real_rate,
-                    'position': 'Long' if current_position == 1 else 'Short',
-                    'hold_days': (last_date - entry_date).days,
-                    'pnl': pnl,
-                    'pnl_pct': (pnl / entry_price) * 100
-                })
-            
-            results[hold_months] = {
-                'df': df_temp,
-                'positions': positions
-            }
-        
-        # Display model diagnostics
-        st.header("Model Diagnostics")
-        
-        col1, col2, col3 = st.columns(3)
         with col1:
-            avg_r2 = df['r_squared'].mean()
-            st.metric("Average R²", f"{avg_r2:.3f}")
-        
+            st.metric("Average R²", f"{np.nanmean(r_squared_values):.3f}")
         with col2:
-            tradeable_pct = (df['tradeable'].sum() / len(df)) * 100
-            st.metric("Tradeable Days %", f"{tradeable_pct:.1f}%")
-            
+            st.metric("Current FX Price", f"{df['fx_price'].iloc[-1]:.4f}")
         with col3:
-            current_slope = df['slope'].iloc[-1] if not pd.isna(df['slope'].iloc[-1]) else 0
-            st.metric("Current Slope", f"{current_slope:.4f}")
+            if not np.isnan(real_rates[-1]):
+                st.metric("Current Real Rate", f"{real_rates[-1]:.4f}")
+            else:
+                st.metric("Current Real Rate", "N/A")
+        with col4:
+            st.metric("Current Spread", f"{df['yield_spread'].iloc[-1]:.2f}%")
         
-        # Performance summary
-        st.header("Strategy Performance")
+        # Main Chart: Real Rate vs Historical Rate
+        st.header("Real Rate vs Historical FX Rate")
         
-        perf_data = []
-        for hold_months in [1, 2, 3]:
-            positions = results[hold_months]['positions']
-            if positions:
-                total_pnl = sum(p['pnl'] for p in positions)
-                avg_pnl = total_pnl / len(positions)
-                win_rate = sum(1 for p in positions if p['pnl'] > 0) / len(positions) * 100
-                avg_pnl_pct = sum(p['pnl_pct'] for p in positions) / len(positions)
-                
-                perf_data.append({
-                    'Hold Period': f"{hold_months} months",
-                    'Total Trades': len(positions),
-                    'Total PnL': f"{total_pnl:.4f}",
-                    'Avg PnL': f"{avg_pnl:.4f}",
-                    'Avg PnL %': f"{avg_pnl_pct:.2f}%",
-                    'Win Rate': f"{win_rate:.1f}%"
-                })
+        fig, ax = plt.subplots(figsize=(15, 8))
         
-        if perf_data:
-            st.dataframe(pd.DataFrame(perf_data))
+        # Plot historical FX price
+        ax.plot(df.index, df['fx_price'], 
+                label='Historical FX Rate', 
+                color='black', 
+                linewidth=2, 
+                alpha=0.8)
         
-        # Plotting
-        selected_period = st.selectbox("Select holding period to visualize", [1, 2, 3])
+        # Plot real rate (predicted FX price from regression)
+        valid_mask = ~np.isnan(df['real_rate'])
+        valid_data = df[valid_mask]
         
-        df_plot = results[selected_period]['df']
+        ax.plot(valid_data.index, valid_data['real_rate'], 
+                label='Real Rate (Regression Model)', 
+                color='red', 
+                linewidth=2, 
+                alpha=0.7)
         
-        # Create subplots
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
-        
-        # Top left: FX Price vs Real Rate
-        valid_data = df_plot.dropna(subset=['real_rate'])
-        ax1.plot(valid_data.index, valid_data['fx_price'], label='FX Price', color='black', linewidth=1)
-        ax1.plot(valid_data.index, valid_data['real_rate'], label='Real Rate (Predicted)', color='blue', linewidth=1, alpha=0.7)
-        
-        # Add buy/sell signals (check if signal column exists and has data)
-        if 'signal' in df_plot.columns:
-            buy_signals = df_plot[df_plot['signal'] == 'Buy']
-            sell_signals = df_plot[df_plot['signal'] == 'Sell']
-            
-            if len(buy_signals) > 0:
-                ax1.scatter(buy_signals.index, buy_signals['fx_price'], marker='^', color='green', s=100, label='Buy Signal', zorder=5)
-            if len(sell_signals) > 0:
-                ax1.scatter(sell_signals.index, sell_signals['fx_price'], marker='v', color='red', s=100, label='Sell Signal', zorder=5)
-        
-        ax1.set_title(f'FX Price vs Real Rate ({selected_period} Month Hold)')
-        ax1.set_ylabel('Price')
-        ax1.legend()
-        ax1.grid(True, alpha=0.3)
-        
-        # Top right: Yield Spread
-        ax2.plot(df_plot.index, df_plot['yield_spread'], label='Yield Spread', color='orange', linewidth=1)
-        ax2.axhline(0, color='gray', linestyle='--', alpha=0.5)
-        ax2.set_title('Yield Spread (Domestic - Foreign)')
-        ax2.set_ylabel('Yield Spread (%)')
-        ax2.legend()
-        ax2.grid(True, alpha=0.3)
-        
-        # Bottom left: R² over time
-        ax3.plot(valid_data.index, valid_data['r_squared'], label='R²', color='purple', linewidth=1)
-        ax3.axhline(min_r2, color='red', linestyle='--', alpha=0.7, label=f'Min R² ({min_r2})')
-        ax3.set_title('Model R² Over Time')
-        ax3.set_ylabel('R²')
-        ax3.legend()
-        ax3.grid(True, alpha=0.3)
-        
-        # Bottom right: Regression coefficients
-        ax4.plot(valid_data.index, valid_data['slope'], label='Slope', color='green', linewidth=1)
-        ax4.axhline(0, color='gray', linestyle='--', alpha=0.5)
-        ax4.set_title('Regression Slope Over Time')
-        ax4.set_xlabel('Date')
-        ax4.set_ylabel('Slope')
-        ax4.legend()
-        ax4.grid(True, alpha=0.3)
+        # Add title and labels
+        ax.set_title('Real Rate vs Historical FX Rate', fontsize=16, fontweight='bold')
+        ax.set_xlabel('Date', fontsize=12)
+        ax.set_ylabel('FX Rate', fontsize=12)
+        ax.legend(fontsize=12)
+        ax.grid(True, alpha=0.3)
         
         # Format x-axis
-        for ax in [ax1, ax2, ax3, ax4]:
-            ax.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
-            ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+        ax.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
         
+        plt.xticks(rotation=45)
         plt.tight_layout()
         st.pyplot(fig)
         
-        # Show detailed trades
-        if results[selected_period]['positions']:
-            st.header(f"Detailed Trades ({selected_period} Month Hold)")
-            trades_df = pd.DataFrame(results[selected_period]['positions'])
-            trades_df['entry_date'] = pd.to_datetime(trades_df['entry_date']).dt.strftime('%Y-%m-%d')
-            trades_df['exit_date'] = pd.to_datetime(trades_df['exit_date']).dt.strftime('%Y-%m-%d')
-            st.dataframe(trades_df.round(4))
+        # Secondary Chart: Yield Spread
+        st.header("Yield Spread Over Time")
         
-        # Show current regression stats
-        st.header("Current Model State")
-        if not pd.isna(df['real_rate'].iloc[-1]):
-            col1, col2, col3, col4 = st.columns(4)
+        fig2, ax2 = plt.subplots(figsize=(15, 6))
+        
+        ax2.plot(df.index, df['yield_spread'], 
+                 label='Yield Spread (Domestic - Foreign)', 
+                 color='blue', 
+                 linewidth=2)
+        
+        ax2.axhline(0, color='gray', linestyle='--', alpha=0.5)
+        ax2.set_title('Yield Spread (Domestic - Foreign Bond Yields)', fontsize=16, fontweight='bold')
+        ax2.set_xlabel('Date', fontsize=12)
+        ax2.set_ylabel('Yield Spread (%)', fontsize=12)
+        ax2.legend(fontsize=12)
+        ax2.grid(True, alpha=0.3)
+        
+        # Format x-axis
+        ax2.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+        ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+        
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig2)
+        
+        # Model Quality Chart: R² over time
+        st.header("Model Quality (R²) Over Time")
+        
+        fig3, ax3 = plt.subplots(figsize=(15, 6))
+        
+        ax3.plot(valid_data.index, valid_data['r_squared'], 
+                 label='R² (Model Fit Quality)', 
+                 color='green', 
+                 linewidth=2)
+        
+        ax3.axhline(0.5, color='orange', linestyle='--', alpha=0.7, label='50% R²')
+        ax3.axhline(0.3, color='red', linestyle='--', alpha=0.7, label='30% R²')
+        
+        ax3.set_title('Regression Model Quality Over Time', fontsize=16, fontweight='bold')
+        ax3.set_xlabel('Date', fontsize=12)
+        ax3.set_ylabel('R² Value', fontsize=12)
+        ax3.set_ylim(0, 1)
+        ax3.legend(fontsize=12)
+        ax3.grid(True, alpha=0.3)
+        
+        # Format x-axis
+        ax3.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+        ax3.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+        
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig3)
+        
+        # Show sample data
+        st.header("Sample Data")
+        sample_data = df[['fx_price', 'domestic_yield', 'foreign_yield', 'yield_spread', 'real_rate', 'r_squared']].tail(10)
+        st.dataframe(sample_data.round(4))
+        
+        # Current analysis
+        if not np.isnan(real_rates[-1]):
+            st.header("Current Analysis")
+            current_fx = df['fx_price'].iloc[-1]
+            current_real = real_rates[-1]
+            difference = current_real - current_fx
+            
+            col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Current FX Price", f"{df['fx_price'].iloc[-1]:.4f}")
+                st.metric("Difference (Real - Historical)", f"{difference:.4f}")
             with col2:
-                st.metric("Current Real Rate", f"{df['real_rate'].iloc[-1]:.4f}")
+                if difference > 0:
+                    st.success("Real Rate > FX Price (Potential BUY signal)")
+                elif difference < 0:
+                    st.error("Real Rate < FX Price (Potential SELL signal)")
+                else:
+                    st.info("Real Rate = FX Price (No signal)")
             with col3:
-                current_diff = df['real_rate'].iloc[-1] - df['fx_price'].iloc[-1]
-                st.metric("Difference", f"{current_diff:.4f}")
-            with col4:
-                signal = "BUY" if current_diff > 0 else "SELL" if current_diff < 0 else "HOLD"
-                st.metric("Signal", signal)
+                st.metric("Difference %", f"{(difference/current_fx)*100:.2f}%")
         
 else:
-    st.info("Please upload all three CSV files to start the analysis:")
-    st.write("**Strategy Logic:**")
-    st.write("1. Calculate yield spread = domestic_yield - foreign_yield")
-    st.write("2. Use rolling regression: FX_Price = f(Yield_Spread)")
-    st.write("3. Generate 'real rate' predictions from the model")
-    st.write("4. Buy on Monday if real_rate > fx_price")
-    st.write("5. Sell on Monday if real_rate < fx_price")
-    st.write("6. Only trade when model R² is above minimum threshold")
+    st.info("Please upload all three CSV files to see the analysis:")
+    st.write("**What this will show:**")
+    st.write("1. **Historical FX Rate**: Your actual currency pair price over time")
+    st.write("2. **Real Rate**: Predicted FX rate based on yield spread regression")
+    st.write("3. **Yield Spread**: Domestic bond yield minus foreign bond yield")
+    st.write("4. **Model Quality**: R² showing how well the regression fits")
+    st.write("")
+    st.write("**The Strategy Concept:**")
+    st.write("- When Real Rate > Historical Rate → FX may be undervalued (BUY)")
+    st.write("- When Real Rate < Historical Rate → FX may be overvalued (SELL)")
