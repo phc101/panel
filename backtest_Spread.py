@@ -5,19 +5,16 @@ import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter
 import matplotlib.dates as mdates
 
-st.title("FX/Bond Yield Backtesting Strategy")
+st.title("Yield Spread Backtesting Strategy")
 
 # File uploader
-uploaded_file = st.file_uploader("Upload your CSV file from Investing.com", type="csv")
+uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
 
 if uploaded_file is not None:
     # Load the data
     df = pd.read_csv(uploaded_file)
     
-    # Display the original column names to help debug
-    st.write("Original columns:", df.columns.tolist())
-    
-    # Clean up column names (Investing.com files often have extra spaces)
+    # Clean up column names (remove extra spaces)
     df.columns = df.columns.str.strip()
     
     # Handle different possible column names from Investing.com
@@ -30,7 +27,7 @@ if uploaded_file is not None:
             date_col = col
             break
     
-    # Look for price column
+    # Look for price column  
     for col in df.columns:
         if 'price' in col.lower():
             price_col = col
@@ -41,7 +38,7 @@ if uploaded_file is not None:
         st.write("Available columns:", df.columns.tolist())
         st.stop()
     
-    # Rename columns to match your code
+    # Rename columns to match your original code
     df = df.rename(columns={date_col: 'date', price_col: 'price'})
     
     # Convert date and set as index
@@ -51,9 +48,7 @@ if uploaded_file is not None:
     # Sort by date (Investing.com files are often in reverse chronological order)
     df = df.sort_index()
     
-    # Display basic info
-    st.write(f"Data loaded: {len(df)} rows from {df.index[0].strftime('%Y-%m-%d')} to {df.index[-1].strftime('%Y-%m-%d')}")
-    
+    # YOUR ORIGINAL STRATEGY LOGIC - UNCHANGED
     # Calculate Z-score
     df["z"] = (df["price"] - df["price"].rolling(20).mean()) / df["price"].rolling(20).std()
     
@@ -105,7 +100,7 @@ if uploaded_file is not None:
     
     df["signal"] = signal
     
-    # Plot
+    # Plot - YOUR ORIGINAL PLOTTING CODE
     fig, ax = plt.subplots(figsize=(14, 6))
     ax.plot(df.index, df["price"], label="Price", color="black")
     ax.axhline(df["price"].mean(), color="gray", linestyle="--", linewidth=0.8)
@@ -133,14 +128,13 @@ if uploaded_file is not None:
     # Display the plot in Streamlit
     st.pyplot(fig)
     
-    # Show signals and dates
+    # Print signals and dates - YOUR ORIGINAL OUTPUT
     signals_df = df[df["signal"] != ""][["price", "signal"]]
     if not signals_df.empty:
         st.write("Trading Signals:")
         st.dataframe(signals_df)
     else:
-        st.write("No trading signals generated with current parameters.")
+        st.write("No trading signals generated.")
         
 else:
-    st.info("Please upload a CSV file to start the analysis.")
-    st.write("Expected format: CSV file from Investing.com with Date and Price columns")
+    st.info("Please upload your CSV file to start the analysis.")
