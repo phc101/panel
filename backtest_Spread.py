@@ -26,6 +26,11 @@ with col3:
 # Model parameters
 st.sidebar.header("Model Parameters")
 lookback_days = st.sidebar.slider("Regression Lookback Days", 30, 252, 126)
+min_r2 = st.sidebar.slider("Minimum R² for Trading", 0.1, 0.9, 0.3, 0.05)
+
+st.sidebar.header("Strategy Parameters")
+hold_period_months = st.sidebar.slider("Holding Period (Months)", 1, 12, 3)
+show_detailed_trades = st.sidebar.checkbox("Show Detailed Trades", True)
 
 def load_and_clean_data(file, data_type):
     """Load and clean data from uploaded CSV"""
@@ -166,8 +171,129 @@ if fx_file and domestic_file and foreign_file:
         df['real_rate'] = real_rates
         df['r_squared'] = r_squared_values
         
+        # Trading logic
+        df['tradeable'] = df['r_squared'] >= min_r2
+        df['weekday'] = df.index.weekday
+        df['is_monday'] = df['weekday'] == 0
+        
+        # Generate trading signals
+        df['signal'] = ''
+        df['position'] = 0
+        
+        # Get Monday dates where we can trade
+        monday_dates = df[(df['is_monday']) & (df['tradeable']) & (~df['real_rate'].isna())].index
+        
+        st.write(f"Tradeable Mondays (R² ≥ {min_r2}): {len(monday_dates)} out of {len(df[df['is_monday']])} total Mondays")
+        
+        # Execute strategy
+        hold_days = hold_period_months * 30
+        positions = []
+        current_position = 0
+        entry_date = None
+        entry_price = None
+        entry_real_rate = None
+        
+        for monday in monday_dates:
+            # Check if we should close existing position
+            if current_position != 0 and entry_date is not None:
+                days_held = (monday - entry_date).days
+                if days_held >= hold_days:
+                    # Close position
+                    exit_price = df.loc[monday, 'fx_price']
+                    pnl = (exit_price - entry_price) * current_position
+                    
+                    positions.append({
+                        'entry_date': entry_date,
+                        'exit_date': monday,
+                        'entry_price': entry_price,
+                        'exit_price': exit_price,
+                        'entry_real_rate': entry_real_rate,
+                        'position': 'Long' if current_position == 1 else 'Short',
+                        'hold_days': days_held,
+                        'pnl': pnl,
+                        'pnl_pct': (pnl / entry_price) * 100
+                    })
+                    current_position = 0
+                    entry_date = None
+                    entry_price = None
+                    entry_real_rate = None
+            
+            # Only enter new position if not currently holding
+            if current_position == 0:
+                real_rate = df.loc[monday, 'real_rate']
+                fx_price = df.loc[monday, 'fx_price']
+                r2 = df.loc[monday, 'r_squared']
+                
+                if pd.notna(real_rate) and r2 >= min_r2:
+                    if real_rate > fx_price:
+                        # Buy signal - real rate suggests FX should be higher
+                        current_position = 1
+                        entry_date = monday
+                        entry_price = fx_price
+                        entry_real_rate = real_rate
+                        df.loc[monday, 'signal'] = 'Buy'
+                        df.loc[monday, 'position'] = 1
+                        
+                    elif real_rate < fx_price:
+                        # Sell signal - real rate suggests FX should be lower
+                        current_position = -1
+                        entry_date = monday
+                        entry_price = fx_price
+                        entry_real_rate = real_rate
+                        df.loc[monday, 'signal'] = 'Sell'
+                        df.loc[monday, 'position'] = -1
+        
+        # Close any remaining position at the end
+        if current_position != 0 and entry_date is not None:
+            last_date = df.index[-1]
+            exit_price = df.loc[last_date, 'fx_price']
+            pnl = (exit_price - entry_price) * current_position
+            
+            positions.append({
+                'entry_date': entry_date,
+                'exit_date': last_date,
+                'entry_price': entry_price,
+                'exit_price': exit_price,
+                'entry_real_rate': entry_real_rate,
+                'position': 'Long' if current_position == 1 else 'Short',
+                'hold_days': (last_date - entry_date).days,
+                'pnl': pnl,
+                'pnl_pct': (pnl / entry_price) * 100
+            })
+        
         # Show basic statistics
-        st.header("Data Summary")
+        st.header("Strategy Performance")
+        
+        if positions:
+            # Calculate performance metrics
+            total_trades = len(positions)
+            winning_trades = sum(1 for p in positions if p['pnl'] > 0)
+            total_pnl = sum(p['pnl'] for p in positions)
+            avg_pnl = total_pnl / total_trades
+            win_rate = (winning_trades / total_trades) * 100
+            avg_pnl_pct = sum(p['pnl_pct'] for p in positions) / total_trades
+            max_pnl = max(p['pnl'] for p in positions)
+            min_pnl = min(p['pnl'] for p in positions)
+            
+            # Display metrics
+            col1, col2, col3, col4, col5 = st.columns(5)
+            
+            with col1:
+                st.metric("Total Trades", total_trades)
+            with col2:
+                st.metric("Win Rate", f"{win_rate:.1f}%")
+            with col3:
+                st.metric("Total PnL", f"{total_pnl:.4f}")
+            with col4:
+                st.metric("Avg PnL %", f"{avg_pnl_pct:.2f}%")
+            with col5:
+                st.metric("Best/Worst", f"{max_pnl:.4f} / {min_pnl:.4f}")
+                
+        else:
+            st.warning(f"No trades generated with current parameters (R² ≥ {min_r2}, {hold_period_months} month hold)")
+        
+        # Model diagnostics
+        st.header("Model Diagnostics")
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
@@ -182,8 +308,8 @@ if fx_file and domestic_file and foreign_file:
         with col4:
             st.metric("Current Spread", f"{df['yield_spread'].iloc[-1]:.2f}%")
         
-        # Main Chart: Real Rate vs Historical Rate
-        st.header("Real Rate vs Historical FX Rate")
+        # Main Chart: Real Rate vs Historical Rate with Signals
+        st.header("Real Rate vs Historical FX Rate with Trading Signals")
         
         fig, ax = plt.subplots(figsize=(15, 8))
         
@@ -204,8 +330,23 @@ if fx_file and domestic_file and foreign_file:
                 linewidth=2, 
                 alpha=0.7)
         
+        # Add buy/sell signals
+        buy_signals = df[df['signal'] == 'Buy']
+        sell_signals = df[df['signal'] == 'Sell']
+        
+        if len(buy_signals) > 0:
+            ax.scatter(buy_signals.index, buy_signals['fx_price'], 
+                      marker='^', color='green', s=150, 
+                      label=f'Buy Signals ({len(buy_signals)})', zorder=5)
+        
+        if len(sell_signals) > 0:
+            ax.scatter(sell_signals.index, sell_signals['fx_price'], 
+                      marker='v', color='red', s=150, 
+                      label=f'Sell Signals ({len(sell_signals)})', zorder=5)
+        
         # Add title and labels
-        ax.set_title('Real Rate vs Historical FX Rate', fontsize=16, fontweight='bold')
+        ax.set_title(f'Real Rate vs Historical FX Rate ({hold_period_months} Month Hold Period)', 
+                    fontsize=16, fontweight='bold')
         ax.set_xlabel('Date', fontsize=12)
         ax.set_ylabel('FX Rate', fontsize=12)
         ax.legend(fontsize=12)
@@ -272,30 +413,60 @@ if fx_file and domestic_file and foreign_file:
         plt.tight_layout()
         st.pyplot(fig3)
         
-        # Show sample data
-        st.header("Sample Data")
-        sample_data = df[['fx_price', 'domestic_yield', 'foreign_yield', 'yield_spread', 'real_rate', 'r_squared']].tail(10)
-        st.dataframe(sample_data.round(4))
+        # Show detailed trades if requested
+        if show_detailed_trades and positions:
+            st.header(f"Detailed Trading Results ({hold_period_months} Month Hold)")
+            trades_df = pd.DataFrame(positions)
+            trades_df['entry_date'] = pd.to_datetime(trades_df['entry_date']).dt.strftime('%Y-%m-%d')
+            trades_df['exit_date'] = pd.to_datetime(trades_df['exit_date']).dt.strftime('%Y-%m-%d')
+            
+            # Format numeric columns
+            numeric_cols = ['entry_price', 'exit_price', 'entry_real_rate', 'pnl', 'pnl_pct']
+            for col in numeric_cols:
+                if col in trades_df.columns:
+                    trades_df[col] = trades_df[col].round(4)
+            
+            st.dataframe(trades_df, use_container_width=True)
+            
+            # Add download button for trades
+            csv = trades_df.to_csv(index=False)
+            st.download_button(
+                label="Download Trade Results as CSV",
+                data=csv,
+                file_name=f"trading_results_{hold_period_months}m.csv",
+                mime="text/csv"
+            )
         
         # Current analysis
         if not np.isnan(real_rates[-1]):
-            st.header("Current Analysis")
+            st.header("Current Market Analysis")
             current_fx = df['fx_price'].iloc[-1]
             current_real = real_rates[-1]
             difference = current_real - current_fx
+            current_r2 = df['r_squared'].iloc[-1]
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Difference (Real - Historical)", f"{difference:.4f}")
             with col2:
-                if difference > 0:
-                    st.success("Real Rate > FX Price (Potential BUY signal)")
-                elif difference < 0:
-                    st.error("Real Rate < FX Price (Potential SELL signal)")
-                else:
-                    st.info("Real Rate = FX Price (No signal)")
-            with col3:
                 st.metric("Difference %", f"{(difference/current_fx)*100:.2f}%")
+            with col3:
+                st.metric("Current R²", f"{current_r2:.3f}")
+            with col4:
+                if current_r2 >= min_r2:
+                    if difference > 0:
+                        st.success("BUY Signal")
+                    elif difference < 0:
+                        st.error("SELL Signal")
+                    else:
+                        st.info("NEUTRAL")
+                else:
+                    st.warning("Low R² - No Signal")
+                    
+        # Show sample data
+        st.header("Recent Data Sample")
+        sample_data = df[['fx_price', 'domestic_yield', 'foreign_yield', 'yield_spread', 'real_rate', 'r_squared', 'signal']].tail(10)
+        st.dataframe(sample_data.round(4))
         
 else:
     st.info("Please upload all three CSV files to see the analysis:")
