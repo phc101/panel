@@ -21,11 +21,11 @@ class ChromebookTradingBot:
         self.running = False
         
         # Strategy settings (edit these)
-        self.symbols = ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X']
-        self.holding_days = 3
+        self.symbols = ['EURUSD=X', 'CHFPLN=X', 'USDPLN=X', 'EURPLN=X']
+        self.holding_days = 10
         self.stop_loss_percent = 2.0
-        self.dynamic_leverage = False
-        self.no_overlap = True
+        self.dynamic_leverage = True
+        self.no_overlap = False
         
         print("🚀 Chromebook Trading Bot Initialized!")
         print(f"📊 Monitoring: {', '.join(self.symbols)}")
