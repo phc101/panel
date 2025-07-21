@@ -17,6 +17,7 @@ uploaded_files = st.file_uploader("Wybierz pliki CSV", type=["csv"], accept_mult
 st.subheader("Parametry Handlowe")
 holding_days = st.slider("Liczba dni trzymania pozycji", min_value=1, max_value=10, value=3, step=1)
 stop_loss_percent = st.number_input("Stop Loss (%):", min_value=0.0, max_value=10.0, value=2.0, step=0.1)
+no_overlap = st.checkbox("Brak nakładających się pozycji", value=True, help="Jeśli zaznaczone, nowa transakcja może być otwarta tylko po zamknięciu poprzedniej")
 
 # Load and validate CSV data
 @st.cache_data
@@ -61,9 +62,10 @@ def load_data(uploaded_files):
     return dfs
 
 # Calculate pivot points and execute momentum trading strategy for a single pair
-def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_name):
+def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_name, no_overlap=True):
     pivot_data = []
     trades = []
+    last_exit_index = -1  # Track when the last trade was closed
     
     for i in range(7, len(df)):
         window = df.iloc[i-7:i]
@@ -96,6 +98,12 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
         if pd.isna(row.get('S1')):
             continue
         
+        # Skip if we're in no_overlap mode and still within a previous trade period
+        if no_overlap and i <= last_exit_index:
+            continue
+        
+        trade_opened = False
+        
         # BUY: Open price below S2
         if open_price < row['S2']:
             for j in range(1, holding_days + 1):
@@ -115,6 +123,8 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
                         'PnL %': ((close_price - open_price) / open_price) * 100 if open_price != 0 else 0,
                         'Exit Reason': 'Stop Loss'
                     })
+                    last_exit_index = i + j
+                    trade_opened = True
                     break
             else:
                 exit_close = df.iloc[i + holding_days]['Close']
@@ -129,6 +139,8 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
                     'PnL %': ((exit_close - open_price) / open_price) * 100 if open_price != 0 else 0,
                     'Exit Reason': 'Holding Period'
                 })
+                last_exit_index = i + holding_days
+                trade_opened = True
         
         # SELL: Open price above R2
         elif open_price > row['R2']:
@@ -149,6 +161,8 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
                         'PnL %': ((open_price - close_price) / open_price) * 100 if open_price != 0 else 0,
                         'Exit Reason': 'Stop Loss'
                     })
+                    last_exit_index = i + j
+                    trade_opened = True
                     break
             else:
                 exit_close = df.iloc[i + holding_days]['Close']
@@ -163,6 +177,8 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
                     'PnL %': ((open_price - exit_close) / open_price) * 100 if open_price != 0 else 0,
                     'Exit Reason': 'Holding Period'
                 })
+                last_exit_index = i + holding_days
+                trade_opened = True
     
     trades_df = pd.DataFrame(trades)
     if not trades_df.empty:
@@ -171,13 +187,13 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
     return df, trades_df
 
 # Calculate portfolio metrics
-def calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent):
+def calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent, no_overlap=True):
     all_trades = []
     pair_metrics = []
     weight = 1.0 / len(dfs) if dfs else 1.0
     
     for pair_name, df in dfs.items():
-        df, trades_df = calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_name)
+        df, trades_df = calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_name, no_overlap)
         if not trades_df.empty:
             total_trades_pair = len(trades_df)
             buy_trades = len(trades_df[trades_df['Direction'] == 'BUY'])
@@ -291,7 +307,7 @@ if dfs is None:
     st.stop()
 
 # Calculate portfolio results
-dfs, portfolio_trades, pair_metrics, annual_pnl, portfolio_metrics = calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent)
+dfs, portfolio_trades, pair_metrics, annual_pnl, portfolio_metrics = calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent, no_overlap)
 
 # Display portfolio metrics
 st.subheader("Metryki Portfela")
@@ -347,6 +363,7 @@ st.markdown(f"""
   - R1 = 2×Pivot - AvgLow
   - R2 = Pivot + (AvgHigh - AvgLow)
 - **Portfel**: Równa alokacja dla każdej pary walutowej (np. 20% dla 5 par).
+- **Nakładające się pozycje**: {'Dozwolone' if not no_overlap else 'Zabronione - nowa pozycja może być otwarta tylko po zamknięciu poprzedniej'}
 - **Dane**: Pierwsze 7 dni i ostatnie {holding_days} dni nie generują sygnałów handlowych.
 """)
 
