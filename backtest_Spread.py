@@ -124,8 +124,10 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
                 close_price = df.iloc[i + j]['Close']
                 raw_pnl = close_price - open_price
                 leveraged_pnl = raw_pnl * current_leverage
-                loss_percent = ((open_price - close_price) / open_price) * 100 * current_leverage
-                if loss_percent >= stop_loss_percent:
+                # Stop loss check on leveraged loss percentage
+                raw_loss_percent = ((open_price - close_price) / open_price) * 100
+                leveraged_loss_percent = raw_loss_percent * current_leverage
+                if leveraged_loss_percent >= stop_loss_percent:
                     trades.append({
                         'Pair': pair_name,
                         'Entry Date': row['Date'],
@@ -172,8 +174,10 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
                 close_price = df.iloc[i + j]['Close']
                 raw_pnl = open_price - close_price
                 leveraged_pnl = raw_pnl * current_leverage
-                loss_percent = ((close_price - open_price) / open_price) * 100 * current_leverage
-                if loss_percent >= stop_loss_percent:
+                # Stop loss check on leveraged loss percentage  
+                raw_loss_percent = ((close_price - open_price) / open_price) * 100
+                leveraged_loss_percent = raw_loss_percent * current_leverage
+                if leveraged_loss_percent >= stop_loss_percent:
                     trades.append({
                         'Pair': pair_name,
                         'Entry Date': row['Date'],
@@ -219,13 +223,13 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
     return df, trades_df
 
 # Calculate portfolio metrics
-def calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent, no_overlap=True):
+def calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent, no_overlap=True, dynamic_leverage=False):
     all_trades = []
     pair_metrics = []
     weight = 1.0 / len(dfs) if dfs else 1.0
     
     for pair_name, df in dfs.items():
-        df, trades_df = calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_name, no_overlap)
+        df, trades_df = calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_name, no_overlap, dynamic_leverage)
         if not trades_df.empty:
             total_trades_pair = len(trades_df)
             buy_trades = len(trades_df[trades_df['Direction'] == 'BUY'])
@@ -339,7 +343,7 @@ if dfs is None:
     st.stop()
 
 # Calculate portfolio results
-dfs, portfolio_trades, pair_metrics, annual_pnl, portfolio_metrics = calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent, no_overlap)
+dfs, portfolio_trades, pair_metrics, annual_pnl, portfolio_metrics = calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent, no_overlap, dynamic_leverage)
 
 # Display portfolio metrics
 st.subheader("Metryki Portfela")
@@ -396,6 +400,7 @@ st.markdown(f"""
   - R2 = Pivot + (AvgHigh - AvgLow)
 - **Portfel**: Równa alokacja dla każdej pary walutowej (np. 20% dla 5 par).
 - **Nakładające się pozycje**: {'Dozwolone' if not no_overlap else 'Zabronione - nowa pozycja może być otwarta tylko po zamknięciu poprzedniej'}
+- **Dynamiczna dźwignia**: {'Wyłączona (1x)' if not dynamic_leverage else 'Włączona (5x po zysku, 1x po stracie)'}
 - **Dane**: Pierwsze 7 dni i ostatnie {holding_days} dni nie generują sygnałów handlowych.
 """)
 
@@ -468,6 +473,10 @@ for pair_name, df in dfs.items():
         trades_display['Entry Date'] = trades_display['Entry Date'].dt.strftime('%Y-%m-%d')
         trades_display['Exit Date'] = trades_display['Exit Date'].dt.strftime('%Y-%m-%d')
         trades_display[['Entry Price', 'Exit Price', 'PnL']] = trades_display[['Entry Price', 'Exit Price', 'PnL']].round(4)
+        if 'Raw PnL' in trades_display.columns:
+            trades_display['Raw PnL'] = trades_display['Raw PnL'].round(4)
+        if 'Leverage' in trades_display.columns:
+            trades_display['Leverage'] = trades_display['Leverage'].round(1)
         trades_display['PnL %'] = trades_display['PnL %'].round(2)
         st.dataframe(trades_display, use_container_width=True)
     else:
