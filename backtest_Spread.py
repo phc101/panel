@@ -4,14 +4,14 @@ import matplotlib.pyplot as plt
 import io
 
 # Streamlit app configuration
-st.set_page_config(page_title="Momentum Pivot Points Trading Strategy (EUR/PLN)", layout="wide")
-st.title("Momentum Pivot Points Trading Strategy (EUR/PLN)")
-st.markdown("Backtest strategii momentum opartej na 7-dniowych punktach pivot dla danych EUR/PLN z Investing.com.")
+st.set_page_config(page_title="Portfolio Momentum Pivot Points Trading Strategy", layout="wide")
+st.title("Portfolio Momentum Pivot Points Trading Strategy")
+st.markdown("Backtest strategii momentum dla maksymalnie 5 par walutowych w formacie Investing.com. Wyniki prezentowane jako portfel z równą alokacją.")
 
 # File upload
-st.subheader("Wczytaj plik CSV")
-st.markdown("Wczytaj plik CSV z danymi w formacie Investing.com (np. EUR_PLN Historical Data.csv). Wymagane kolumny: Date, Price, Open, High, Low.")
-uploaded_file = st.file_uploader("Wybierz plik CSV", type=["csv"])
+st.subheader("Wczytaj pliki CSV (maks. 5 par walutowych)")
+st.markdown("Wczytaj pliki CSV z danymi w formacie Investing.com (np. EUR_PLN Historical Data.csv). Wymagane kolumny: Date, Price, Open, High, Low.")
+uploaded_files = st.file_uploader("Wybierz pliki CSV", type=["csv"], accept_multiple_files=True)
 
 # Trading parameters
 st.subheader("Parametry Handlowe")
@@ -20,40 +20,48 @@ stop_loss_percent = st.number_input("Stop Loss (%):", min_value=0.0, max_value=1
 
 # Load and validate CSV data
 @st.cache_data
-def load_data(uploaded_file):
-    if uploaded_file is None:
-        st.warning("Proszę wczytać plik CSV, aby kontynuować.")
+def load_data(uploaded_files):
+    if not uploaded_files:
+        st.warning("Proszę wczytać przynajmniej jeden plik CSV, aby kontynuować.")
         return None
     
-    try:
-        df = pd.read_csv(uploaded_file)
-        expected_columns = ['Date', 'Price', 'Open', 'High', 'Low']
-        if not all(col in df.columns for col in expected_columns):
-            st.error(f"Plik CSV musi zawierać kolumny: {', '.join(expected_columns)}")
-            return None
-        
-        df = df.rename(columns={'Price': 'Close'})
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        if df['Date'].isna().any():
-            st.warning("Niektóre daty w pliku CSV są nieprawidłowe i zostaną pominięte.")
-            df = df.dropna(subset=['Date'])
-        
-        numeric_cols = ['Open', 'High', 'Low', 'Close']
-        for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        if df[numeric_cols].isna().any().any():
-            st.warning("Niektóre wartości cen w pliku CSV są nieprawidłowe i zostaną zastąpione zerami.")
-            df[numeric_cols] = df[numeric_cols].fillna(0)
-        
-        df = df.sort_values('Date').reset_index(drop=True)
-        return df[['Date', 'Open', 'High', 'Low', 'Close']]
-    except Exception as e:
-        st.error(f"Błąd podczas wczytywania pliku CSV: {str(e)}")
+    if len(uploaded_files) > 5:
+        st.error("Można wczytać maksymalnie 5 plików CSV.")
         return None
+    
+    dfs = {}
+    for file in uploaded_files:
+        try:
+            df = pd.read_csv(file)
+            expected_columns = ['Date', 'Price', 'Open', 'High', 'Low']
+            if not all(col in df.columns for col in expected_columns):
+                st.error(f"Plik {file.name} musi zawierać kolumny: {', '.join(expected_columns)}")
+                return None
+            
+            df = df.rename(columns={'Price': 'Close'})
+            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            if df['Date'].isna().any():
+                st.warning(f"Niektóre daty w pliku {file.name} są nieprawidłowe i zostaną pominięte.")
+                df = df.dropna(subset=['Date'])
+            
+            numeric_cols = ['Open', 'High', 'Low', 'Close']
+            for col in numeric_cols:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            if df[numeric_cols].isna().any().any():
+                st.warning(f"Niektóre wartości cen w pliku {file.name} są nieprawidłowe i zostaną zastąpione zerami.")
+                df[numeric_cols] = df[numeric_cols].fillna(0)
+            
+            df = df.sort_values('Date').reset_index(drop=True)
+            dfs[file.name] = df[['Date', 'Open', 'High', 'Low', 'Close']]
+        except Exception as e:
+            st.error(f"Błąd podczas wczytywania pliku {file.name}: {str(e)}")
+            return None
+    
+    return dfs
 
-# Calculate pivot points and execute momentum trading strategy
-def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent):
+# Calculate pivot points and execute momentum trading strategy for a single pair
+def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_name):
     pivot_data = []
     trades = []
     
@@ -88,7 +96,7 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent):
         if pd.isna(row['S1']):
             continue
         
-        # BUY: Open price below S2 (strong downward momentum)
+        # BUY: Open price below S2
         if open_price < row['S2']:
             for j in range(1, holding_days + 1):
                 if i + j >= len(df):
@@ -97,6 +105,7 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent):
                 loss_percent = ((open_price - close_price) / open_price) * 100
                 if loss_percent >= stop_loss_percent:
                     trades.append({
+                        'Pair': pair_name,
                         'Entry Date': row['Date'],
                         'Exit Date': df.iloc[i + j]['Date'],
                         'Direction': 'BUY',
@@ -110,6 +119,7 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent):
             else:
                 exit_close = df.iloc[i + holding_days]['Close']
                 trades.append({
+                    'Pair': pair_name,
                     'Entry Date': row['Date'],
                     'Exit Date': df.iloc[i + holding_days]['Date'],
                     'Direction': 'BUY',
@@ -120,7 +130,7 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent):
                     'Exit Reason': 'Holding Period'
                 })
         
-        # SELL: Open price above R2 (strong upward momentum)
+        # SELL: Open price above R2
         elif open_price > row['R2']:
             for j in range(1, holding_days + 1):
                 if i + j >= len(df):
@@ -129,6 +139,7 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent):
                 loss_percent = ((close_price - open_price) / open_price) * 100
                 if loss_percent >= stop_loss_percent:
                     trades.append({
+                        'Pair': pair_name,
                         'Entry Date': row['Date'],
                         'Exit Date': df.iloc[i + j]['Date'],
                         'Direction': 'SELL',
@@ -142,6 +153,7 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent):
             else:
                 exit_close = df.iloc[i + holding_days]['Close']
                 trades.append({
+                    'Pair': pair_name,
                     'Entry Date': row['Date'],
                     'Exit Date': df.iloc[i + holding_days]['Date'],
                     'Direction': 'SELL',
@@ -157,6 +169,85 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent):
         trades_df['Cumulative PnL'] = trades_df['PnL'].cumsum()
     
     return df, trades_df
+
+# Calculate portfolio metrics
+def calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent):
+    all_trades = []
+    pair_metrics = []
+    weight = 1.0 / len(dfs) if dfs else 1.0
+    
+    for pair_name, df in dfs.items():
+        df, trades_df = calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_name)
+        if not trades_df.empty:
+            total_trades_pair = len(trades_df)
+            buy_trades = len(trades_df[trades_df['Direction'] == 'BUY'])
+            sell_trades = len(trades_df[trades_df['Direction'] == 'SELL'])
+            winning_trades = len(trades_df[trades_df['PnL'] > 0])
+            win_rate = (winning_trades / total_trades_pair * 100) if total_trades_pair > 0 else 0
+            total_pnl_pair = trades_df['PnL'].sum()
+            avg_entry_price = trades_df['Entry Price'].mean()
+            total_pnl_percent_pair = (total_pnl_pair / avg_entry_price * 100) if avg_entry_price != 0 else 0
+            max_drawdown_pair, max_drawdown_percent_pair = calculate_drawdown(trades_df)
+            
+            pair_metrics.append({
+                'Pair': pair_name,
+                'Total Trades': total_trades_pair,
+                'Buy Trades': buy_trades,
+                'Sell Trades': sell_trades,
+                'Win Rate (%)': win_rate,
+                'PnL (PLN)': total_pnl_pair,
+                'PnL %': total_pnl_percent_pair,
+                'Max Drawdown (PLN)': max_drawdown_pair,
+                'Max Drawdown %': max_drawdown_percent_pair
+            })
+            all_trades.append(trades_df)
+        
+        # Store pivot points for display
+        dfs[pair_name] = df
+    
+    # Combine trades for portfolio
+    portfolio_trades = pd.concat(all_trades, ignore_index=True) if all_trades else pd.DataFrame()
+    
+    # Calculate portfolio cumulative PnL
+    if not portfolio_trades.empty:
+        # Group by Exit Date to sum daily PnLs
+        daily_pnl = portfolio_trades.groupby('Exit Date')['PnL'].sum().reset_index()
+        daily_pnl = daily_pnl.sort_values('Exit Date')
+        daily_pnl['Cumulative PnL'] = daily_pnl['PnL'].cumsum() * weight
+        portfolio_trades = portfolio_trades.merge(daily_pnl[['Exit Date', 'Cumulative PnL']], on='Exit Date', how='left')
+    
+    # Portfolio metrics
+    total_trades = len(portfolio_trades)
+    buy_trades = len(portfolio_trades[portfolio_trades['Direction'] == 'BUY'])
+    sell_trades = len(portfolio_trades[portfolio_trades['Direction'] == 'SELL'])
+    winning_trades = len(portfolio_trades[portfolio_trades['PnL'] > 0]) if total_trades > 0 else 0
+    win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+    total_pnl = portfolio_trades['PnL'].sum() * weight if total_trades > 0 else 0
+    avg_entry_price = portfolio_trades['Entry Price'].mean()
+    total_pnl_percent = (total_pnl / avg_entry_price * 100) if avg_entry_price != 0 else 0
+    max_drawdown, max_drawdown_percent = calculate_drawdown(portfolio_trades)
+    
+    # Annual portfolio PnL
+    annual_pnl = []
+    if not portfolio_trades.empty:
+        portfolio_trades['Year'] = portfolio_trades['Exit Date'].dt.year
+        for year in portfolio_trades['Year'].unique():
+            year_trades = portfolio_trades[portfolio_trades['Year'] == year]
+            year_pnl = year_trades['PnL'].sum() * weight
+            year_avg_entry = year_trades['Entry Price'].mean()
+            year_pnl_percent = (year_pnl / year_avg_entry * 100) if year_avg_entry != 0 else 0
+            annual_pnl.append({'Year': year, 'PnL (PLN)': year_pnl, 'PnL %': year_pnl_percent})
+    
+    return dfs, portfolio_trades, pair_metrics, annual_pnl, {
+        'Total Trades': total_trades,
+        'Buy Trades': buy_trades,
+        'Sell Trades': sell_trades,
+        'Win Rate (%)': win_rate,
+        'Total PnL (PLN)': total_pnl,
+        'Total PnL %': total_pnl_percent,
+        'Max Drawdown (PLN)': max_drawdown,
+        'Max Drawdown %': max_drawdown_percent
+    }
 
 # Calculate drawdown
 def calculate_drawdown(trades_df):
@@ -180,60 +271,51 @@ def calculate_drawdown(trades_df):
     return max_drawdown, max_drawdown_percent
 
 # Load data
-df = load_data(uploaded_file)
-if df is None:
+dfs = load_data(uploaded_files)
+if dfs is None:
     st.stop()
 
-# Calculate pivot points and trades
-df, trades_df = calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent)
+# Calculate portfolio results
+dfs, portfolio_trades, pair_metrics, annual_pnl, portfolio_metrics = calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent)
 
-# Calculate metrics
-total_trades = len(trades_df)
-buy_trades = len(trades_df[trades_df['Direction'] == 'BUY'])
-sell_trades = len(trades_df[trades_df['Direction'] == 'SELL'])
-winning_trades = len(trades_df[trades_df['PnL'] > 0]) if total_trades > 0 else 0
-win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-total_pnl = trades_df['PnL'].sum() if total_trades > 0 else 0
-total_pnl_percent = (total_pnl / trades_df['Entry Price'].mean() * 100) if total_trades > 0 else 0
-max_drawdown, max_drawdown_percent = calculate_drawdown(trades_df)
-
-# Annual PnL percentage
-annual_pnl = []
-if not trades_df.empty:
-    trades_df['Year'] = trades_df['Exit Date'].dt.year
-    for year in trades_df['Year'].unique():
-        year_trades = trades_df[trades_df['Year'] == year]
-        year_pnl = year_trades['PnL'].sum()
-        year_avg_entry = year_trades['Entry Price'].mean()
-        year_pnl_percent = (year_pnl / year_avg_entry * 100) if year_avg_entry != 0 else 0
-        annual_pnl.append({'Year': year, 'PnL (PLN)': year_pnl, 'PnL %': year_pnl_percent})
-annual_pnl_df = pd.DataFrame(annual_pnl)
-
-# Display metrics
-st.subheader("Metryki Strategii")
+# Display portfolio metrics
+st.subheader("Metryki Portfela")
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Całkowita liczba dni", len(df))
-col2.metric("Dni handlowe", total_trades)
-col3.metric("Wskaźnik wygranych", f"{win_rate:.1f}%")
-col4.metric("Całkowity PnL (PLN)", f"{total_pnl:.4f}")
+col1.metric("Całkowita liczba dni", len(dfs[list(dfs.keys())[0]]) if dfs else 0)
+col2.metric("Całkowita liczba transakcji", portfolio_metrics['Total Trades'])
+col3.metric("Wskaźnik wygranych", f"{portfolio_metrics['Win Rate (%)']:.1f}%")
+col4.metric("Całkowity PnL (PLN)", f"{portfolio_metrics['Total PnL (PLN)']:.4f}")
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Transakcje BUY", f"{buy_trades} ({(buy_trades/total_trades*100):.1f}%)" if total_trades > 0 else "0 (0%)")
-col2.metric("Transakcje SELL", f"{sell_trades} ({(sell_trades/total_trades*100):.1f}%)" if total_trades > 0 else "0 (0%)")
-col3.metric("Całkowity PnL %", f"{total_pnl_percent:.2f}%")
-col4.metric("Maksymalny Drawdown (PLN)", f"{max_drawdown:.4f}")
+col1.metric("Transakcje BUY", f"{portfolio_metrics['Buy Trades']} ({(portfolio_metrics['Buy Trades']/portfolio_metrics['Total Trades']*100):.1f}%)" if portfolio_metrics['Total Trades'] > 0 else "0 (0%)")
+col2.metric("Transakcje SELL", f"{portfolio_metrics['Sell Trades']} ({(portfolio_metrics['Sell Trades']/portfolio_metrics['Total Trades']*100):.1f}%)" if portfolio_metrics['Total Trades'] > 0 else "0 (0%)")
+col3.metric("Całkowity PnL %", f"{portfolio_metrics['Total PnL %']:.2f}%")
+col4.metric("Maksymalny Drawdown (PLN)", f"{portfolio_metrics['Max Drawdown (PLN)']:.4f}")
 
 col1, col2 = st.columns(2)
-col1.metric("Dni bez handlu", len(df) - total_trades)
-col2.metric("Maksymalny Drawdown %", f"{max_drawdown_percent:.2f}%")
+col1.metric("Dni bez handlu", len(dfs[list(dfs.keys())[0]]) - portfolio_metrics['Total Trades'] if dfs else 0)
+col2.metric("Maksymalny Drawdown %", f"{portfolio_metrics['Max Drawdown %']:.2f}%")
 
-# Annual PnL table
-st.subheader("Roczny Wynik Procentowy")
-if not annual_pnl_df.empty:
-    annual_display = annual_pnl_df.copy()
-    annual_display['PnL (PLN)'] = annual_display['PnL (PLN)'].round(4)
-    annual_display['PnL %'] = annual_display['PnL %'].round(2)
-    st.dataframe(annual_display, use_container_width=True)
+# Per-currency metrics
+st.subheader("Metryki dla Poszczególnych Par Walutowych")
+if pair_metrics:
+    pair_metrics_df = pd.DataFrame(pair_metrics)
+    pair_metrics_df['PnL (PLN)'] = pair_metrics_df['PnL (PLN)'].round(4)
+    pair_metrics_df['PnL %'] = pair_metrics_df['PnL %'].round(2)
+    pair_metrics_df['Max Drawdown (PLN)'] = pair_metrics_df['Max Drawdown (PLN)'].round(4)
+    pair_metrics_df['Max Drawdown %'] = pair_metrics_df['Max Drawdown %'].round(2)
+    pair_metrics_df['Win Rate (%)'] = pair_metrics_df['Win Rate (%)'].round(1)
+    st.dataframe(pair_metrics_df, use_container_width=True)
+else:
+    st.write("Brak danych dla par walutowych.")
+
+# Annual portfolio PnL
+st.subheader("Roczny Wynik Procentowy Portfela")
+if annual_pnl:
+    annual_pnl_df = pd.DataFrame(annual_pnl)
+    annual_pnl_df['PnL (PLN)'] = annual_pnl_df['PnL (PLN)'].round(4)
+    annual_pnl_df['PnL %'] = annual_pnl_df['PnL %'].round(2)
+    st.dataframe(annual_pnl_df, use_container_width=True)
 else:
     st.write("Brak danych rocznych do wyświetlenia.")
 
@@ -249,38 +331,19 @@ st.markdown(f"""
   - S1 = 2×Pivot - AvgHigh
   - R1 = 2×Pivot - AvgLow
   - R2 = Pivot + (AvgHigh - AvgLow)
+- **Portfel**: Równa alokacja dla każdej pary walutowej (np. 20% dla 5 par).
 - **Dane**: Pierwsze 7 dni i ostatnie {holding_days} dni nie generują sygnałów handlowych.
 """)
 
-# Pivot points table
-st.subheader("Tabela Punktów Pivot")
-pivot_display = df[['Date', 'Pivot', 'S1', 'S2', 'R1', 'R2']].dropna().reset_index(drop=True)
-pivot_display['Date'] = pivot_display['Date'].dt.strftime('%Y-%m-%d')
-for col in ['Pivot', 'S1', 'S2', 'R1', 'R2']:
-    pivot_display[col] = pivot_display[col].round(4)
-st.dataframe(pivot_display, use_container_width=True)
-
-# Trades table
-st.subheader("Zrealizowane Transakcje")
-if not trades_df.empty:
-    trades_display = trades_df.copy()
-    trades_display['Entry Date'] = trades_display['Entry Date'].dt.strftime('%Y-%m-%d')
-    trades_display['Exit Date'] = trades_display['Exit Date'].dt.strftime('%Y-%m-%d')
-    trades_display[['Entry Price', 'Exit Price', 'PnL']] = trades_display[['Entry Price', 'Exit Price', 'PnL']].round(4)
-    trades_display['PnL %'] = trades_display['PnL %'].round(2)
-    st.dataframe(trades_display, use_container_width=True)
-else:
-    st.write("Brak zrealizowanych transakcji.")
-
-# Cumulative PnL plot with drawdown highlight
-st.subheader("Wykres Skumulowanego PnL")
-if not trades_df.empty:
+# Portfolio cumulative PnL plot
+st.subheader("Wykres Skumulowanego PnL Portfela")
+if not portfolio_trades.empty:
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(trades_df['Exit Date'], trades_df['Cumulative PnL'], marker='o', color='blue', label='Skumulowany PnL')
+    ax.plot(portfolio_trades['Exit Date'], portfolio_trades['Cumulative PnL'], marker='o', color='blue', label='Skumulowany PnL Portfela')
     
     # Highlight max drawdown
-    if max_drawdown > 0:
-        cumulative_pnl = trades_df['Cumulative PnL'].values
+    if portfolio_metrics['Max Drawdown (PLN)'] > 0:
+        cumulative_pnl = portfolio_trades['Cumulative PnL'].values
         peak_idx = 0
         peak_value = cumulative_pnl[0]
         trough_idx = 0
@@ -296,7 +359,7 @@ if not trades_df.empty:
                 trough_idx = i
         
         if max_drawdown_temp > 0:
-            ax.plot([trades_df['Exit Date'].iloc[peak_idx], trades_df['Exit Date'].iloc[trough_idx]],
+            ax.plot([portfolio_trades['Exit Date'].iloc[peak_idx], portfolio_trades['Exit Date'].iloc[trough_idx]],
                     [cumulative_pnl[peak_idx], cumulative_pnl[trough_idx]], 'r--', label='Maksymalny Drawdown')
     
     ax.set_xlabel("Data Zamknięcia")
@@ -309,14 +372,42 @@ if not trades_df.empty:
 else:
     st.write("Brak danych do wyświetlenia wykresu PnL.")
 
+# Individual pair results
+for pair_name, df in dfs.items():
+    st.subheader(f"Wyniki dla {pair_name}")
+    
+    # Pivot points table
+    st.markdown("**Tabela Punktów Pivot**")
+    pivot_display = df[['Date', 'Pivot', 'S1', 'S2', 'R1', 'R2']].dropna().reset_index(drop=True)
+    pivot_display['Date'] = pivot_display['Date'].dt.strftime('%Y-%m-%d')
+    for col in ['Pivot', 'S1', 'S2', 'R1', 'R2']:
+        pivot_display[col] = pivot_display[col].round(4)
+    st.dataframe(pivot_display, use_container_width=True)
+    
+    # Trades table
+    st.markdown("**Zrealizowane Transakcje**")
+    trades_df = portfolio_trades[portfolio_trades['Pair'] == pair_name]
+    if not trades_df.empty:
+        trades_display = trades_df.copy()
+        trades_display['Entry Date'] = trades_display['Entry Date'].dt.strftime('%Y-%m-%d')
+        trades_display['Exit Date'] = trades_display['Exit Date'].dt.strftime('%Y-%m-%d')
+        trades_display[['Entry Price', 'Exit Price', 'PnL']] = trades_display[['Entry Price', 'Exit Price', 'PnL']].round(4)
+        trades_display['PnL %'] = trades_display['PnL %'].round(2)
+        st.dataframe(trades_display, use_container_width=True)
+    else:
+        st.write("Brak zrealizowanych transakcji.")
+
 # Data source and range
 st.subheader("Źródło Danych")
-if uploaded_file is not None:
-    st.markdown(f"""
-    - **Plik**: {uploaded_file.name}
-    - **Przetworzone wiersze**: {len(df)}
-    - **Zakres dat**: {df['Date'].min().strftime('%Y-%m-%d')} do {df['Date'].max().strftime('%Y-%m-%d')}
-    - **Sygnały handlowe**: {total_trades}
-    """)
+if uploaded_files:
+    for file in uploaded_files:
+        df = dfs.get(file.name, pd.DataFrame())
+        if not df.empty:
+            st.markdown(f"""
+            - **Plik**: {file.name}
+            - **Przetworzone wiersze**: {len(df)}
+            - **Zakres dat**: {df['Date'].min().strftime('%Y-%m-%d')} do {df['Date'].max().strftime('%Y-%m-%d')}
+            - **Sygnały handlowe**: {len(portfolio_trades[portfolio_trades['Pair'] == file.name])}
+            """)
 else:
-    st.markdown("Brak wczytanego pliku.")
+    st.markdown("Brak wczytanych plików.")
