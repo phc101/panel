@@ -201,12 +201,25 @@ def calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent):
                 'Max Drawdown %': max_drawdown_percent_pair
             })
             all_trades.append(trades_df)
-        
-        # Store pivot points for display
-        dfs[pair_name] = df
+        else:
+            pair_metrics.append({
+                'Pair': pair_name,
+                'Total Trades': 0,
+                'Buy Trades': 0,
+                'Sell Trades': 0,
+                'Win Rate (%)': 0,
+                'PnL (PLN)': 0,
+                'PnL %': 0,
+                'Max Drawdown (PLN)': 0,
+                'Max Drawdown %': 0
+            })
     
     # Combine trades for portfolio
-    portfolio_trades = pd.concat(all_trades, ignore_index=True) if all_trades else pd.DataFrame()
+    if all_trades:
+        portfolio_trades = pd.concat(all_trades, ignore_index=True)
+    else:
+        # Create empty DataFrame with expected columns if no trades
+        portfolio_trades = pd.DataFrame(columns=['Pair', 'Entry Date', 'Exit Date', 'Direction', 'Entry Price', 'Exit Price', 'PnL', 'PnL %', 'Exit Reason', 'Cumulative PnL'])
     
     # Calculate portfolio cumulative PnL
     if not portfolio_trades.empty:
@@ -214,18 +227,20 @@ def calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent):
         daily_pnl = portfolio_trades.groupby('Exit Date')['PnL'].sum().reset_index()
         daily_pnl = daily_pnl.sort_values('Exit Date')
         daily_pnl['Cumulative PnL'] = daily_pnl['PnL'].cumsum() * weight
+        portfolio_trades = portfolio_trades.drop(columns=['Cumulative PnL'], errors='ignore')  # Remove old column if exists
         portfolio_trades = portfolio_trades.merge(daily_pnl[['Exit Date', 'Cumulative PnL']], on='Exit Date', how='left')
+        portfolio_trades['Cumulative PnL'] = portfolio_trades['Cumulative PnL'].fillna(method='ffill').fillna(0)
     
     # Portfolio metrics
     total_trades = len(portfolio_trades)
-    buy_trades = len(portfolio_trades[portfolio_trades['Direction'] == 'BUY'])
-    sell_trades = len(portfolio_trades[portfolio_trades['Direction'] == 'SELL'])
+    buy_trades = len(portfolio_trades[portfolio_trades['Direction'] == 'BUY']) if total_trades > 0 else 0
+    sell_trades = len(portfolio_trades[portfolio_trades['Direction'] == 'SELL']) if total_trades > 0 else 0
     winning_trades = len(portfolio_trades[portfolio_trades['PnL'] > 0]) if total_trades > 0 else 0
     win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
     total_pnl = portfolio_trades['PnL'].sum() * weight if total_trades > 0 else 0
-    avg_entry_price = portfolio_trades['Entry Price'].mean()
+    avg_entry_price = portfolio_trades['Entry Price'].mean() if total_trades > 0 else 0
     total_pnl_percent = (total_pnl / avg_entry_price * 100) if avg_entry_price != 0 else 0
-    max_drawdown, max_drawdown_percent = calculate_drawdown(portfolio_trades)
+    max_drawdown, max_drawdown_percent = calculate_drawdown(portfolio_trades) if not portfolio_trades.empty else (0, 0)
     
     # Annual portfolio PnL
     annual_pnl = []
@@ -234,7 +249,7 @@ def calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent):
         for year in portfolio_trades['Year'].unique():
             year_trades = portfolio_trades[portfolio_trades['Year'] == year]
             year_pnl = year_trades['PnL'].sum() * weight
-            year_avg_entry = year_trades['Entry Price'].mean()
+            year_avg_entry = year_trades['Entry Price'].mean() if not year_trades.empty else 0
             year_pnl_percent = (year_pnl / year_avg_entry * 100) if year_avg_entry != 0 else 0
             annual_pnl.append({'Year': year, 'PnL (PLN)': year_pnl, 'PnL %': year_pnl_percent})
     
@@ -251,7 +266,7 @@ def calculate_portfolio_metrics(dfs, holding_days, stop_loss_percent):
 
 # Calculate drawdown
 def calculate_drawdown(trades_df):
-    if trades_df.empty:
+    if trades_df.empty or 'Cumulative PnL' not in trades_df.columns:
         return 0, 0
     
     cumulative_pnl = trades_df['Cumulative PnL'].values
@@ -337,7 +352,7 @@ st.markdown(f"""
 
 # Portfolio cumulative PnL plot
 st.subheader("Wykres Skumulowanego PnL Portfela")
-if not portfolio_trades.empty:
+if not portfolio_trades.empty and 'Cumulative PnL' in portfolio_trades.columns:
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(portfolio_trades['Exit Date'], portfolio_trades['Cumulative PnL'], marker='o', color='blue', label='Skumulowany PnL Portfela')
     
