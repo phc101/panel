@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import Papa from 'papaparse'; // Add papaparse for robust CSV parsing
 
 function PivotTable() {
   const [csvData, setCsvData] = useState([]);
@@ -13,94 +14,120 @@ function PivotTable() {
       try {
         setLoading(true);
         
+        // Read the CSV file
         const csvContent = await window.fs.readFile('USD_PLN Historical Data 18.csv', { encoding: 'utf8' });
         
-        const lines = csvContent.trim().split('\n');
-        const headers = lines[0].split(',').map(h => h.replace(/"/g, ''));
-        
-        const rawData = [];
-        for (let i = 1; i < lines.length; i++) {
-          const values = lines[i].split(',').map(v => v.replace(/"/g, ''));
-          if (values.length >= 7) {
-            rawData.push({
-              date: new Date(values[0]),
-              dateStr: values[0],
-              open: parseFloat(values[2]) || 0,
-              high: parseFloat(values[3]) || 0,
-              low: parseFloat(values[4]) || 0,
-              close: parseFloat(values[1]) || 0,
-              changePercent: values[6]
-            });
-          }
-        }
-        
-        rawData.sort((a, b) => a.date - b.date);
-        
-        const processedData = [];
-        
-        for (let i = 0; i < rawData.length; i++) {
-          const currentDay = rawData[i];
-          let pivots = null;
-          let signal = 'NO TRADE';
-          let pnl = null;
-          let pnlPercent = null;
-          
-          if (i >= 7 && i < rawData.length - 3) { // Ensure we have 3 days ahead for closing
-            const last7Days = rawData.slice(i - 7, i);
-            const avgHigh = last7Days.reduce((sum, day) => sum + day.high, 0) / 7;
-            const avgLow = last7Days.reduce((sum, day) => sum + day.low, 0) / 7;
-            const avgClose = last7Days.reduce((sum, day) => sum + day.close, 0) / 7;
-            const pivotPoint = (avgHigh + avgLow + avgClose) / 3;
-            
-            pivots = {
-              PP: pivotPoint,
-              R1: (2 * pivotPoint) - avgLow,
-              R2: pivotPoint + (avgHigh - avgLow),
-              S1: (2 * pivotPoint) - avgHigh,
-              S2: pivotPoint - (avgHigh - avgLow)
-            };
-            
-            const currentOpen = currentDay.open;
-            const closePrice = rawData[i + 3].close; // Close price 3 days later
-            
-            // BUY signal: Open price between S1 and S2
-            if (currentOpen >= pivots.S2 && currentOpen <= pivots.S1) {
-              signal = 'BUY';
-              pnl = closePrice - currentDay.open;
+        // Parse CSV using papaparse
+        Papa.parse(csvContent, {
+          complete: (result) => {
+            const lines = result.data;
+            if (!lines || lines.length < 2) {
+              throw new Error('CSV file is empty or invalid.');
             }
-            // SELL signal: Open price between R1 and R2
-            else if (currentOpen >= pivots.R1 && currentOpen <= pivots.R2) {
-              signal = 'SELL';
-              pnl = currentDay.open - closePrice;
+
+            const rawData = [];
+            // Skip the header row and process data rows
+            for (let i = 1; i < lines.length; i++) {
+              const values = lines[i];
+              if (values.length >= 7) {
+                const date = new Date(values[0]);
+                if (isNaN(date)) {
+                  console.warn(`Invalid date at row ${i + 1}: ${values[0]}`);
+                  continue; // Skip rows with invalid dates
+                }
+                rawData.push({
+                  date,
+                  dateStr: values[0],
+                  open: parseFloat(values[2]) || 0,
+                  high: parseFloat(values[3]) || 0,
+                  low: parseFloat(values[4]) || 0,
+                  close: parseFloat(values[1]) || 0,
+                  changePercent: values[6] || '0',
+                });
+              } else {
+                console.warn(`Invalid row ${i + 1}: insufficient columns`);
+              }
+            }
+
+            if (rawData.length === 0) {
+              throw new Error('No valid data found in CSV file.');
+            }
+
+            rawData.sort((a, b) => a.date - b.date);
+            
+            const processedData = [];
+            
+            for (let i = 0; i < rawData.length; i++) {
+              const currentDay = rawData[i];
+              let pivots = null;
+              let signal = 'NO TRADE';
+              let pnl = null;
+              let pnlPercent = null;
+              
+              if (i >= 7 && i < rawData.length - 3) { // Ensure we have 3 days ahead for closing
+                const last7Days = rawData.slice(i - 7, i);
+                const avgHigh = last7Days.reduce((sum, day) => sum + day.high, 0) / 7;
+                const avgLow = last7Days.reduce((sum, day) => sum + day.low, 0) / 7;
+                const avgClose = last7Days.reduce((sum, day) => sum + day.close, 0) / 7;
+                const pivotPoint = (avgHigh + avgLow + avgClose Sommets en texte brut) / 3;
+                
+                pivots = {
+                  PP: pivotPoint,
+                  R1: (2 * pivotPoint) - avgLow,
+                  R2: pivotPoint + (avgHigh - avgLow),
+                  S1: (2 * pivotPoint) - avgHigh,
+                  S2: pivotPoint - (avgHigh - avgLow),
+                };
+                
+                const currentOpen = currentDay.open;
+                const closePrice = rawData[i + 3].close; // Close price 3 days later
+                
+                // BUY signal: Open price between S1 and S2
+                if (currentOpen >= pivots.S2 && currentOpen <= pivots.S1) {
+                  signal = 'BUY';
+                  pnl = closePrice - currentDay.open;
+                }
+                // SELL signal: Open price between R1 and R2
+                else if (currentOpen >= pivots.R1 && currentOpen <= pivots.R2) {
+                  signal = 'SELL';
+                  pnl = currentDay.open - closePrice;
+                }
+                
+                if (pnl !== null) {
+                  pnlPercent = (pnl / currentDay.open) * 100;
+                }
+              }
+              
+              processedData.push({
+                date: currentDay.dateStr,
+                open: currentDay.open,
+                high: currentDay.high,
+                low: currentDay.low,
+                close: currentDay.close,
+                PP: pivots ? pivots.PP : null,
+                R1: pivots ? pivots.R1 : null,
+                R2: pivots ? pivots.R2 : null,
+                S1: pivots ? pivots.S1 : null,
+                S2: pivots ? pivots.S2 : null,
+                signal,
+                pnl,
+                pnlPercent,
+              });
             }
             
-            if (pnl !== null) {
-              pnlPercent = (pnl / currentDay.open) * 100;
-            }
-          }
-          
-          processedData.push({
-            date: currentDay.dateStr,
-            open: currentDay.open,
-            high: currentDay.high,
-            low: currentDay.low,
-            close: currentDay.close,
-            PP: pivots ? pivots.PP : null,
-            R1: pivots ? pivots.R1 : null,
-            R2: pivots ? pivots.R2 : null,
-            S1: pivots ? pivots.S1 : null,
-            S2: pivots ? pivots.S2 : null,
-            signal,
-            pnl,
-            pnlPercent
-          });
-        }
-        
-        setCsvData(processedData);
-        setError(null);
+            setCsvData(processedData);
+            setError(null);
+          },
+          error: (err) => {
+            console.error('CSV Parsing Error:', err);
+            setError('Failed to parse CSV file. Check file format and content.');
+          },
+          skipEmptyLines: true,
+          dynamicTyping: false, // Keep values as strings to handle manually
+        });
       } catch (err) {
         console.error('Error loading CSV:', err);
-        setError('Failed to load CSV file. Make sure "USD_PLN Historical Data 18.csv" is uploaded.');
+        setError('Failed to load CSV file. Make sure "USD_PLN Historical Data 18.csv" is uploaded and properly formatted.');
       } finally {
         setLoading(false);
       }
@@ -209,7 +236,7 @@ function PivotTable() {
             <div className="text-sm text-blue-600">Total Days</div>
             <div className="text-xl font-bold text-blue-800">{csvData.length}</div>
           </div>
-          <div className="p-4 bg-green-50 rounded-lg">
+          <div class19
             <div className="text-sm text-green-600">Trading Days</div>
             <div className="text-xl font-bold text-green-800">{tradingDays.length}</div>
           </div>
