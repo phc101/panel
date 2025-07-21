@@ -18,6 +18,7 @@ st.subheader("Parametry Handlowe")
 holding_days = st.slider("Liczba dni trzymania pozycji", min_value=1, max_value=10, value=3, step=1)
 stop_loss_percent = st.number_input("Stop Loss (%):", min_value=0.0, max_value=10.0, value=2.0, step=0.1)
 no_overlap = st.checkbox("Brak nakładających się pozycji", value=True, help="Jeśli zaznaczone, nowa transakcja może być otwarta tylko po zamknięciu poprzedniej")
+dynamic_leverage = st.checkbox("Dynamiczne dźwignia finansowa", value=False, help="5x leverage po zyskownej transakcji, brak dźwigni po stratnej")
 
 # Load and validate CSV data
 @st.cache_data
@@ -62,10 +63,12 @@ def load_data(uploaded_files):
     return dfs
 
 # Calculate pivot points and execute momentum trading strategy for a single pair
-def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_name, no_overlap=True):
+def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_name, no_overlap=True, dynamic_leverage=False):
     pivot_data = []
     trades = []
     last_exit_index = -1  # Track when the last trade was closed
+    last_trade_pnl = None  # Track PnL of last trade for leverage calculation
+    current_leverage = 1.0  # Start with no leverage
     
     for i in range(7, len(df)):
         window = df.iloc[i-7:i]
@@ -102,6 +105,15 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
         if no_overlap and i <= last_exit_index:
             continue
         
+        # Update leverage based on last trade result
+        if dynamic_leverage and last_trade_pnl is not None:
+            if last_trade_pnl > 0:
+                current_leverage = 5.0  # 5x leverage after profitable trade
+            else:
+                current_leverage = 1.0  # No leverage after losing trade
+        else:
+            current_leverage = 1.0  # Default no leverage
+        
         trade_opened = False
         
         # BUY: Open price below S2
@@ -110,7 +122,9 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
                 if i + j >= len(df):
                     break
                 close_price = df.iloc[i + j]['Close']
-                loss_percent = ((open_price - close_price) / open_price) * 100
+                raw_pnl = close_price - open_price
+                leveraged_pnl = raw_pnl * current_leverage
+                loss_percent = ((open_price - close_price) / open_price) * 100 * current_leverage
                 if loss_percent >= stop_loss_percent:
                     trades.append({
                         'Pair': pair_name,
@@ -119,15 +133,20 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
                         'Direction': 'BUY',
                         'Entry Price': open_price,
                         'Exit Price': close_price,
-                        'PnL': close_price - open_price,
-                        'PnL %': ((close_price - open_price) / open_price) * 100 if open_price != 0 else 0,
+                        'PnL': leveraged_pnl,
+                        'Raw PnL': raw_pnl,
+                        'Leverage': current_leverage,
+                        'PnL %': ((close_price - open_price) / open_price) * 100 * current_leverage if open_price != 0 else 0,
                         'Exit Reason': 'Stop Loss'
                     })
                     last_exit_index = i + j
+                    last_trade_pnl = leveraged_pnl
                     trade_opened = True
                     break
             else:
                 exit_close = df.iloc[i + holding_days]['Close']
+                raw_pnl = exit_close - open_price
+                leveraged_pnl = raw_pnl * current_leverage
                 trades.append({
                     'Pair': pair_name,
                     'Entry Date': row['Date'],
@@ -135,11 +154,14 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
                     'Direction': 'BUY',
                     'Entry Price': open_price,
                     'Exit Price': exit_close,
-                    'PnL': exit_close - open_price,
-                    'PnL %': ((exit_close - open_price) / open_price) * 100 if open_price != 0 else 0,
+                    'PnL': leveraged_pnl,
+                    'Raw PnL': raw_pnl,
+                    'Leverage': current_leverage,
+                    'PnL %': ((exit_close - open_price) / open_price) * 100 * current_leverage if open_price != 0 else 0,
                     'Exit Reason': 'Holding Period'
                 })
                 last_exit_index = i + holding_days
+                last_trade_pnl = leveraged_pnl
                 trade_opened = True
         
         # SELL: Open price above R2
@@ -148,7 +170,9 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
                 if i + j >= len(df):
                     break
                 close_price = df.iloc[i + j]['Close']
-                loss_percent = ((close_price - open_price) / open_price) * 100
+                raw_pnl = open_price - close_price
+                leveraged_pnl = raw_pnl * current_leverage
+                loss_percent = ((close_price - open_price) / open_price) * 100 * current_leverage
                 if loss_percent >= stop_loss_percent:
                     trades.append({
                         'Pair': pair_name,
@@ -157,15 +181,20 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
                         'Direction': 'SELL',
                         'Entry Price': open_price,
                         'Exit Price': close_price,
-                        'PnL': open_price - close_price,
-                        'PnL %': ((open_price - close_price) / open_price) * 100 if open_price != 0 else 0,
+                        'PnL': leveraged_pnl,
+                        'Raw PnL': raw_pnl,
+                        'Leverage': current_leverage,
+                        'PnL %': ((open_price - close_price) / open_price) * 100 * current_leverage if open_price != 0 else 0,
                         'Exit Reason': 'Stop Loss'
                     })
                     last_exit_index = i + j
+                    last_trade_pnl = leveraged_pnl
                     trade_opened = True
                     break
             else:
                 exit_close = df.iloc[i + holding_days]['Close']
+                raw_pnl = open_price - exit_close
+                leveraged_pnl = raw_pnl * current_leverage
                 trades.append({
                     'Pair': pair_name,
                     'Entry Date': row['Date'],
@@ -173,11 +202,14 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
                     'Direction': 'SELL',
                     'Entry Price': open_price,
                     'Exit Price': exit_close,
-                    'PnL': open_price - exit_close,
-                    'PnL %': ((open_price - exit_close) / open_price) * 100 if open_price != 0 else 0,
+                    'PnL': leveraged_pnl,
+                    'Raw PnL': raw_pnl,
+                    'Leverage': current_leverage,
+                    'PnL %': ((open_price - exit_close) / open_price) * 100 * current_leverage if open_price != 0 else 0,
                     'Exit Reason': 'Holding Period'
                 })
                 last_exit_index = i + holding_days
+                last_trade_pnl = leveraged_pnl
                 trade_opened = True
     
     trades_df = pd.DataFrame(trades)
