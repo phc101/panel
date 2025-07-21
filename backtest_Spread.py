@@ -88,16 +88,14 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent):
         if pd.isna(row['S1']):
             continue
         
-        # BUY: Open price between R1 and R2 (momentum upward)
-        if row['R1'] < open_price < row['R2']:
-            # Check daily close prices for stop loss
+        # BUY: Open price below S2 (strong downward momentum)
+        if open_price < row['S2']:
             for j in range(1, holding_days + 1):
                 if i + j >= len(df):
                     break
                 close_price = df.iloc[i + j]['Close']
                 loss_percent = ((open_price - close_price) / open_price) * 100
                 if loss_percent >= stop_loss_percent:
-                    # Close trade early due to stop loss
                     trades.append({
                         'Entry Date': row['Date'],
                         'Exit Date': df.iloc[i + j]['Date'],
@@ -110,7 +108,6 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent):
                     })
                     break
             else:
-                # Close trade at end of holding period
                 exit_close = df.iloc[i + holding_days]['Close']
                 trades.append({
                     'Entry Date': row['Date'],
@@ -123,8 +120,8 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent):
                     'Exit Reason': 'Holding Period'
                 })
         
-        # SELL: Open price between S1 and S2 (momentum downward)
-        elif row['S2'] < open_price < row['S1']:
+        # SELL: Open price above R2 (strong upward momentum)
+        elif open_price > row['R2']:
             for j in range(1, holding_days + 1):
                 if i + j >= len(df):
                     break
@@ -243,8 +240,8 @@ else:
 # Strategy rules
 st.subheader("Zasady Strategii Momentum")
 st.markdown(f"""
-- **Sygnał BUY**: Cena otwarcia między poziomami oporu R1 i R2 (momentum wzrostowe).
-- **Sygnał SELL**: Cena otwarcia między poziomami wsparcia S1 i S2 (momentum spadkowe).
+- **Sygnał BUY**: Cena otwarcia poniżej poziomu wsparcia S2 (silne momentum spadkowe).
+- **Sygnał SELL**: Cena otwarcia powyżej poziomu oporu R2 (silne momentum wzrostowe).
 - **Zamknięcie pozycji**: Po {holding_days} dniach od otwarcia na cenie zamknięcia lub wcześniej, jeśli strata przekroczy {stop_loss_percent}% (stop loss).
 - **Obliczenie Pivot**: Średnia 7-dniowa (High + Low + Close) / 3.
 - **Poziomy wsparcia/oporu**:
