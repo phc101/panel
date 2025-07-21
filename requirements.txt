@@ -6,3 +6,12 @@ statsmodels==0.14.1
 plotly
 scikit-learn>=1.0
 MetaTrader5>=5.0.45
+streamlit>=1.28.0
+pandas>=1.5.0
+numpy>=1.24.0
+matplotlib>=3.6.0
+MetaTrader5>=5.0.40  # More flexible version requirement
+plotly>=5.15.0
+yfinance>=0.2.0
+python-dateutil>=2.8.0
+psutil>=5.9.0
