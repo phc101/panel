@@ -4,9 +4,9 @@ import matplotlib.pyplot as plt
 import io
 
 # Streamlit app configuration
-st.set_page_config(page_title="Pivot Points Trading Strategy (EUR/PLN)", layout="wide")
-st.title("Pivot Points Trading Strategy (EUR/PLN)")
-st.markdown("Backtest strategii handlowej opartej na 7-dniowych punktach pivot dla danych EUR/PLN z Investing.com.")
+st.set_page_config(page_title="Momentum Pivot Points Trading Strategy (EUR/PLN)", layout="wide")
+st.title("Momentum Pivot Points Trading Strategy (EUR/PLN)")
+st.markdown("Backtest strategii momentum opartej na 7-dniowych punktach pivot dla danych EUR/PLN z Investing.com.")
 
 # File upload
 st.subheader("Wczytaj plik CSV")
@@ -53,7 +53,7 @@ def load_data(uploaded_file):
         st.error(f"Błąd podczas wczytywania pliku CSV: {str(e)}")
         return None
 
-# Calculate pivot points and execute trading strategy
+# Calculate pivot points and execute momentum trading strategy
 def calculate_pivot_points_and_trades(df):
     pivot_data = []
     trades = []
@@ -84,7 +84,7 @@ def calculate_pivot_points_and_trades(df):
     pivot_df = pd.DataFrame(pivot_data)
     df = df.merge(pivot_df, on='Date', how='left')
     
-    # Execute trading strategy
+    # Execute momentum trading strategy
     for i in range(7, len(df) - 3):  # Ensure 3 days ahead for closing
         row = df.iloc[i]
         open_price = row['Open']
@@ -92,8 +92,8 @@ def calculate_pivot_points_and_trades(df):
         if pd.isna(row['S1']):
             continue
         
-        # BUY: Open price between S1 and S2
-        if row['S2'] < open_price < row['S1']:
+        # BUY: Open price between R1 and R2 (momentum upward)
+        if row['R1'] < open_price < row['R2']:
             exit_close = df.iloc[i + 3]['Close']
             pnl = exit_close - open_price
             trades.append({
@@ -106,8 +106,8 @@ def calculate_pivot_points_and_trades(df):
                 'PnL %': (pnl / open_price) * 100 if open_price != 0 else 0
             })
         
-        # SELL: Open price between R1 and R2
-        elif row['R1'] < open_price < row['R2']:
+        # SELL: Open price between S1 and S2 (momentum downward)
+        elif row['S2'] < open_price < row['S1']:
             exit_close = df.iloc[i + 3]['Close']
             pnl = open_price - exit_close
             trades.append({
@@ -156,10 +156,10 @@ col2.metric("Transakcje SELL", f"{sell_trades} ({(sell_trades/total_trades*100):
 col3.metric("Dni bez handlu", no_trade_days)
 
 # Strategy rules
-st.subheader("Zasady Strategii")
+st.subheader("Zasady Strategii Momentum")
 st.markdown("""
-- **Sygnał BUY**: Cena otwarcia między poziomami wsparcia S1 i S2.
-- **Sygnał SELL**: Cena otwarcia między poziomami oporu R1 i R2.
+- **Sygnał BUY**: Cena otwarcia między poziomami oporu R1 i R2 (momentum wzrostowe).
+- **Sygnał SELL**: Cena otwarcia między poziomami wsparcia S1 i S2 (momentum spadkowe).
 - **Zamknięcie pozycji**: Po 3 dniach od otwarcia, na cenie zamknięcia.
 - **Obliczenie Pivot**: Średnia 7-dniowa (High + Low + Close) / 3.
 - **Poziomy wsparcia/oporu**:
