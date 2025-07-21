@@ -1,344 +1,388 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from datetime import datetime
-import io
+import React, { useState, useMemo, useEffect } from 'react';
 
-# Set page config
-st.set_page_config(
-    page_title="Pivot Points Trading Strategy",
-    page_icon="📊",
-    layout="wide"
-)
+function PivotTable() {
+  const [csvData, setCsvData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [showOnlyTrades, setShowOnlyTrades] = useState(false);
+  const [sortColumn, setSortColumn] = useState('date');
+  const [sortDirection, setSortDirection] = useState('desc');
 
-def calculate_pivot_points(df, lookback_days=7):
-    """Calculate 7-day rolling pivot points"""
-    df = df.copy()
-    df['PP'] = np.nan
-    df['R1'] = np.nan
-    df['R2'] = np.nan
-    df['S1'] = np.nan
-    df['S2'] = np.nan
-    df['Signal'] = 'NO TRADE'
-    df['PnL'] = np.nan
-    df['PnL_Percent'] = np.nan
-    
-    for i in range(lookback_days, len(df)):
-        # Get last N days for pivot calculation
-        last_n_days = df.iloc[i-lookback_days:i]
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
         
-        # Calculate averages
-        avg_high = last_n_days['High'].mean()
-        avg_low = last_n_days['Low'].mean()
-        avg_close = last_n_days['Close'].mean()
+        const csvContent = await window.fs.readFile('USD_PLN Historical Data 18.csv', { encoding: 'utf8' });
         
-        # Calculate pivot point
-        pivot_point = (avg_high + avg_low + avg_close) / 3
+        const lines = csvContent.trim().split('\n');
+        const headers = lines[0].split(',').map(h => h.replace(/"/g, ''));
         
-        # Calculate support and resistance
-        r1 = (2 * pivot_point) - avg_low
-        r2 = pivot_point + (avg_high - avg_low)
-        s1 = (2 * pivot_point) - avg_high
-        s2 = pivot_point - (avg_high - avg_low)
-        
-        # Store values
-        df.loc[df.index[i], 'PP'] = pivot_point
-        df.loc[df.index[i], 'R1'] = r1
-        df.loc[df.index[i], 'R2'] = r2
-        df.loc[df.index[i], 'S1'] = s1
-        df.loc[df.index[i], 'S2'] = s2
-        
-        # Generate signal
-        current_open = df.iloc[i]['Open']
-        current_close = df.iloc[i]['Close']
-        
-        if current_open > pivot_point:
-            signal = 'BUY'
-            pnl = current_close - current_open
-        elif current_open < pivot_point:
-            signal = 'SELL'
-            pnl = current_open - current_close
-        else:
-            signal = 'NO TRADE'
-            pnl = 0
-        
-        df.loc[df.index[i], 'Signal'] = signal
-        df.loc[df.index[i], 'PnL'] = pnl
-        
-        if signal != 'NO TRADE':
-            df.loc[df.index[i], 'PnL_Percent'] = (pnl / current_open) * 100
-    
-    return df
-
-def create_chart(df):
-    """Create interactive chart with pivot points"""
-    fig = make_subplots(
-        rows=2, cols=1,
-        subplot_titles=('USD/PLN Price with Pivot Points', 'Daily P&L'),
-        vertical_spacing=0.1,
-        row_heights=[0.7, 0.3]
-    )
-    
-    # Price chart
-    fig.add_trace(
-        go.Scatter(x=df['Date'], y=df['Open'], name='Open', line=dict(color='blue', width=2)),
-        row=1, col=1
-    )
-    fig.add_trace(
-        go.Scatter(x=df['Date'], y=df['Close'], name='Close', line=dict(color='black', width=2)),
-        row=1, col=1
-    )
-    fig.add_trace(
-        go.Scatter(x=df['Date'], y=df['PP'], name='Pivot Point', 
-                  line=dict(color='red', width=2, dash='dash')),
-        row=1, col=1
-    )
-    fig.add_trace(
-        go.Scatter(x=df['Date'], y=df['R1'], name='R1', 
-                  line=dict(color='orange', width=1, dash='dot')),
-        row=1, col=1
-    )
-    fig.add_trace(
-        go.Scatter(x=df['Date'], y=df['R2'], name='R2', 
-                  line=dict(color='orange', width=1, dash='dashdot')),
-        row=1, col=1
-    )
-    fig.add_trace(
-        go.Scatter(x=df['Date'], y=df['S1'], name='S1', 
-                  line=dict(color='green', width=1, dash='dot')),
-        row=1, col=1
-    )
-    fig.add_trace(
-        go.Scatter(x=df['Date'], y=df['S2'], name='S2', 
-                  line=dict(color='green', width=1, dash='dashdot')),
-        row=1, col=1
-    )
-    
-    # P&L chart
-    colors = ['green' if x > 0 else 'red' if x < 0 else 'gray' for x in df['PnL'].fillna(0)]
-    fig.add_trace(
-        go.Bar(x=df['Date'], y=df['PnL'], name='Daily P&L', marker_color=colors),
-        row=2, col=1
-    )
-    
-    fig.update_layout(
-        height=800,
-        title="7-Day Rolling Pivot Points Strategy Analysis",
-        showlegend=True,
-        hovermode='x unified'
-    )
-    
-    fig.update_xaxes(title_text="Date", row=2, col=1)
-    fig.update_yaxes(title_text="Price (USD/PLN)", row=1, col=1)
-    fig.update_yaxes(title_text="P&L", row=2, col=1)
-    
-    return fig
-
-def main():
-    st.title("📊 Pivot Points Trading Strategy Analyzer")
-    st.markdown("**7-Day Rolling Pivot Points Strategy for USD/PLN**")
-    
-    # Sidebar
-    st.sidebar.header("Settings")
-    lookback_days = st.sidebar.slider("Pivot Lookback Days", min_value=3, max_value=20, value=7)
-    show_trades_only = st.sidebar.checkbox("Show Trading Days Only", value=False)
-    
-    # File uploader
-    uploaded_file = st.file_uploader(
-        "Upload your USD/PLN CSV file", 
-        type=['csv'],
-        help="Upload a CSV file with columns: Date, Price, Open, High, Low, Vol., Change %"
-    )
-    
-    if uploaded_file is not None:
-        try:
-            # Read CSV
-            df = pd.read_csv(uploaded_file)
-            
-            # Clean and prepare data
-            df['Date'] = pd.to_datetime(df['Date'])
-            df['Close'] = pd.to_numeric(df['Price'], errors='coerce')  # Price column is close
-            df['Open'] = pd.to_numeric(df['Open'], errors='coerce')
-            df['High'] = pd.to_numeric(df['High'], errors='coerce')
-            df['Low'] = pd.to_numeric(df['Low'], errors='coerce')
-            
-            # Remove rows with missing data
-            df = df.dropna(subset=['Date', 'Open', 'High', 'Low', 'Close'])
-            
-            # Sort by date
-            df = df.sort_values('Date').reset_index(drop=True)
-            
-            st.success(f"✅ Loaded {len(df)} rows of data")
-            
-            # Calculate pivot points
-            with st.spinner("Calculating pivot points and signals..."):
-                df_with_pivots = calculate_pivot_points(df, lookback_days)
-            
-            # Performance metrics
-            trading_df = df_with_pivots[df_with_pivots['Signal'] != 'NO TRADE'].copy()
-            
-            if len(trading_df) > 0:
-                total_trades = len(trading_df)
-                buy_trades = len(trading_df[trading_df['Signal'] == 'BUY'])
-                sell_trades = len(trading_df[trading_df['Signal'] == 'SELL'])
-                winning_trades = len(trading_df[trading_df['PnL'] > 0])
-                losing_trades = len(trading_df[trading_df['PnL'] < 0])
-                total_pnl = trading_df['PnL'].sum()
-                win_rate = (winning_trades / total_trades) * 100
-                
-                # Buy/Sell specific metrics
-                buy_df = trading_df[trading_df['Signal'] == 'BUY']
-                sell_df = trading_df[trading_df['Signal'] == 'SELL']
-                buy_win_rate = (len(buy_df[buy_df['PnL'] > 0]) / len(buy_df) * 100) if len(buy_df) > 0 else 0
-                sell_win_rate = (len(sell_df[sell_df['PnL'] > 0]) / len(sell_df) * 100) if len(sell_df) > 0 else 0
-                
-                # Display metrics
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.metric("Total Days", f"{len(df_with_pivots)}")
-                    st.metric("Trading Days", f"{total_trades}")
-                
-                with col2:
-                    st.metric("Win Rate", f"{win_rate:.1f}%")
-                    st.metric("Total P&L", f"{total_pnl:.4f}", delta=f"{total_pnl:.4f}")
-                
-                with col3:
-                    st.metric("BUY Signals", f"{buy_trades} ({buy_trades/total_trades*100:.1f}%)")
-                    st.metric("BUY Win Rate", f"{buy_win_rate:.1f}%")
-                
-                with col4:
-                    st.metric("SELL Signals", f"{sell_trades} ({sell_trades/total_trades*100:.1f}%)")
-                    st.metric("SELL Win Rate", f"{sell_win_rate:.1f}%")
-                
-                # Strategy explanation
-                st.markdown("### 📋 Strategy Rules")
-                st.info("""
-                **BUY Signal:** When Open Price > Pivot Point (PP)  
-                **SELL Signal:** When Open Price < Pivot Point (PP)  
-                **Exit:** Close all positions at end of day  
-                **Pivot Calculation:** {}-day rolling average of (High + Low + Close) / 3
-                """.format(lookback_days))
-                
-                # Chart
-                st.markdown("### 📈 Price Chart with Pivot Points")
-                chart = create_chart(df_with_pivots)
-                st.plotly_chart(chart, use_container_width=True)
-                
-                # Data table
-                st.markdown("### 📊 Trading Data")
-                
-                if show_trades_only:
-                    display_df = trading_df.copy()
-                else:
-                    display_df = df_with_pivots.copy()
-                
-                # Format display dataframe
-                display_df = display_df[[
-                    'Date', 'Open', 'High', 'Low', 'Close', 'PP', 'R1', 'R2', 'S1', 'S2', 
-                    'Signal', 'PnL', 'PnL_Percent'
-                ]].copy()
-                
-                display_df['Date'] = display_df['Date'].dt.strftime('%m/%d/%Y')
-                
-                # Round numerical columns
-                numeric_cols = ['Open', 'High', 'Low', 'Close', 'PP', 'R1', 'R2', 'S1', 'S2', 'PnL']
-                for col in numeric_cols:
-                    display_df[col] = display_df[col].round(4)
-                
-                display_df['PnL_Percent'] = display_df['PnL_Percent'].round(2)
-                
-                # Color code the dataframe
-                def highlight_pnl(row):
-                    if pd.isna(row['PnL']) or row['Signal'] == 'NO TRADE':
-                        return ['background-color: #f0f0f0'] * len(row)
-                    elif row['PnL'] > 0:
-                        return ['background-color: #d4edda'] * len(row)
-                    elif row['PnL'] < 0:
-                        return ['background-color: #f8d7da'] * len(row)
-                    else:
-                        return [''] * len(row)
-                
-                styled_df = display_df.style.apply(highlight_pnl, axis=1)
-                st.dataframe(styled_df, use_container_width=True, height=400)
-                
-                # Download results
-                st.markdown("### 💾 Download Results")
-                
-                # Create download buffer
-                buffer = io.StringIO()
-                display_df.to_csv(buffer, index=False)
-                csv_data = buffer.getvalue()
-                
-                st.download_button(
-                    label="📥 Download Analysis as CSV",
-                    data=csv_data,
-                    file_name=f"pivot_strategy_analysis_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
-                
-                # Performance summary
-                st.markdown("### 📈 Performance Summary")
-                
-                if len(trading_df) > 0:
-                    avg_win = trading_df[trading_df['PnL'] > 0]['PnL'].mean() if winning_trades > 0 else 0
-                    avg_loss = trading_df[trading_df['PnL'] < 0]['PnL'].mean() if losing_trades > 0 else 0
-                    profit_factor = abs(avg_win * winning_trades) / abs(avg_loss * losing_trades) if losing_trades > 0 and avg_loss != 0 else float('inf')
-                    
-                    summary_data = {
-                        'Metric': [
-                            'Total Trades',
-                            'Winning Trades',
-                            'Losing Trades',
-                            'Win Rate (%)',
-                            'Average Win',
-                            'Average Loss',
-                            'Profit Factor',
-                            'Total P&L',
-                            'Best Trade',
-                            'Worst Trade'
-                        ],
-                        'Value': [
-                            total_trades,
-                            winning_trades,
-                            losing_trades,
-                            f"{win_rate:.2f}%",
-                            f"{avg_win:.4f}",
-                            f"{avg_loss:.4f}",
-                            f"{profit_factor:.2f}" if profit_factor != float('inf') else '∞',
-                            f"{total_pnl:.4f}",
-                            f"{trading_df['PnL'].max():.4f}",
-                            f"{trading_df['PnL'].min():.4f}"
-                        ]
-                    }
-                    
-                    summary_df = pd.DataFrame(summary_data)
-                    st.table(summary_df)
-                
-            else:
-                st.warning("No trading signals generated. Try adjusting the lookback period.")
-                
-        except Exception as e:
-            st.error(f"Error processing file: {str(e)}")
-            st.info("Please ensure your CSV has the required columns: Date, Price, Open, High, Low, Vol., Change %")
-    
-    else:
-        st.info("👆 Please upload your USD/PLN CSV file to begin analysis")
-        
-        # Show example data format
-        st.markdown("### 📋 Expected CSV Format")
-        example_data = {
-            'Date': ['07/18/2025', '07/17/2025', '07/16/2025'],
-            'Price': [3.6522, 3.6714, 3.6524],
-            'Open': [3.6714, 3.6522, 3.6770],
-            'High': [3.6749, 3.6814, 3.6856],
-            'Low': [3.6411, 3.6510, 3.6336],
-            'Vol.': ['', '', ''],
-            'Change %': ['-0.52%', '0.52%', '-0.66%']
+        const rawData = [];
+        for (let i = 1; i < lines.length; i++) {
+          const values = lines[i].split(',').map(v => v.replace(/"/g, ''));
+          if (values.length >= 7) {
+            rawData.push({
+              date: new Date(values[0]),
+              dateStr: values[0],
+              open: parseFloat(values[2]) || 0,
+              high: parseFloat(values[3]) || 0,
+              low: parseFloat(values[4]) || 0,
+              close: parseFloat(values[1]) || 0,
+              changePercent: values[6]
+            });
+          }
         }
-        st.table(pd.DataFrame(example_data))
+        
+        rawData.sort((a, b) => a.date - b.date);
+        
+        const processedData = [];
+        
+        for (let i = 0; i < rawData.length; i++) {
+          const currentDay = rawData[i];
+          let pivots = null;
+          let signal = 'NO TRADE';
+          let pnl = null;
+          let pnlPercent = null;
+          
+          if (i >= 7 && i < rawData.length - 3) { // Ensure we have 3 days ahead for closing
+            const last7Days = rawData.slice(i - 7, i);
+            const avgHigh = last7Days.reduce((sum, day) => sum + day.high, 0) / 7;
+            const avgLow = last7Days.reduce((sum, day) => sum + day.low, 0) / 7;
+            const avgClose = last7Days.reduce((sum, day) => sum + day.close, 0) / 7;
+            const pivotPoint = (avgHigh + avgLow + avgClose) / 3;
+            
+            pivots = {
+              PP: pivotPoint,
+              R1: (2 * pivotPoint) - avgLow,
+              R2: pivotPoint + (avgHigh - avgLow),
+              S1: (2 * pivotPoint) - avgHigh,
+              S2: pivotPoint - (avgHigh - avgLow)
+            };
+            
+            const currentOpen = currentDay.open;
+            const closePrice = rawData[i + 3].close; // Close price 3 days later
+            
+            // BUY signal: Open price between S1 and S2
+            if (currentOpen >= pivots.S2 && currentOpen <= pivots.S1) {
+              signal = 'BUY';
+              pnl = closePrice - currentDay.open;
+            }
+            // SELL signal: Open price between R1 and R2
+            else if (currentOpen >= pivots.R1 && currentOpen <= pivots.R2) {
+              signal = 'SELL';
+              pnl = currentDay.open - closePrice;
+            }
+            
+            if (pnl !== null) {
+              pnlPercent = (pnl / currentDay.open) * 100;
+            }
+          }
+          
+          processedData.push({
+            date: currentDay.dateStr,
+            open: currentDay.open,
+            high: currentDay.high,
+            low: currentDay.low,
+            close: currentDay.close,
+            PP: pivots ? pivots.PP : null,
+            R1: pivots ? pivots.R1 : null,
+            R2: pivots ? pivots.R2 : null,
+            S1: pivots ? pivots.S1 : null,
+            S2: pivots ? pivots.S2 : null,
+            signal,
+            pnl,
+            pnlPercent
+          });
+        }
+        
+        setCsvData(processedData);
+        setError(null);
+      } catch (err) {
+        console.error('Error loading CSV:', err);
+        setError('Failed to load CSV file. Make sure "USD_PLN Historical Data 18.csv" is uploaded.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadData();
+  }, []);
 
-if __name__ == "__main__":
-    main()
+  const filteredData = useMemo(() => {
+    if (showOnlyTrades) {
+      return csvData.filter(row => row.signal !== 'NO TRADE');
+    }
+    return csvData;
+  }, [csvData, showOnlyTrades]);
+
+  const sortedData = useMemo(() => {
+    return [...filteredData].sort((a, b) => {
+      if (sortColumn === 'date') {
+        const dateA = new Date(a.date);
+        const dateB = new Date(b.date);
+        return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+      }
+      if (sortColumn === 'pnl') {
+        const aVal = a.pnl || 0;
+        const bVal = b.pnl || 0;
+        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      if (sortColumn === 'signal') {
+        return sortDirection === 'asc' ? a.signal.localeCompare(b.signal) : b.signal.localeCompare(a.signal);
+      }
+      return 0;
+    });
+  }, [filteredData, sortColumn, sortDirection]);
+
+  const handleSort = (column) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('desc');
+    }
+  };
+
+  const tradingDays = csvData.filter(row => row.signal !== 'NO TRADE');
+  const buyTrades = tradingDays.filter(row => row.signal === 'BUY');
+  const sellTrades = tradingDays.filter(row => row.signal === 'SELL');
+  const winningTrades = tradingDays.filter(row => row.pnl > 0);
+  const totalPnL = tradingDays.reduce((sum, row) => sum + (row.pnl || 0), 0);
+
+  const formatNumber = (num, decimals = 4) => {
+    if (num === null || num === undefined) return '—';
+    return num.toFixed(decimals);
+  };
+
+  const getRowColor = (row) => {
+    if (row.signal === 'NO TRADE') return 'bg-gray-50';
+    if (row.signal === 'BUY') return row.pnl > 0 ? 'bg-green-50' : 'bg-red-50';
+    if (row.signal === 'SELL') return row.pnl > 0 ? 'bg-green-50' : 'bg-red-50';
+    return '';
+  };
+
+  if (loading) {
+    return (
+      <div className="w-full p-6 bg-gray-50">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading and processing CSV data...</p>
+              <p className="text-sm text-gray-500 mt-2">Calculating 7-day rolling pivot points</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-full p-6 bg-gray-50">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <div className="text-center h-64 flex items-center justify-center">
+            <div>
+              <div className="text-red-600 text-xl mb-4">⚠️ Error Loading Data</div>
+              <p className="text-gray-600 mb-4">{error}</p>
+              <p className="text-sm text-gray-500">
+                Please make sure you have uploaded the CSV file named "USD_PLN Historical Data 18.csv"
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full p-6 bg-gray-50">
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">7-Day Rolling Pivot Points Trading Strategy</h2>
+          <p className="text-gray-600">Live analysis of your uploaded USD/PLN CSV data</p>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="p-4 bg-blue-50 rounded-lg">
+            <div className="text-sm text-blue-600">Total Days</div>
+            <div className="text-xl font-bold text-blue-800">{csvData.length}</div>
+          </div>
+          <div className="p-4 bg-green-50 rounded-lg">
+            <div className="text-sm text-green-600">Trading Days</div>
+            <div className="text-xl font-bold text-green-800">{tradingDays.length}</div>
+          </div>
+          <div className="p-4 bg-yellow-50 rounded-lg">
+            <div className="text-sm text-yellow-600">Win Rate</div>
+            <div className="text-xl font-bold text-yellow-800">
+              {tradingDays.length > 0 ? ((winningTrades.length / tradingDays.length) * 100).toFixed(1) : 0}%
+            </div>
+          </div>
+          <div className="p-4 bg-purple-50 rounded-lg">
+            <div className="text-sm text-purple-600">Total P&L</div>
+            <div className={`text-xl font-bold ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatNumber(totalPnL)}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="p-3 bg-blue-100 rounded">
+            <div className="text-sm font-medium text-blue-800">BUY Signals</div>
+            <div className="text-lg font-bold text-blue-900">
+              {buyTrades.length} ({tradingDays.length > 0 ? ((buyTrades.length / tradingDays.length) * 100).toFixed(1) : 0}%)
+            </div>
+            <div className="text-xs text-blue-600">
+              Win Rate: {buyTrades.length > 0 ? ((buyTrades.filter(t => t.pnl > 0).length / buyTrades.length) * 100).toFixed(1) : 0}%
+            </div>
+          </div>
+          <div className="p-3 bg-red-100 rounded">
+            <div className="text-sm font-medium text-red-800">SELL Signals</div>
+            <div className="text-lg font-bold text-red-900">
+              {sellTrades.length} ({tradingDays.length > 0 ? ((sellTrades.length / tradingDays.length) * 100).toFixed(1) : 0}%)
+            </div>
+            <div className="text-xs text-red-600">
+              Win Rate: {sellTrades.length > 0 ? ((sellTrades.filter(t => t.pnl > 0).length / sellTrades.length) * 100).toFixed(1) : 0}%
+            </div>
+          </div>
+          <div className="p-3 bg-gray-100 rounded">
+            <div className="text-sm font-medium text-gray-800">No Trade</div>
+            <div className="text-lg font-bold text-gray-900">
+              {csvData.filter(row => row.signal === 'NO TRADE').length}
+            </div>
+            <div className="text-xs text-gray-600">
+              First 7 days or last 3 days
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-4 flex gap-4 items-center">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={showOnlyTrades}
+              onChange={(e) => setShowOnlyTrades(e.target.checked)}
+              className="rounded"
+            />
+            <span className="text-sm font-medium">Show only trading days</span>
+          </label>
+          <div className="text-sm text-gray-600">
+            Showing {sortedData.length} of {csvData.length} rows
+          </div>
+        </div>
+
+        <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+          <h3 className="font-semibold text-blue-800 mb-2">Strategy Rules:</h3>
+          <div className="text-sm text-blue-700 space-y-1">
+            <p><strong>BUY Signal:</strong> When Open Price is between S1 and S2 support levels</p>
+            <p><strong>SELL Signal:</strong> When Open Price is between R1 and R2 resistance levels</p>
+            <p><strong>Exit:</strong> Close all positions after 3 days</p>
+            <p><strong>Pivot Calculation:</strong> 7-day rolling average of (High + Low + Close) / 3</p>
+            <p><strong>Support/Resistance:</strong> S2 = PP - (AvgHigh - AvgLow), S1 = (2×PP) - AvgHigh, R1 = (2×PP) - AvgLow, R2 = PP + (AvgHigh - AvgLow)</p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-100 sticky top-0">
+              <tr>
+                <th 
+                  className="p-2 text-left cursor-pointer hover:bg-gray-200"
+                  onClick={() => handleSort('date')}
+                >
+                  Date {sortColumn === 'date' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th className="p-2 text-right">Open</th>
+                <th className="p-2 text-right">High</th>
+                <th className="p-2 text-right">Low</th>
+                <th className="p-2 text-right">Close</th>
+                <th className="p-2 text-right">Pivot Point</th>
+                <th className="p-2 text-right">R1</th>
+                <th className="p-2 text-right">R2</th>
+                <th className="p-2 text-right">S1</th>
+                <th className="p-2 text-right">S2</th>
+                <th 
+                  className="p-2 text-center cursor-pointer hover:bg-gray-200"
+                  onClick={() => handleSort('signal')}
+                >
+                  Signal {sortColumn === 'signal' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th 
+                  className="p-2 text-right cursor-pointer hover:bg-gray-200"
+                  onClick={() => handleSort('pnl')}
+                >
+                  P&L {sortColumn === 'pnl' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th className="p-2 text-right">P&L %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedData.map((row, index) => (
+                <tr key={index} className={`border-b ${getRowColor(row)} hover:bg-gray-100`}>
+                  <td className="p-2 font-medium">{row.date}</td>
+                  <td className="p-2 text-right">{formatNumber(row.open)}</td>
+                  <td className="p-2 text-right">{formatNumber(row.high)}</td>
+                  <td className="p-2 text-right">{formatNumber(row.low)}</td>
+                  <td className="p-2 text-right">{formatNumber(row.close)}</td>
+                  <td className="p-2 text-right font-medium text-red-600">
+                    {formatNumber(row.PP)}
+                  </td>
+                  <td className="p-2 text-right text-orange-600">
+                    {formatNumber(row.R1)}
+                  </td>
+                  <td className="p-2 text-right text-orange-500">
+                    {formatNumber(row.R2)}
+                  </td>
+                  <td className="p-2 text-right text-green-600">
+                    {formatNumber(row.S1)}
+                  </td>
+                  <td className="p-2 text-right text-green-500">
+                    {formatNumber(row.S2)}
+                  </td>
+                  <td className="p-2 text-center">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      row.signal === 'BUY' ? 'bg-blue-100 text-blue-800' :
+                      row.signal === 'SELL' ? 'bg-red-100 text-red-800' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>
+                      {row.signal}
+                    </span>
+                  </td>
+                  <td className={`p-2 text-right font-medium ${
+                    row.pnl === null ? 'text-gray-400' :
+                    row.pnl > 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {formatNumber(row.pnl)}
+                  </td>
+                  <td className={`p-2 text-right ${
+                    row.pnlPercent === null ? 'text-gray-400' :
+                    row.pnlPercent > 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {row.pnlPercent !== null ? `${row.pnlPercent.toFixed(2)}%` : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-4 text-xs text-gray-600 space-y-1">
+          <p><strong>Color Legend:</strong></p>
+          <p>• <span className="bg-green-50 px-1">Green rows</span> = Profitable trades</p>
+          <p>• <span className="bg-red-50 px-1">Red rows</span> = Losing trades</p>
+          <p>• <span className="bg-gray-50 px-1">Gray rows</span> = No trading signal (first 7 days or last 3 days)</p>
+          <p>• <span className="text-red-600">Red PP</span> = Main pivot point, <span className="text-orange-600">Orange R1/R2</span> = Resistance levels, <span className="text-green-600">Green S1/S2</span> = Support levels</p>
+        </div>
+
+        <div className="mt-4 p-3 bg-gray-100 rounded text-sm">
+          <p><strong>Data Source:</strong> USD_PLN Historical Data 18.csv</p>
+          <p><strong>Processed:</strong> {csvData.length} total rows, {tradingDays.length} trading signals generated</p>
+          <p><strong>Date Range:</strong> {csvData.length > 0 ? `${csvData[0].date} to ${csvData[csvData.length-1].date}` : 'No data'}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default PivotTable;
