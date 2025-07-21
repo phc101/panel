@@ -1,0 +1,9 @@
+[global]
+developmentMode = false
+
+[server]
+fileWatcherType = "none"
+runOnSave = false
+
+[browser]
+gatherUsageStats = false
