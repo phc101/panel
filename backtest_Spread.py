@@ -1,25 +1,27 @@
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-import os
+import io
 
 # Streamlit app configuration
 st.set_page_config(page_title="Pivot Points Trading Strategy", layout="wide")
 st.title("Pivot Points Trading Strategy (EUR/PLN)")
-st.markdown("Backtest strategii handlowej opartej na 7-dniowych punktach pivot dla EUR/PLN.")
+st.markdown("Backtest strategii handlowej opartej na 7-dniowych punktach pivot dla danych walutowych.")
 
-# File path for CSV
-csv_file = "EUR_PLN Historical Data.csv"
+# File upload
+st.subheader("Wczytaj plik CSV")
+uploaded_file = st.file_uploader("Wybierz plik CSV z danymi (np. EUR_PLN Historical Data.csv)", type=["csv"])
 
 # Load and validate CSV data
 @st.cache_data
-def load_data(file_path):
+def load_data(uploaded_file):
+    if uploaded_file is None:
+        st.warning("Proszę wczytać plik CSV, aby kontynuować.")
+        return None
+    
     try:
-        if not os.path.exists(file_path):
-            st.error(f"Plik {file_path} nie istnieje. Upewnij się, że plik CSV znajduje się w odpowiednim katalogu.")
-            return None
-        
-        df = pd.read_csv(file_path)
+        # Read CSV from uploaded file
+        df = pd.read_csv(uploaded_file)
         expected_columns = ['Date', 'Close', 'Open', 'High', 'Low']
         if not all(col in df.columns for col in expected_columns):
             st.error(f"Plik CSV musi zawierać kolumny: {', '.join(expected_columns)}")
@@ -120,8 +122,8 @@ def calculate_pivot_points_and_trades(df):
     
     return df, trades_df
 
-# Load data
-df = load_data(csv_file)
+# Load data from uploaded file
+df = load_data(uploaded_file)
 if df is None:
     st.stop()
 
@@ -197,13 +199,16 @@ if not trades_df.empty:
     plt.tight_layout()
     st.pyplot(fig)
 else:
-    st.write("Brak danych do wyświetlenia wykresu PnL.")
+    st.write("Brak danych do wyświetlenia wykres plot.")
 
 # Data source and range
 st.subheader("Źródło Danych")
-st.markdown(f"""
-- **Plik**: {csv_file}
-- **Przetworzone wiersze**: {len(df)}
-- **Zakres dat**: {df['Date'].min().strftime('%Y-%m-%d')} do {df['Date'].max().strftime('%Y-%m-%d')}
-- **Sygnały handlowe**: {total_trades}
-""")
+if uploaded_file is not None:
+    st.markdown(f"""
+    - **Plik**: {uploaded_file.name}
+    - **Przetworzone wiersze**: {len(df)}
+    - **Zakres dat**: {df['Date'].min().strftime('%Y-%m-%d')} do {df['Date'].max().strftime('%Y-%m-%d')}
+    - **Sygnały handlowe**: {total_trades}
+    """)
+else:
+    st.markdown("Brak wczytanego pliku.")
