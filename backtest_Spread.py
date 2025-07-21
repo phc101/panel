@@ -2,76 +2,66 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# --- Wczytaj dane ---
-uploaded_file = st.file_uploader("Wgraj plik CSV z danymi EUR/PLN", type="csv")
-
-if uploaded_file:
+# Wczytaj dane
+uploaded_file = st.file_uploader("Wczytaj plik CSV z danymi EUR/PLN", type=["csv"])
+if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
-    df.columns = df.columns.str.strip()
-
-    # Upewnij się, że dane są posortowane rosnąco wg daty
+    df.columns = [c.strip() for c in df.columns]
     df['Date'] = pd.to_datetime(df['Date'])
-    df.sort_values('Date', inplace=True)
+    df = df.sort_values('Date')
+    df.set_index('Date', inplace=True)
 
-    # Oblicz Pivot Points
-    df['Pivot'] = (df['High'] + df['Low'] + df['Price']) / 3
-    df['R1'] = 2 * df['Pivot'] - df['Low']
-    df['S1'] = 2 * df['Pivot'] - df['High']
-    df['R2'] = df['Pivot'] + (df['High'] - df['Low'])
-    df['S2'] = df['Pivot'] - (df['High'] - df['Low'])
+    # Przekształć dane na float
+    for col in ['Open', 'High', 'Low', 'Price']:
+        df[col] = df[col].astype(str).str.replace(',', '.').astype(float)
 
-    # Logika transakcji
+    # Oblicz Pivot Points na podstawie 7-dniowej średniej (rolling)
+    df['PP'] = ((df['High'] + df['Low'] + df['Price']) / 3).rolling(window=7).mean()
+    df['R1'] = (2 * df['PP']) - df['Low'].rolling(window=7).mean()
+    df['S1'] = (2 * df['PP']) - df['High'].rolling(window=7).mean()
+    df['R2'] = df['PP'] + (df['High'].rolling(window=7).mean() - df['Low'].rolling(window=7).mean())
+    df['S2'] = df['PP'] - (df['High'].rolling(window=7).mean() - df['Low'].rolling(window=7).mean())
+
+    df = df.dropna()
+
+    # Logika strategii
     trades = []
-    for i in range(len(df) - 3):  # Musimy mieć 3 dni później
+    for i in range(len(df) - 3):  # -3 bo zamykamy 3 dni później
         row = df.iloc[i]
         open_price = row['Open']
+        s1, s2, r1, r2 = row['S1'], row['S2'], row['R1'], row['R2']
+        date = df.index[i]
 
-        if row['S2'] <= open_price <= row['S1']:
-            # BUY logic
-            entry_date = row['Date']
-            exit_date = df.iloc[i + 3]['Date']
-            entry_price = open_price
-            exit_price = df.iloc[i + 3]['Price']
-            pnl = exit_price - entry_price
-            trades.append({
-                'Direction': 'BUY',
-                'Entry Date': entry_date,
-                'Exit Date': exit_date,
-                'Entry': entry_price,
-                'Exit': exit_price,
-                'PnL': pnl
-            })
+        close_price_3d = df.iloc[i + 3]['Price']
 
-        elif row['R1'] <= open_price <= row['R2']:
-            # SELL logic
-            entry_date = row['Date']
-            exit_date = df.iloc[i + 3]['Date']
-            entry_price = open_price
-            exit_price = df.iloc[i + 3]['Price']
-            pnl = entry_price - exit_price
-            trades.append({
-                'Direction': 'SELL',
-                'Entry Date': entry_date,
-                'Exit Date': exit_date,
-                'Entry': entry_price,
-                'Exit': exit_price,
-                'PnL': pnl
-            })
+        if s2 < open_price < s1:
+            profit = close_price_3d - open_price
+            trades.append({'Date': date, 'Type': 'BUY', 'Entry': open_price, 'Exit': close_price_3d, 'PnL': profit})
+        elif r1 < open_price < r2:
+            profit = open_price - close_price_3d
+            trades.append({'Date': date, 'Type': 'SELL', 'Entry': open_price, 'Exit': close_price_3d, 'PnL': profit})
 
-    results = pd.DataFrame(trades)
+    trades_df = pd.DataFrame(trades)
 
-    st.subheader("📈 Wyniki transakcji")
-    st.write(results)
+    # Wyświetl tabele
+    st.subheader("Tabela transakcji")
+    st.dataframe(trades_df)
 
-    st.subheader("💰 Suma zysków/strat")
-    total_pnl = results['PnL'].sum()
-    st.metric("Łączny wynik strategii", f"{total_pnl:.4f} PLN")
+    # Pokaż punkty pivot w tabeli
+    st.subheader("Dane z Pivot Points")
+    st.dataframe(df[['Open', 'Price', 'PP', 'S2', 'S1', 'R1', 'R2']].tail(15))
 
-    # Wykres equity curve
-    results['Cumulative PnL'] = results['PnL'].cumsum()
+    # Equity curve
+    st.subheader("Equity Curve")
+    trades_df['Cumulative PnL'] = trades_df['PnL'].cumsum()
     fig, ax = plt.subplots()
-    ax.plot(results['Exit Date'], results['Cumulative PnL'], marker='o')
-    ax.set_title("Krzywa kapitału strategii")
-    ax.set_xlabel("Data")
-    ax.set_ylabel("Cumulative PnL (PLN)")
+    ax.plot(trades_df['Date'], trades_df['Cumulative PnL'], label='Equity Curve')
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Cumulative Profit")
+    ax.set_title("Wynik strategii Pivot Points")
+    ax.grid()
     st.pyplot(fig)
+
+    # Suma zysków
+    total_pnl = trades_df['PnL'].sum()
+    st.metric("Suma PnL (łącznie)", f"{total_pnl:.4f} PLN")
