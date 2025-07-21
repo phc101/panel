@@ -13,6 +13,11 @@ st.subheader("Wczytaj plik CSV")
 st.markdown("Wczytaj plik CSV z danymi w formacie Investing.com (np. EUR_PLN Historical Data.csv). Wymagane kolumny: Date, Price, Open, High, Low.")
 uploaded_file = st.file_uploader("Wybierz plik CSV", type=["csv"])
 
+# Trading parameters
+st.subheader("Parametry Handlowe")
+holding_days = st.slider("Liczba dni trzymania pozycji", min_value=1, max_value=10, value=3, step=1)
+stop_loss_percent = st.number_input("Stop Loss (%):", min_value=0.0, max_value=10.0, value=2.0, step=0.1)
+
 # Load and validate CSV data
 @st.cache_data
 def load_data(uploaded_file):
@@ -48,7 +53,7 @@ def load_data(uploaded_file):
         return None
 
 # Calculate pivot points and execute momentum trading strategy
-def calculate_pivot_points_and_trades(df):
+def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent):
     pivot_data = []
     trades = []
     
@@ -76,7 +81,7 @@ def calculate_pivot_points_and_trades(df):
     pivot_df = pd.DataFrame(pivot_data)
     df = df.merge(pivot_df, on='Date', how='left')
     
-    for i in range(7, len(df) - 3):
+    for i in range(7, len(df) - holding_days):
         row = df.iloc[i]
         open_price = row['Open']
         
@@ -85,31 +90,70 @@ def calculate_pivot_points_and_trades(df):
         
         # BUY: Open price between R1 and R2 (momentum upward)
         if row['R1'] < open_price < row['R2']:
-            exit_close = df.iloc[i + 3]['Close']
-            pnl = exit_close - open_price
-            trades.append({
-                'Entry Date': row['Date'],
-                'Exit Date': df.iloc[i + 3]['Date'],
-                'Direction': 'BUY',
-                'Entry Price': open_price,
-                'Exit Price': exit_close,
-                'PnL': pnl,
-                'PnL %': (pnl / open_price) * 100 if open_price != 0 else 0
-            })
+            # Check daily close prices for stop loss
+            for j in range(1, holding_days + 1):
+                if i + j >= len(df):
+                    break
+                close_price = df.iloc[i + j]['Close']
+                loss_percent = ((open_price - close_price) / open_price) * 100
+                if loss_percent >= stop_loss_percent:
+                    # Close trade early due to stop loss
+                    trades.append({
+                        'Entry Date': row['Date'],
+                        'Exit Date': df.iloc[i + j]['Date'],
+                        'Direction': 'BUY',
+                        'Entry Price': open_price,
+                        'Exit Price': close_price,
+                        'PnL': close_price - open_price,
+                        'PnL %': ((close_price - open_price) / open_price) * 100 if open_price != 0 else 0,
+                        'Exit Reason': 'Stop Loss'
+                    })
+                    break
+            else:
+                # Close trade at end of holding period
+                exit_close = df.iloc[i + holding_days]['Close']
+                trades.append({
+                    'Entry Date': row['Date'],
+                    'Exit Date': df.iloc[i + holding_days]['Date'],
+                    'Direction': 'BUY',
+                    'Entry Price': open_price,
+                    'Exit Price': exit_close,
+                    'PnL': exit_close - open_price,
+                    'PnL %': ((exit_close - open_price) / open_price) * 100 if open_price != 0 else 0,
+                    'Exit Reason': 'Holding Period'
+                })
         
         # SELL: Open price between S1 and S2 (momentum downward)
         elif row['S2'] < open_price < row['S1']:
-            exit_close = df.iloc[i + 3]['Close']
-            pnl = open_price - exit_close
-            trades.append({
-                'Entry Date': row['Date'],
-                'Exit Date': df.iloc[i + 3]['Date'],
-                'Direction': 'SELL',
-                'Entry Price': open_price,
-                'Exit Price': exit_close,
-                'PnL': pnl,
-                'PnL %': (pnl / open_price) * 100 if open_price != 0 else 0
-            })
+            for j in range(1, holding_days + 1):
+                if i + j >= len(df):
+                    break
+                close_price = df.iloc[i + j]['Close']
+                loss_percent = ((close_price - open_price) / open_price) * 100
+                if loss_percent >= stop_loss_percent:
+                    trades.append({
+                        'Entry Date': row['Date'],
+                        'Exit Date': df.iloc[i + j]['Date'],
+                        'Direction': 'SELL',
+                        'Entry Price': open_price,
+                        'Exit Price': close_price,
+                        'PnL': open_price - close_price,
+                        'PnL %': ((open_price - close_price) / open_price) * 100 if open_price != 0 else 0,
+                        'Exit Reason': 'Stop Loss'
+                    })
+                    break
+            else:
+                exit_close = df.iloc[i + holding_days]['Close']
+                trades.append({
+                    'Entry Date': row['Date'],
+                    'Exit Date': df.iloc[i + holding_days]['Date'],
+                    'Direction': 'SELL',
+                    'Entry Price': open_price,
+                    'Exit Price': exit_close,
+                    'PnL': open_price - exit_close,
+                    'PnL %': ((open_price - exit_close) / open_price) * 100 if open_price != 0 else 0,
+                    'Exit Reason': 'Holding Period'
+                })
     
     trades_df = pd.DataFrame(trades)
     if not trades_df.empty:
@@ -144,7 +188,7 @@ if df is None:
     st.stop()
 
 # Calculate pivot points and trades
-df, trades_df = calculate_pivot_points_and_trades(df)
+df, trades_df = calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent)
 
 # Calculate metrics
 total_trades = len(trades_df)
@@ -198,17 +242,17 @@ else:
 
 # Strategy rules
 st.subheader("Zasady Strategii Momentum")
-st.markdown("""
+st.markdown(f"""
 - **Sygnał BUY**: Cena otwarcia między poziomami oporu R1 i R2 (momentum wzrostowe).
 - **Sygnał SELL**: Cena otwarcia między poziomami wsparcia S1 i S2 (momentum spadkowe).
-- **Zamknięcie pozycji**: Po 3 dniach od otwarcia, na cenie zamknięcia.
+- **Zamknięcie pozycji**: Po {holding_days} dniach od otwarcia na cenie zamknięcia lub wcześniej, jeśli strata przekroczy {stop_loss_percent}% (stop loss).
 - **Obliczenie Pivot**: Średnia 7-dniowa (High + Low + Close) / 3.
 - **Poziomy wsparcia/oporu**:
   - S2 = Pivot - (AvgHigh - AvgLow)
   - S1 = 2×Pivot - AvgHigh
   - R1 = 2×Pivot - AvgLow
   - R2 = Pivot + (AvgHigh - AvgLow)
-- **Dane**: Pierwsze 7 dni i ostatnie 3 dni nie generują sygnałów handlowych.
+- **Dane**: Pierwsze 7 dni i ostatnie {holding_days} dni nie generują sygnałów handlowych.
 """)
 
 # Pivot points table
