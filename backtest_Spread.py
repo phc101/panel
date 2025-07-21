@@ -4,13 +4,14 @@ import matplotlib.pyplot as plt
 import io
 
 # Streamlit app configuration
-st.set_page_config(page_title="Pivot Points Trading Strategy", layout="wide")
+st.set_page_config(page_title="Pivot Points Trading Strategy (EUR/PLN)", layout="wide")
 st.title("Pivot Points Trading Strategy (EUR/PLN)")
-st.markdown("Backtest strategii handlowej opartej na 7-dniowych punktach pivot dla danych walutowych.")
+st.markdown("Backtest strategii handlowej opartej na 7-dniowych punktach pivot dla danych EUR/PLN z Investing.com.")
 
 # File upload
 st.subheader("Wczytaj plik CSV")
-uploaded_file = st.file_uploader("Wybierz plik CSV z danymi (np. EUR_PLN Historical Data.csv)", type=["csv"])
+st.markdown("Wczytaj plik CSV z danymi w formacie Investing.com (np. EUR_PLN Historical Data.csv). Wymagane kolumny: Date, Price, Open, High, Low.")
+uploaded_file = st.file_uploader("Wybierz plik CSV", type=["csv"])
 
 # Load and validate CSV data
 @st.cache_data
@@ -22,10 +23,13 @@ def load_data(uploaded_file):
     try:
         # Read CSV from uploaded file
         df = pd.read_csv(uploaded_file)
-        expected_columns = ['Date', 'Close', 'Open', 'High', 'Low']
+        expected_columns = ['Date', 'Price', 'Open', 'High', 'Low']
         if not all(col in df.columns for col in expected_columns):
             st.error(f"Plik CSV musi zawierać kolumny: {', '.join(expected_columns)}")
             return None
+        
+        # Rename 'Price' to 'Close' to match internal structure
+        df = df.rename(columns={'Price': 'Close'})
         
         # Convert Date to datetime
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
@@ -199,7 +203,7 @@ if not trades_df.empty:
     plt.tight_layout()
     st.pyplot(fig)
 else:
-    st.write("Brak danych do wyświetlenia wykres plot.")
+    st.write("Brak danych do wyświetlenia wykresu PnL.")
 
 # Data source and range
 st.subheader("Źródło Danych")
