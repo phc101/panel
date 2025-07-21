@@ -408,7 +408,7 @@ st.markdown(f"""
 st.subheader("Wykres Skumulowanego PnL Portfela")
 if not portfolio_trades.empty and 'Cumulative PnL' in portfolio_trades.columns:
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(portfolio_trades['Exit Date'], portfolio_trades['Cumulative PnL'], marker='o', color='blue', label='Skumulowany PnL Portfela')
+    ax.plot(portfolio_trades['Exit Date'], portfolio_trades['Cumulative PnL'], marker='o', color='blue', label='Skumulowany PnL Portfela', linewidth=2)
     
     # Highlight max drawdown
     if portfolio_metrics['Max Drawdown (PLN)'] > 0:
@@ -440,6 +440,78 @@ if not portfolio_trades.empty and 'Cumulative PnL' in portfolio_trades.columns:
     st.pyplot(fig)
 else:
     st.write("Brak danych do wyświetlenia wykresu PnL.")
+
+# Individual currency pair performance chart
+st.subheader("Wykres Skumulowanego PnL dla Poszczególnych Par Walutowych")
+if not portfolio_trades.empty:
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Define colors for different currency pairs
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+    color_idx = 0
+    
+    # Plot each currency pair separately
+    for pair_name in portfolio_trades['Pair'].unique():
+        pair_trades = portfolio_trades[portfolio_trades['Pair'] == pair_name].copy()
+        pair_trades = pair_trades.sort_values('Exit Date')
+        
+        # Calculate cumulative PnL for this pair
+        pair_trades['Pair Cumulative PnL'] = pair_trades['PnL'].cumsum()
+        
+        color = colors[color_idx % len(colors)]
+        ax.plot(pair_trades['Exit Date'], pair_trades['Pair Cumulative PnL'], 
+               marker='o', color=color, label=f'{pair_name}', alpha=0.8, linewidth=2)
+        color_idx += 1
+    
+    # Add zero line for reference
+    ax.axhline(y=0, color='black', linestyle='-', alpha=0.3, linewidth=1)
+    
+    ax.set_xlabel("Data Zamknięcia")
+    ax.set_ylabel("Skumulowany Zysk/Strata (PLN)")
+    ax.set_title("Porównanie Wyników Poszczególnych Par Walutowych")
+    ax.grid(True, linestyle='--', alpha=0.7)
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    st.pyplot(fig)
+    
+    # Summary statistics for individual pairs
+    st.subheader("Statystyki Wyników dla Poszczególnych Par")
+    pair_summary = []
+    for pair_name in portfolio_trades['Pair'].unique():
+        pair_trades = portfolio_trades[portfolio_trades['Pair'] == pair_name]
+        total_pnl = pair_trades['PnL'].sum()
+        total_trades = len(pair_trades)
+        winning_trades = len(pair_trades[pair_trades['PnL'] > 0])
+        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+        avg_win = pair_trades[pair_trades['PnL'] > 0]['PnL'].mean() if winning_trades > 0 else 0
+        avg_loss = pair_trades[pair_trades['PnL'] < 0]['PnL'].mean() if (total_trades - winning_trades) > 0 else 0
+        best_trade = pair_trades['PnL'].max() if total_trades > 0 else 0
+        worst_trade = pair_trades['PnL'].min() if total_trades > 0 else 0
+        
+        pair_summary.append({
+            'Para Walutowa': pair_name,
+            'Całkowity PnL': round(total_pnl, 4),
+            'Liczba Transakcji': total_trades,
+            'Wskaźnik Wygranych (%)': round(win_rate, 1),
+            'Średni Zysk': round(avg_win, 4),
+            'Średnia Strata': round(avg_loss, 4),
+            'Najlepszy Trade': round(best_trade, 4),
+            'Najgorszy Trade': round(worst_trade, 4)
+        })
+    
+    if pair_summary:
+        summary_df = pd.DataFrame(pair_summary)
+        st.dataframe(summary_df, use_container_width=True)
+        
+        # Performance ranking
+        st.subheader("Ranking Par Walutowych (według Całkowitego PnL)")
+        ranking_df = summary_df[['Para Walutowa', 'Całkowity PnL', 'Wskaźnik Wygranych (%)']].copy()
+        ranking_df = ranking_df.sort_values('Całkowity PnL', ascending=False)
+        ranking_df.insert(0, 'Pozycja', range(1, len(ranking_df) + 1))
+        st.dataframe(ranking_df, use_container_width=True)
+else:
+    st.write("Brak danych do wyświetlenia wykresów poszczególnych par walutowych.")
 
 # Individual pair results
 for pair_name, df in dfs.items():
