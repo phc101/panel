@@ -21,23 +21,18 @@ def load_data(uploaded_file):
         return None
     
     try:
-        # Read CSV from uploaded file
         df = pd.read_csv(uploaded_file)
         expected_columns = ['Date', 'Price', 'Open', 'High', 'Low']
         if not all(col in df.columns for col in expected_columns):
             st.error(f"Plik CSV musi zawierać kolumny: {', '.join(expected_columns)}")
             return None
         
-        # Rename 'Price' to 'Close' to match internal structure
         df = df.rename(columns={'Price': 'Close'})
-        
-        # Convert Date to datetime
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         if df['Date'].isna().any():
             st.warning("Niektóre daty w pliku CSV są nieprawidłowe i zostaną pominięte.")
             df = df.dropna(subset=['Date'])
         
-        # Convert numeric columns
         numeric_cols = ['Open', 'High', 'Low', 'Close']
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -46,7 +41,6 @@ def load_data(uploaded_file):
             st.warning("Niektóre wartości cen w pliku CSV są nieprawidłowe i zostaną zastąpione zerami.")
             df[numeric_cols] = df[numeric_cols].fillna(0)
         
-        # Sort by date and reset index
         df = df.sort_values('Date').reset_index(drop=True)
         return df[['Date', 'Open', 'High', 'Low', 'Close']]
     except Exception as e:
@@ -58,7 +52,6 @@ def calculate_pivot_points_and_trades(df):
     pivot_data = []
     trades = []
     
-    # Calculate pivot points for each day after the first 7 days
     for i in range(7, len(df)):
         window = df.iloc[i-7:i]
         avg_high = window['High'].mean()
@@ -80,12 +73,10 @@ def calculate_pivot_points_and_trades(df):
             'S2': s2,
         })
     
-    # Merge pivot points with main DataFrame
     pivot_df = pd.DataFrame(pivot_data)
     df = df.merge(pivot_df, on='Date', how='left')
     
-    # Execute momentum trading strategy
-    for i in range(7, len(df) - 3):  # Ensure 3 days ahead for closing
+    for i in range(7, len(df) - 3):
         row = df.iloc[i]
         open_price = row['Open']
         
@@ -126,7 +117,28 @@ def calculate_pivot_points_and_trades(df):
     
     return df, trades_df
 
-# Load data from uploaded file
+# Calculate drawdown
+def calculate_drawdown(trades_df):
+    if trades_df.empty:
+        return 0, 0
+    
+    cumulative_pnl = trades_df['Cumulative PnL'].values
+    peak = cumulative_pnl[0]
+    max_drawdown = 0
+    peak_value = peak
+    
+    for value in cumulative_pnl:
+        if value > peak:
+            peak = value
+            peak_value = peak
+        drawdown = peak - value
+        if drawdown > max_drawdown:
+            max_drawdown = drawdown
+    
+    max_drawdown_percent = (max_drawdown / peak_value * 100) if peak_value != 0 else 0
+    return max_drawdown, max_drawdown_percent
+
+# Load data
 df = load_data(uploaded_file)
 if df is None:
     st.stop()
@@ -134,26 +146,55 @@ if df is None:
 # Calculate pivot points and trades
 df, trades_df = calculate_pivot_points_and_trades(df)
 
-# Display metrics
-st.subheader("Metryki Strategii")
+# Calculate metrics
 total_trades = len(trades_df)
 buy_trades = len(trades_df[trades_df['Direction'] == 'BUY'])
 sell_trades = len(trades_df[trades_df['Direction'] == 'SELL'])
 winning_trades = len(trades_df[trades_df['PnL'] > 0]) if total_trades > 0 else 0
 win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
 total_pnl = trades_df['PnL'].sum() if total_trades > 0 else 0
-no_trade_days = len(df) - total_trades
+total_pnl_percent = (total_pnl / trades_df['Entry Price'].mean() * 100) if total_trades > 0 else 0
+max_drawdown, max_drawdown_percent = calculate_drawdown(trades_df)
 
+# Annual PnL percentage
+annual_pnl = []
+if not trades_df.empty:
+    trades_df['Year'] = trades_df['Exit Date'].dt.year
+    for year in trades_df['Year'].unique():
+        year_trades = trades_df[trades_df['Year'] == year]
+        year_pnl = year_trades['PnL'].sum()
+        year_avg_entry = year_trades['Entry Price'].mean()
+        year_pnl_percent = (year_pnl / year_avg_entry * 100) if year_avg_entry != 0 else 0
+        annual_pnl.append({'Year': year, 'PnL (PLN)': year_pnl, 'PnL %': year_pnl_percent})
+annual_pnl_df = pd.DataFrame(annual_pnl)
+
+# Display metrics
+st.subheader("Metryki Strategii")
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Całkowita liczba dni", len(df))
 col2.metric("Dni handlowe", total_trades)
 col3.metric("Wskaźnik wygranych", f"{win_rate:.1f}%")
-col4.metric("Całkowity PnL", f"{total_pnl:.4f}")
+col4.metric("Całkowity PnL (PLN)", f"{total_pnl:.4f}")
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Transakcje BUY", f"{buy_trades} ({(buy_trades/total_trades*100):.1f}%)" if total_trades > 0 else "0 (0%)")
 col2.metric("Transakcje SELL", f"{sell_trades} ({(sell_trades/total_trades*100):.1f}%)" if total_trades > 0 else "0 (0%)")
-col3.metric("Dni bez handlu", no_trade_days)
+col3.metric("Całkowity PnL %", f"{total_pnl_percent:.2f}%")
+col4.metric("Maksymalny Drawdown (PLN)", f"{max_drawdown:.4f}")
+
+col1, col2 = st.columns(2)
+col1.metric("Dni bez handlu", len(df) - total_trades)
+col2.metric("Maksymalny Drawdown %", f"{max_drawdown_percent:.2f}%")
+
+# Annual PnL table
+st.subheader("Roczny Wynik Procentowy")
+if not annual_pnl_df.empty:
+    annual_display = annual_pnl_df.copy()
+    annual_display['PnL (PLN)'] = annual_display['PnL (PLN)'].round(4)
+    annual_display['PnL %'] = annual_display['PnL %'].round(2)
+    st.dataframe(annual_display, use_container_width=True)
+else:
+    st.write("Brak danych rocznych do wyświetlenia.")
 
 # Strategy rules
 st.subheader("Zasady Strategii Momentum")
@@ -190,13 +231,35 @@ if not trades_df.empty:
 else:
     st.write("Brak zrealizowanych transakcji.")
 
-# Cumulative PnL plot
+# Cumulative PnL plot with drawdown highlight
 st.subheader("Wykres Skumulowanego PnL")
 if not trades_df.empty:
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(trades_df['Exit Date'], trades_df['Cumulative PnL'], marker='o', color='blue', label='Skumulowany PnL')
+    
+    # Highlight max drawdown
+    if max_drawdown > 0:
+        cumulative_pnl = trades_df['Cumulative PnL'].values
+        peak_idx = 0
+        peak_value = cumulative_pnl[0]
+        trough_idx = 0
+        max_drawdown_temp = 0
+        
+        for i, value in enumerate(cumulative_pnl):
+            if value > peak_value:
+                peak_value = value
+                peak_idx = i
+            drawdown = peak_value - value
+            if drawdown > max_drawdown_temp:
+                max_drawdown_temp = drawdown
+                trough_idx = i
+        
+        if max_drawdown_temp > 0:
+            ax.plot([trades_df['Exit Date'].iloc[peak_idx], trades_df['Exit Date'].iloc[trough_idx]],
+                    [cumulative_pnl[peak_idx], cumulative_pnl[trough_idx]], 'r--', label='Maksymalny Drawdown')
+    
     ax.set_xlabel("Data Zamknięcia")
-    ax.set_ylabel("Skumulowany Zysk/Strata (PnL)")
+    ax.set_ylabel("Skumulowany Zysk/Strata (PLN)")
     ax.grid(True, linestyle='--', alpha=0.7)
     ax.legend()
     plt.xticks(rotation=45)
