@@ -93,7 +93,7 @@ def calculate_pivot_points_and_trades(df, holding_days, stop_loss_percent, pair_
         row = df.iloc[i]
         open_price = row['Open']
         
-        if pd.isna(row['S1']):
+        if pd.isna(row.get('S1')):
             continue
         
         # BUY: Open price below S2
@@ -391,17 +391,29 @@ else:
 for pair_name, df in dfs.items():
     st.subheader(f"Wyniki dla {pair_name}")
     
-    # Pivot points table
-    st.markdown("**Tabela Punktów Pivot**")
-    pivot_display = df[['Date', 'Pivot', 'S1', 'S2', 'R1', 'R2']].dropna().reset_index(drop=True)
-    pivot_display['Date'] = pivot_display['Date'].dt.strftime('%Y-%m-%d')
-    for col in ['Pivot', 'S1', 'S2', 'R1', 'R2']:
-        pivot_display[col] = pivot_display[col].round(4)
-    st.dataframe(pivot_display, use_container_width=True)
+    # Check if pivot columns exist before displaying
+    pivot_columns = ['Pivot', 'S1', 'S2', 'R1', 'R2']
+    existing_pivot_columns = [col for col in pivot_columns if col in df.columns]
+    
+    if existing_pivot_columns:
+        # Pivot points table
+        st.markdown("**Tabela Punktów Pivot**")
+        columns_to_display = ['Date'] + existing_pivot_columns
+        pivot_display = df[columns_to_display].dropna().reset_index(drop=True)
+        
+        if not pivot_display.empty:
+            pivot_display['Date'] = pivot_display['Date'].dt.strftime('%Y-%m-%d')
+            for col in existing_pivot_columns:
+                pivot_display[col] = pivot_display[col].round(4)
+            st.dataframe(pivot_display, use_container_width=True)
+        else:
+            st.write("Brak danych pivot points (za mało danych historycznych - wymagane minimum 7 dni).")
+    else:
+        st.write("Brak danych pivot points (za mało danych historycznych - wymagane minimum 7 dni).")
     
     # Trades table
     st.markdown("**Zrealizowane Transakcje**")
-    trades_df = portfolio_trades[portfolio_trades['Pair'] == pair_name]
+    trades_df = portfolio_trades[portfolio_trades['Pair'] == pair_name] if not portfolio_trades.empty else pd.DataFrame()
     if not trades_df.empty:
         trades_display = trades_df.copy()
         trades_display['Entry Date'] = trades_display['Entry Date'].dt.strftime('%Y-%m-%d')
@@ -418,11 +430,12 @@ if uploaded_files:
     for file in uploaded_files:
         df = dfs.get(file.name, pd.DataFrame())
         if not df.empty:
+            trade_count = len(portfolio_trades[portfolio_trades['Pair'] == file.name]) if not portfolio_trades.empty else 0
             st.markdown(f"""
             - **Plik**: {file.name}
             - **Przetworzone wiersze**: {len(df)}
             - **Zakres dat**: {df['Date'].min().strftime('%Y-%m-%d')} do {df['Date'].max().strftime('%Y-%m-%d')}
-            - **Sygnały handlowe**: {len(portfolio_trades[portfolio_trades['Pair'] == file.name])}
+            - **Sygnały handlowe**: {trade_count}
             """)
 else:
     st.markdown("Brak wczytanych plików.")
