@@ -1415,7 +1415,7 @@ def main():
     else:
         st.info("🔄 Oczekiwanie na wycenę dealerską...")
     
-    tab1, tab2, tab3 = st.tabs(["🔧 Panel Dealerski", "🛡️ Panel Zabezpieczeń", "📅 Kalendarz FX"])
+    tab1, tab2, tab3 = st.tabs(["🔧 Panel Dealerski", "🛡️ Panel Zabezpieczeń", "📊 Model Dwumianowy"])
     
     with tab1:
         create_dealer_panel()
@@ -1424,11 +1424,7 @@ def main():
         create_client_hedging_advisor()
     
     with tab3:
-        create_fx_calendar()
-    
-    # Footer
-    st.divider()
-    st.caption("Zintegrowana Platforma FX - System wyceny transakcji forward EUR/PLN z kalendarzem")
+        create_binomial_model_panel()
 
 if __name__ == "__main__":
     main()
