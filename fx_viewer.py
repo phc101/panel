@@ -1,4 +1,4 @@
-import streamlit as st
+st.success(f"**Miesiąc**: {get_polish_month_name(st.session_state.current_month)}")import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import calendar
@@ -361,60 +361,118 @@ with tab1:
         st.session_state.current_month.month
     )
     
-    # Wyświetlanie kalendarza w kolumnach
-    cols_per_row = 5
-    for i in range(0, len(working_days), cols_per_row):
-        cols = st.columns(cols_per_row)
+    # Nagłówki dni tygodnia
+    st.markdown("### Kalendarz Forward")
+    header_cols = st.columns(5)
+    days = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek']
+    for i, day in enumerate(days):
+        with header_cols[i]:
+            st.markdown(f"<div style='text-align: center; font-weight: bold; background-color: #f0f2f6; padding: 8px; border-radius: 5px; margin-bottom: 10px;'>{day}</div>", unsafe_allow_html=True)
+    
+    # Grupowanie dni roboczych w tygodnie
+    weeks = []
+    current_week = []
+    
+    for day_data in working_days:
+        weekday = day_data['date'].weekday()  # 0=poniedziałek
         
-        for j, col in enumerate(cols):
-            if i + j < len(working_days):
-                day_data = working_days[i + j]
-                date_str = day_data['date_str']
-                
-                with col:
-                    with st.container(border=True):
-                        # Nagłówek dnia
-                        st.markdown(f"**{day_data['day_of_month']}** ({day_data['date'].strftime('%a')})")
-                        
-                        # Wybór okna czasowego
+        # Jeśli to poniedziałek i mamy już jakieś dni, rozpocznij nowy tydzień
+        if weekday == 0 and current_week:
+            weeks.append(current_week)
+            current_week = []
+        
+        current_week.append((weekday, day_data))
+    
+    # Dodaj ostatni tydzień
+    if current_week:
+        weeks.append(current_week)
+    
+    # Wyświetl tygodnie
+    for week_num, week in enumerate(weeks):
+        st.markdown(f"**Tydzień {week_num + 1}** ({format_polish_date(week[0][1]['date'])} - {format_polish_date(week[-1][1]['date'])})")
+        
+        cols = st.columns(5)
+        
+        for weekday in range(5):  # Poniedziałek=0 do Piątek=4
+            day_found = False
+            for day_weekday, day_data in week:
+                if day_weekday == weekday:
+                    date_str = day_data['date_str']
+                    
+                    with cols[weekday]:
+                        # Pobierz wartości z session state
                         window_key = f"window_{date_str}"
-                        window_days = st.selectbox(
-                            "Okno:",
-                            [30, 60, 90],
-                            index=1,  # domyślnie 60
-                            key=window_key
-                        )
-                        
-                        # Input wolumenu
                         volume_key = f"volume_{date_str}"
-                        volume = st.number_input(
-                            "Wolumen EUR:",
-                            min_value=0,
-                            value=0,
-                            step=10000,
-                            key=volume_key
-                        )
+                        
+                        window_days = st.session_state.get(window_key, 60)
+                        volume = st.session_state.get(volume_key, 0)
                         
                         # Obliczenia
                         forward_calc = calculate_forward_rate(day_data['date'], window_days, pl_yield, de_yield)
                         settlement_date = calculate_settlement_date(day_data['date'], window_days)
                         rate_advantage = ((forward_calc['client_rate'] - SPOT_RATE) / SPOT_RATE) * 100
                         
-                        # Wyświetlanie wyników
-                        st.metric(
-                            "Forward Rate",
-                            f"{forward_calc['client_rate']:.4f}",
-                            f"{rate_advantage:+.2f}%"
+                        # Styl kafelka jak na obrazku
+                        advantage_color = "color: red;" if rate_advantage < 0 else "color: green;"
+                        
+                        kafelek_html = f"""
+                        <div style='
+                            border: 1px solid #ddd; 
+                            border-radius: 5px; 
+                            padding: 8px; 
+                            margin-bottom: 5px; 
+                            background: white;
+                            font-size: 12px;
+                            min-height: 140px;
+                        '>
+                            <div style='font-size: 16px; font-weight: bold; text-align: right; margin-bottom: 5px;'>{day_data['day_of_month']}</div>
+                            <div style='color: #0066cc; font-weight: bold; font-size: 13px;'>Forward: {forward_calc['client_rate']:.4f}</div>
+                            <div style='{advantage_color} font-weight: bold; font-size: 12px;'>vs Spot: {rate_advantage:+.2f}%</div>
+                            <div style='color: #666; font-size: 11px;'>Dni: {forward_calc['days_to_maturity']} | Pkt: {forward_calc['net_client_points']:+.4f}</div>
+                            <div style='color: #666; font-size: 11px; margin-top: 3px;'>Rozliczenie: {format_polish_date(settlement_date)}</div>
+                        </div>
+                        """
+                        
+                        st.markdown(kafelek_html, unsafe_allow_html=True)
+                        
+                        # Kontrolki pod kafelkiem
+                        new_window = st.selectbox(
+                            "", 
+                            [30, 60, 90], 
+                            index=[30, 60, 90].index(window_days),
+                            key=f"select_{date_str}",
+                            format_func=lambda x: f"{x} dni"
                         )
                         
-                        st.caption(f"Rozliczenie: {format_polish_date(settlement_date)}")
-                        st.caption(f"Dni: {forward_calc['days_to_maturity']} | Pkt: {forward_calc['net_client_points']:+.4f}")
+                        new_volume = st.number_input(
+                            "", 
+                            min_value=0, 
+                            value=volume,
+                            step=10000,
+                            key=f"vol_{date_str}",
+                            placeholder="Wolumen EUR"
+                        )
                         
-                        # Przycisk dodawania
-                        if st.button("➕ Dodaj", key=f"add_{date_str}", use_container_width=True):
-                            add_to_quote(day_data, window_days, forward_calc, settlement_date, volume, pl_yield, de_yield)
-                            st.success("Dodano do wyceny!")
+                        # Aktualizuj session state
+                        st.session_state[window_key] = new_window
+                        st.session_state[volume_key] = new_volume
+                        
+                        # Przycisk dodawania - mniejszy
+                        if st.button("+ Do wyceny", key=f"add_{date_str}", use_container_width=True):
+                            # Przelicz z nowymi wartościami
+                            final_calc = calculate_forward_rate(day_data['date'], new_window, pl_yield, de_yield)
+                            final_settlement = calculate_settlement_date(day_data['date'], new_window)
+                            add_to_quote(day_data, new_window, final_calc, final_settlement, new_volume, pl_yield, de_yield)
+                            st.success("✓")
                             st.rerun()
+                    
+                    day_found = True
+                    break
+            
+            # Pusta kolumna dla dni, które nie są w tym tygodniu
+            if not day_found:
+                with cols[weekday]:
+                    st.markdown("<div style='height: 200px;'></div>", unsafe_allow_html=True)
 
 with tab2:
     st.header("Lista Transakcji Forward")
