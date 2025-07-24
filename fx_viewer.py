@@ -366,7 +366,7 @@ def create_binomial_tree(spot, volatility, days, p=0.5):
 def render_header():
     st.markdown("""
     <div class="main-header">
-        <h1>🚀 Professional FX Calculator</h1>
+        <h1>Professional FX Calculator</h1>
         <p>Advanced EUR/PLN Forward Pricing & Hedging Platform</p>
         <p>Alpha Vantage • NBP • Real-time Market Data</p>
     </div>
@@ -638,17 +638,17 @@ def main():
         config = st.session_state.dealer_config
         st.markdown(f"""
         <div class="sync-status">
-            ✅ System Synchronized | Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} days | Source: {config['spot_source']}
+            System Synchronized | Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} days | Source: {config['spot_source']}
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.info("🔄 Waiting for dealer configuration...")
+        st.info("Waiting for dealer configuration...")
     
     # Main tabs
     tab1, tab2, tab3 = st.tabs([
-        "🔧 Dealer Panel", 
-        "🛡️ Client Hedging", 
-        "📊 Binomial Model"
+        "Dealer Panel", 
+        "Client Hedging", 
+        "Binomial Model"
     ])
     
     with tab1:
@@ -841,17 +841,17 @@ if __name__ == "__main__":
             st.metric("Portfolio Margin", f"{profit_margin:.3f}%")
 
 def render_client_panel():
-    st.header("🛡️ Client Hedging Panel")
+    st.header("Client Hedging Panel")
     
     if not st.session_state.pricing_data:
-        st.warning("⚠️ No dealer pricing available. Please configure dealer panel first.")
+        st.warning("No dealer pricing available. Please configure dealer panel first.")
         return
     
     config = st.session_state.dealer_config
     
     st.markdown(f"""
     <div class="sync-status">
-        ✅ Pricing Synchronized | Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} days
+        Pricing Synchronized | Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} days
     </div>
     """, unsafe_allow_html=True)
     
@@ -866,10 +866,10 @@ def render_client_panel():
         show_windows = st.checkbox("Show Settlement Windows", value=False)
     
     with col3:
-        st.info(f"💼 Window Flexibility: **{config['window_days']} days**")
+        st.info(f"Window Flexibility: **{config['window_days']} days**")
     
     # Generate client rates
-    st.subheader("💱 Available Forward Rates")
+    st.subheader("Available Forward Rates")
     
     client_data = []
     spot_rate = config['spot_rate']
@@ -884,16 +884,16 @@ def render_client_panel():
         
         # Recommendation logic
         if rate_advantage > 0.5:
-            recommendation = "🟢 Excellent"
+            recommendation = "Excellent"
             rec_class = "recommendation-excellent"
         elif rate_advantage > 0.2:
-            recommendation = "🟡 Good"
+            recommendation = "Good"
             rec_class = "recommendation-good"
         elif rate_advantage > 0:
-            recommendation = "🟠 Acceptable"
+            recommendation = "Acceptable"
             rec_class = "recommendation-ok"
         else:
-            recommendation = "🔴 Consider Spot"
+            recommendation = "Consider Spot"
             rec_class = "recommendation-poor"
         
         row_data = {
@@ -934,7 +934,7 @@ def render_client_panel():
     st.dataframe(styled_df, use_container_width=True, height=400, hide_index=True)
     
     # Summary metrics
-    st.subheader("📊 Hedging Strategy Summary")
+    st.subheader("Hedging Strategy Summary")
     
     avg_client_rate = np.mean([float(data["Forward Rate"]) for data in client_data])
     avg_benefit = np.mean([float(data["vs Spot"].rstrip('%')) for data in client_data])
@@ -968,7 +968,7 @@ def render_client_panel():
         """, unsafe_allow_html=True)
     
     # Visual comparison
-    st.subheader("📈 Visual Rate Comparison")
+    st.subheader("Visual Rate Comparison")
     
     # Prepare data for plotting
     tenors = [data["Tenor"] for data in client_data]
@@ -1017,16 +1017,28 @@ def render_client_panel():
         hovermode='x unified'
     )
     
+    st.plotly_chart(fig, use_container_width=True)f} PLN<extra></extra>'
+    ))
+    
+    fig.update_layout(
+        title="Forward Rates vs Spot Rate + PLN Benefits",
+        xaxis_title="Tenor",
+        yaxis_title="EUR/PLN Rate",
+        yaxis2=dict(title="Benefit (PLN)", overlaying='y', side='right'),
+        height=500,
+        hovermode='x unified'
+    )
+    
     st.plotly_chart(fig, use_container_width=True)
 
 def render_binomial_model():
-    st.header("📊 Binomial Tree Model")
+    st.header("Binomial Tree Model")
     st.markdown("*5-day EUR/PLN forecast using binomial option pricing methodology*")
     
     # Get current market data
     forex_api = RobustAlphaVantageAPI()
     
-    with st.spinner("📡 Loading market data..."):
+    with st.spinner("Loading market data..."):
         current_forex = forex_api.get_eur_pln_rate()
         historical_data = forex_api.get_historical_data(30)
     
@@ -1043,4 +1055,235 @@ def render_binomial_model():
         """, unsafe_allow_html=True)
     
     with col2:
+        st.markdown(f"""
+        <div class="api-status">
+            <h4>Historical Data</h4>
+            <p><strong>Points:</strong> {historical_data['count']}</p>
+            <p><strong>Source:</strong> {historical_data['source']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Calculate empirical volatility
+    try:
+        if historical_data['success'] and len(historical_data['rates']) >= 15:
+            rates = historical_data['rates']
+            returns = [np.log(rates[i]/rates[i-1]) for i in range(1, len(rates))]
+            empirical_vol = np.std(returns)
+            empirical_mean = np.mean(returns)
+            
+            # Simple probability estimation
+            positive_moves = sum(1 for r in returns if r > 0)
+            p_up_empirical = positive_moves / len(returns)
+            
+            st.success(f"Empirical model: Vol={empirical_vol*100:.2f}% daily, P(up)={p_up_empirical:.3f}")
+        else:
+            raise Exception("Insufficient data")
+    except:
+        empirical_vol = 0.008
+        p_up_empirical = 0.5
+        st.warning("Using default parameters")
+    
+    # Model parameters
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        spot_rate = st.number_input("Starting Rate", value=current_forex['rate'], 
+                                  min_value=3.5, max_value=6.0, step=0.0001, format="%.4f")
+    
+    with col2:
+        days = st.selectbox("Forecast Horizon", [3, 5, 7, 10], index=1)
+    
+    with col3:
+        use_empirical = st.checkbox("Use Empirical Parameters", value=True)
+        
+        if use_empirical:
+            volatility = empirical_vol
+            p_up = p_up_empirical
+            st.info(f"Vol: {volatility*100:.2f}%")
+        else:
+            volatility = st.slider("Daily Volatility (%)", 0.1, 2.0, 0.8, 0.1) / 100
+            p_up = st.slider("Up Probability", 0.3, 0.7, 0.5, 0.01)
+    
+    # Generate binomial tree
+    if st.button("Generate Tree Model"):
+        tree, most_probable_path = create_binomial_tree(spot_rate, volatility, days, p_up)
+        
+        # Final prediction
+        st.subheader("Model Forecast")
+        
+        final_j = most_probable_path[days]
+        predicted_rate = tree[days][final_j]
+        change_pct = ((predicted_rate - spot_rate) / spot_rate) * 100
+        
+        final_prob = calculate_binomial_coeff(days, final_j) * (p_up ** final_j) * ((1 - p_up) ** (days - final_j))
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(f"Forecast ({days} days)", f"{predicted_rate:.4f}", delta=f"{change_pct:+.2f}%")
+        
+        with col2:
+            st.metric("Path Probability", f"{final_prob*100:.1f}%")
+        
+        with col3:
+            all_final_rates = [tree[days][j] for j in range(days + 1)]
+            rate_range = max(all_final_rates) - min(all_final_rates)
+            st.metric("Rate Range", f"{rate_range:.4f}")
+        
+        # All possible outcomes
+        st.subheader("All Possible Outcomes")
+        
+        outcomes = []
+        for j in range(days + 1):
+            final_rate = tree[days][j]
+            prob = calculate_binomial_coeff(days, j) * (p_up ** j) * ((1 - p_up) ** (days - j))
+            change = ((final_rate - spot_rate) / spot_rate) * 100
+            
+            is_most_probable = (j == final_j)
+            
+            outcomes.append({
+                "Scenario": f"{j} up, {days-j} down",
+                "Final Rate": f"{final_rate:.4f}",
+                "Change %": f"{change:+.2f}%",
+                "Probability": f"{prob*100:.1f}%",
+                "Most Likely": "YES" if is_most_probable else ""
+            })
+        
+        df_outcomes = pd.DataFrame(outcomes)
+        st.dataframe(df_outcomes, use_container_width=True, hide_index=True)
+        
+        # Visualization
+        st.subheader("Binomial Tree Visualization")
+        
+        try:
+            fig = go.Figure()
+            
+            # Plot all nodes
+            for day in range(days + 1):
+                for j in range(day + 1):
+                    rate = tree[day][j]
+                    x = day
+                    y = j - day/2
+                    
+                    is_on_path = (j == most_probable_path[day])
+                    
+                    # Node
+                    fig.add_trace(go.Scatter(
+                        x=[x], y=[y],
+                        mode='markers',
+                        marker=dict(
+                            size=25 if is_on_path else 18,
+                            color='#ff6b35' if is_on_path else '#2e68a5',
+                            line=dict(width=3, color='white')
+                        ),
+                        showlegend=False,
+                        hovertemplate=f"Day {day}<br>Rate: {rate:.4f}<br>Node: {j}<extra></extra>",
+                        name=f"node_{day}_{j}"
+                    ))
+                    
+                    # Rate label
+                    fig.add_trace(go.Scatter(
+                        x=[x], y=[y + 0.3],
+                        mode='text',
+                        text=f"{rate:.4f}",
+                        textfont=dict(
+                            size=12 if is_on_path else 10,
+                            color='#ff6b35' if is_on_path else '#2e68a5'
+                        ),
+                        showlegend=False,
+                        hoverinfo='skip',
+                        name=f"label_{day}_{j}"
+                    ))
+                    
+                    # Connections
+                    if day < days:
+                        # Up connection
+                        if j < day + 1:
+                            next_y_up = (j + 1) - (day + 1)/2
+                            is_path_connection = (j == most_probable_path[day] and (j + 1) == most_probable_path[day + 1])
+                            
+                            fig.add_trace(go.Scatter(
+                                x=[x, x + 1], y=[y, next_y_up],
+                                mode='lines',
+                                line=dict(
+                                    color='#ff6b35' if is_path_connection else 'lightgray',
+                                    width=4 if is_path_connection else 1
+                                ),
+                                showlegend=False,
+                                hoverinfo='skip',
+                                name=f"up_{day}_{j}"
+                            ))
+                        
+                        # Down connection
+                        if j >= 0:
+                            next_y_down = j - (day + 1)/2
+                            is_path_connection = (j == most_probable_path[day] and j == most_probable_path[day + 1])
+                            
+                            fig.add_trace(go.Scatter(
+                                x=[x, x + 1], y=[y, next_y_down],
+                                mode='lines',
+                                line=dict(
+                                    color='#ff6b35' if is_path_connection else 'lightgray',
+                                    width=4 if is_path_connection else 1
+                                ),
+                                showlegend=False,
+                                hoverinfo='skip',
+                                name=f"down_{day}_{j}"
+                            ))
+            
+            # Legend
+            fig.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(size=25, color='#ff6b35'),
+                name='Most Probable Path',
+                showlegend=True
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers', 
+                marker=dict(size=18, color='#2e68a5'),
+                name='Other Possible Rates',
+                showlegend=True
+            ))
+            
+            fig.update_layout(
+                title=f"EUR/PLN Binomial Tree - {days} Day Forecast",
+                xaxis_title="Day",
+                yaxis_title="Tree Level",
+                height=600,
+                showlegend=True,
+                hovermode='closest'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Visualization error: {str(e)}")
+            st.info("Tree calculation completed successfully. Visualization temporarily unavailable.")
+        
+        # Statistical summary
+        st.subheader("Statistical Summary")
+        
+        all_rates = [tree[days][j] for j in range(days + 1)]
+        all_probs = [calculate_binomial_coeff(days, j) * (p_up ** j) * ((1 - p_up) ** (days - j)) for j in range(days + 1)]
+        
+        expected_rate = sum(rate * prob for rate, prob in zip(all_rates, all_probs))
+        variance = sum(((rate - expected_rate) ** 2) * prob for rate, prob in zip(all_rates, all_probs))
+        std_dev = math.sqrt(variance)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Expected Rate", f"{expected_rate:.4f}")
+        
+        with col2:
+            st.metric("Standard Deviation", f"{std_dev:.4f}")
+        
+        with col3:
+            st.metric("Min Possible", f"{min(all_rates):.4f}")
+        
+        with col4:
+            st.metric("Max Possible", f"{max(all_rates):.4f}")
         st.markdown(f"""
