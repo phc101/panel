@@ -1,4 +1,6 @@
-st.success(f"**Miesiąc**: {get_polish_month_name(st.session_state.current_month)}")import streamlit as st
+st.success(f"**Miesiąc**: {get_polish_month_name(st.session_state.current_month)}")
+
+# Tabs
 import pandas as pd
 from datetime import datetime, timedelta
 import calendar
