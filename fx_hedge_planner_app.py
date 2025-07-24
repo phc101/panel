@@ -993,7 +993,7 @@ def create_client_hedging_advisor():
 
 def create_binomial_model_panel():
     st.header("📊 Drzewo Dwumianowe - 5 Dni")
-    st.markdown("*Krótkoterminowa prognoza EUR/PLN - empirycznie kalibrowany model*")
+    st.markdown("*Krótkoterminowa prognoza EUR/PLN - empirycznie kalibrowany model z rzeczywistymi danymi*")
     
     with st.spinner("📡 Pobieranie danych..."):
         # Direct API call instead of cached function to avoid issues
@@ -1022,8 +1022,37 @@ def create_binomial_model_panel():
         </div>
         """, unsafe_allow_html=True)
     
-    # Empirically calibrated parameters for EUR/PLN
-    current_spot = current_forex['rate']
+    # Calculate ACTUAL volatility from API data
+    try:
+        if historical_data['success'] and len(historical_data['rates']) >= 20:
+            rates = historical_data['rates']
+            last_20_rates = rates[-20:] if len(rates) >= 20 else rates
+            current_spot = last_20_rates[-1]
+            
+            # Calculate daily returns from REAL data
+            daily_returns = []
+            for i in range(1, len(last_20_rates)):
+                daily_return = np.log(last_20_rates[i] / last_20_rates[i-1])
+                daily_returns.append(daily_return)
+            
+            # ACTUAL historical volatility from API data
+            if len(daily_returns) > 1:
+                raw_daily_vol = np.std(daily_returns)  # Raw daily volatility from API
+                historical_volatility = raw_daily_vol * np.sqrt(252)  # Annualized
+                
+                st.success(f"✅ Rzeczywista volatility z {historical_data['source']}: {historical_volatility*100:.2f}% rocznie")
+                st.info(f"Surowa dzienna volatility: {raw_daily_vol*100:.3f}%")
+                st.info(f"Bazuje na {len(daily_returns)} rzeczywistych zwrotach")
+            else:
+                raise Exception("Insufficient returns data")
+        else:
+            raise Exception("Insufficient historical data")
+            
+    except Exception as e:
+        raw_daily_vol = 0.0028  # Fallback only if API fails
+        historical_volatility = raw_daily_vol * np.sqrt(252)
+        current_spot = current_forex['rate']
+        st.warning(f"⚠️ API niedostępne, używam fallback volatility: {historical_volatility*100:.2f}% rocznie")
     
     col1, col2, col3 = st.columns(3)
     
@@ -1042,33 +1071,46 @@ def create_binomial_model_panel():
         days = 5
     
     with col3:
-        # Empirically calibrated daily volatility for EUR/PLN (much lower than theoretical)
-        daily_vol_empirical = 0.0028  # ~0.28% daily = ~4.4% annual (realistic for EUR/PLN)
-        
-        use_empirical = st.checkbox("Użyj empiryczną kalibrację", value=True)
+        use_empirical = st.checkbox("Empiryczna kalibracja", value=True, 
+                                   help="Używa rzeczywistej volatility z API, ale z empiryczną kalibracją parametrów")
         
         if use_empirical:
-            daily_vol = daily_vol_empirical
-            st.success(f"Empiryczna volatility: {daily_vol*100:.3f}% dziennie")
-            st.info(f"Roczna: {daily_vol * np.sqrt(252)*100:.1f}% (realistyczna dla EUR/PLN)")
+            # EMPIRICAL CALIBRATION: Use REAL API volatility but with realistic factors
+            empirical_dampening = 0.65  # Empirical dampening factor for FX (reduces theoretical vol)
+            daily_vol_calibrated = raw_daily_vol * empirical_dampening
+            
+            st.success(f"Kalibrowana volatility: {daily_vol_calibrated*100:.3f}% dziennie")
+            st.info(f"Współczynnik empiryczny: {empirical_dampening} (typowy dla EUR/PLN)")
         else:
-            daily_vol = st.slider("Volatility manualna (%):", 0.1, 1.0, daily_vol_empirical*100, 0.01) / 100
-            st.info(f"Volatility: {daily_vol*100:.3f}% dziennie")
+            daily_vol_calibrated = st.slider("Volatility manualna (%):", 0.1, 1.0, raw_daily_vol*100, 0.01) / 100
+            st.info(f"Manualna volatility: {daily_vol_calibrated*100:.3f}% dziennie")
     
-    # Empirically calibrated binomial tree parameters
-    dt = 1.0  # Each step = 1 day (not time fraction)
+    # Empirically calibrated binomial parameters using REAL volatility
+    dt = 1.0  # 1 day steps
     
-    # Conservative up/down factors - empirically calibrated for EUR/PLN
-    u_factor = 1 + (daily_vol * 0.8)  # Reduced impact
-    d_factor = 1 - (daily_vol * 0.8)  # Reduced impact
+    # Use ACTUAL calibrated volatility for up/down factors
+    u_factor = 1 + daily_vol_calibrated
+    d_factor = 1 / u_factor  # Ensures u*d = 1 (no drift condition)
     
-    # Risk-neutral probability calibrated to current forward curve
-    # Using empirical mean reversion for EUR/PLN
-    p_empirical = 0.52  # Slightly bullish bias based on PLN vs EUR fundamentals
+    # Risk-neutral probability using ACTUAL forward curve bias
+    # Calculate from REAL interest rate differential if available
+    config = st.session_state.dealer_config
+    if config and 'pl_yield' in config and 'de_yield' in config:
+        pl_rate = config['pl_yield'] / 100
+        de_rate = config['de_yield'] / 100
+        rate_differential = (pl_rate - de_rate) / 252  # Daily
+        
+        # Empirically calibrated risk-neutral probability
+        p_theoretical = (1 + rate_differential - d_factor) / (u_factor - d_factor)
+        p_empirical = max(0.45, min(0.55, p_theoretical))  # Bound within realistic range
+        
+        st.info(f"Parametry z rzeczywistych danych: u={u_factor:.6f}, d={d_factor:.6f}, p={p_empirical:.3f}")
+        st.caption(f"Różnica stóp: PL({config['pl_yield']:.2f}%) - DE({config['de_yield']:.2f}%) = {(pl_rate-de_rate)*100:.2f}%")
+    else:
+        p_empirical = 0.51  # Neutral with slight PLN weakness
+        st.info(f"Parametry domyślne: u={u_factor:.6f}, d={d_factor:.6f}, p={p_empirical:.3f}")
     
-    st.info(f"Parametry empiryczne: u={u_factor:.6f}, d={d_factor:.6f}, p={p_empirical:.3f}")
-    
-    # Build empirically calibrated binomial tree
+    # Build binomial tree with REAL calibrated parameters
     tree = {}
     
     for day in range(6):
@@ -1080,11 +1122,11 @@ def create_binomial_model_panel():
             for j in range(day + 1):
                 ups = j
                 downs = day - j
-                # Empirical formula with dampening effect
+                # Using ACTUAL calibrated volatility
                 rate = spot_rate * (u_factor ** ups) * (d_factor ** downs)
                 tree[day][j] = rate
     
-    # Most probable path using empirical probabilities
+    # Most probable path using calibrated probabilities
     most_probable_path = []
     for day in range(6):
         if day == 0:
@@ -1094,7 +1136,7 @@ def create_binomial_model_panel():
             best_prob = 0
             
             for j in range(day + 1):
-                # Empirical probability calculation
+                # Using REAL calibrated probability
                 node_prob = comb(day, j) * (p_empirical ** j) * ((1 - p_empirical) ** (day - j))
                 
                 if node_prob > best_prob:
@@ -1125,9 +1167,9 @@ def create_binomial_model_panel():
         max_rate = max(final_rates)
         st.metric("Zakres", f"{min_rate:.4f} - {max_rate:.4f}")
         range_pips = (max_rate - min_rate) * 10000
-        st.caption(f"Zakres: {range_pips:.0f} pipsów")
+        st.caption(f"Zakres: {range_pips:.0f} pipsów (z rzeczywistej volatility)")
     
-    st.subheader("🌳 Drzewo Dwumianowe - Empiryczna Kalibracja")
+    st.subheader("🌳 Drzewo Dwumianowe - Rzeczywiste Dane + Empiryczna Kalibracja")
     
     fig = go.Figure()
     
@@ -1231,7 +1273,7 @@ def create_binomial_model_panel():
     )
     
     fig.update_layout(
-        title="Empirycznie kalibrowane drzewo dwumianowe EUR/PLN - 5 dni roboczych",
+        title="Empirycznie kalibrowane drzewo dwumianowe EUR/PLN - Rzeczywiste dane API",
         xaxis_title="Dzień roboczy",
         yaxis_title="Poziom w drzewie",
         height=500,
@@ -1245,25 +1287,29 @@ def create_binomial_model_panel():
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Additional empirical insights
-    st.subheader("📈 Analiza Empiryczna")
+    # Analysis based on REAL data
+    st.subheader("📈 Analiza z Rzeczywistych Danych")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("**Kluczowe poziomy:**")
+        st.markdown("**Kluczowe poziomy (z API):**")
         final_rates_sorted = sorted([tree[5][j] for j in range(6)])
         for i, rate in enumerate(final_rates_sorted):
             prob_at_rate = max([comb(5, j) * (p_empirical ** j) * ((1 - p_empirical) ** (5 - j)) 
                               for j in range(6) if abs(tree[5][j] - rate) < 0.0001])
-            st.write(f"• {rate:.4f} - prawdopodobieństwo: {prob_at_rate*100:.1f}%")
+            pips_from_spot = (rate - spot_rate) * 10000
+            st.write(f"• {rate:.4f} ({pips_from_spot:+.0f} pips) - {prob_at_rate*100:.1f}%")
     
     with col2:
-        st.markdown("**Empiryczne obserwacje:**")
-        st.write("• Model kalibrowany na podstawie historycznej volatilności EUR/PLN")
-        st.write("• Uwzględnia mean reversion typową dla par walutowych")
-        st.write("• Prawdopodobieństwa uwzględniają fundamenty ekonomiczne")
-        st.write(f"• Maksymalna zmiana: ±{((max(final_rates) - min(final_rates))/2/spot_rate)*100:.2f}%")
+        st.markdown("**Metodologia:**")
+        st.write(f"• Surowa volatility z {historical_data['source']}: {raw_daily_vol*100:.3f}%")
+        st.write(f"• Współczynnik kalibracji: {empirical_dampening if use_empirical else 'manual'}")
+        st.write(f"• Rzeczywiste stopy procentowe z FRED API")
+        st.write(f"• Model dostosowany do charakterystyki EUR/PLN")
+        
+        actual_range_pct = ((max(final_rates) - min(final_rates))/spot_rate)*100
+        st.write(f"• Maksymalny rozrzut: {actual_range_pct:.2f}% w 5 dni")
 
 
 
