@@ -95,8 +95,8 @@ def get_bond_yields():
 
 def get_polish_month_name(date: datetime) -> str:
     months = [
-        'Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec',
-        'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień'
+        'Styczen', 'Luty', 'Marzec', 'Kwiecien', 'Maj', 'Czerwiec',
+        'Lipiec', 'Sierpien', 'Wrzesien', 'Pazdziernik', 'Listopad', 'Grudzien'
     ]
     return f"{months[date.month - 1]} {date.year}"
 
@@ -366,7 +366,7 @@ with tab1:
     # Nagłówki dni tygodnia
     st.markdown("### Kalendarz Forward")
     header_cols = st.columns(5)
-    days = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek']
+    days = ['Poniedzialek', 'Wtorek', 'Sroda', 'Czwartek', 'Piatek']
     for i, day in enumerate(days):
         with header_cols[i]:
             st.markdown(f"<div style='text-align: center; font-weight: bold; background-color: #f0f2f6; padding: 8px; border-radius: 5px; margin-bottom: 10px;'>{day}</div>", unsafe_allow_html=True)
@@ -395,7 +395,7 @@ with tab1:
         
         cols = st.columns(5)
         
-        for weekday in range(5):  # Poniedziałek=0 do Piątek=4
+        for weekday in range(5):  # Poniedzialek=0 do Piatek=4
             day_found = False
             for day_weekday, day_data in week:
                 if day_weekday == weekday:
@@ -465,7 +465,7 @@ with tab1:
                             final_calc = calculate_forward_rate(day_data['date'], new_window, pl_yield, de_yield)
                             final_settlement = calculate_settlement_date(day_data['date'], new_window)
                             add_to_quote(day_data, new_window, final_calc, final_settlement, new_volume, pl_yield, de_yield)
-                            st.success("✓")
+                            st.success("Dodano!")
                             st.rerun()
                     
                     day_found = True
