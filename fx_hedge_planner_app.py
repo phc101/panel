@@ -5,8 +5,6 @@ import plotly.graph_objects as go
 import requests
 from datetime import datetime, timedelta
 import math
-import calendar
-from typing import Dict, List, Tuple
 from scipy.stats import norm
 from math import comb
 
