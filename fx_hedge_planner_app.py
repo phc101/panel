@@ -991,6 +991,274 @@ def create_client_hedging_advisor():
     else:
         st.info("📋 Brak kontraktów. Dodaj pierwszy kontrakt Forward Elastyczny.")
 
+def create_binomial_model_panel():
+    st.header("📊 Drzewo Dwumianowe - 5 Dni")
+    st.markdown("*Krótkoterminowa prognoza EUR/PLN*")
+    
+    with st.spinner("📡 Pobieranie danych..."):
+        # Direct API call instead of cached function to avoid issues
+        alpha_api = AlphaVantageAPI()
+        historical_data = alpha_api.get_historical_eur_pln(30)
+        current_forex = get_eur_pln_rate()
+    
+    # Data source info
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="alpha-api">
+            <h4 style="margin: 0;">📈 Kurs Bieżący</h4>
+            <p style="margin: 0;">Rate: {current_forex['rate']:.4f}</p>
+            <p style="margin: 0;">Source: {current_forex['source']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="alpha-api">
+            <h4 style="margin: 0;">📊 Dane Historyczne</h4>
+            <p style="margin: 0;">Points: {historical_data['count']}</p>
+            <p style="margin: 0;">Source: {historical_data['source']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Calculate volatility from historical data
+    try:
+        if historical_data['success'] and len(historical_data['rates']) >= 20:
+            rates = historical_data['rates']
+            last_20_rates = rates[-20:] if len(rates) >= 20 else rates
+            current_spot = last_20_rates[-1]
+            
+            # Calculate daily returns
+            daily_returns = []
+            for i in range(1, len(last_20_rates)):
+                daily_return = np.log(last_20_rates[i] / last_20_rates[i-1])
+                daily_returns.append(daily_return)
+            
+            # Historical volatility (annualized)
+            if len(daily_returns) > 1:
+                historical_volatility = np.std(daily_returns) * np.sqrt(252)  # Annualized
+                daily_vol_historical = historical_volatility / np.sqrt(252)  # Daily
+                
+                st.success(f"✅ Volatility z Alpha Vantage: {historical_volatility*100:.2f}% rocznie")
+                st.info(f"Dzienna volatility: {daily_vol_historical*100:.2f}%")
+                st.info(f"Bazuje na {len(daily_returns)} dziennych zwrotach")
+            else:
+                raise Exception("Insufficient returns data")
+        else:
+            raise Exception("Insufficient historical data")
+            
+    except Exception as e:
+        daily_vol_historical = 0.0034  # Fallback daily volatility (0.34%)
+        historical_volatility = daily_vol_historical * np.sqrt(252)
+        current_spot = current_forex['rate']
+        st.warning(f"⚠️ Używam domyślnej volatility: {historical_volatility*100:.2f}% rocznie")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        spot_rate = st.number_input(
+            "Kurs spot:",
+            value=current_spot,
+            min_value=3.50,
+            max_value=6.00,
+            step=0.0001,
+            format="%.4f"
+        )
+    
+    with col2:
+        st.metric("Horyzont", "5 dni roboczych")
+        days = 5
+    
+    with col3:
+        use_historical_vol = st.checkbox("Użyj historycznej volatility z Alpha Vantage", value=True)
+        
+        if use_historical_vol:
+            daily_vol = daily_vol_historical
+            st.success(f"Volatility: {daily_vol*100:.3f}% dziennie")
+        else:
+            daily_vol = st.slider("Volatility manualna (%):", 0.1, 2.0, daily_vol_historical*100, 0.05) / 100
+            st.info(f"Volatility: {daily_vol*100:.3f}% dziennie")
+    
+    # Build binomial tree with historical volatility
+    dt = 1/252  # Daily time step
+    u = np.exp(daily_vol * np.sqrt(dt))
+    d = 1/u
+    r = 0.02/252  # Daily risk-free rate
+    p = (np.exp(r * dt) - d) / (u - d)
+    
+    tree = {}
+    
+    for day in range(6):
+        tree[day] = {}
+        
+        if day == 0:
+            tree[day][0] = spot_rate
+        else:
+            for j in range(day + 1):
+                ups = j
+                downs = day - j
+                rate = spot_rate * (u ** ups) * (d ** downs)
+                tree[day][j] = rate
+    
+    # Most probable path
+    most_probable_path = []
+    for day in range(6):
+        if day == 0:
+            most_probable_path.append(0)
+        else:
+            best_j = 0
+            best_prob = 0
+            
+            for j in range(day + 1):
+                node_prob = comb(day, j) * (p ** j) * ((1 - p) ** (day - j))
+                
+                if node_prob > best_prob:
+                    best_prob = node_prob
+                    best_j = j
+            
+            most_probable_path.append(best_j)
+    
+    st.subheader("🎯 Prognoza Finalna")
+    
+    final_day = days
+    final_j = most_probable_path[final_day]
+    final_predicted_rate = tree[final_day][final_j]
+    change_pct = ((final_predicted_rate - spot_rate) / spot_rate) * 100
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Prognoza (5 dni)", f"{final_predicted_rate:.4f}", delta=f"{change_pct:+.2f}%")
+    
+    with col2:
+        prob = comb(final_day, final_j) * (p ** final_j) * ((1 - p) ** (final_day - final_j))
+        st.metric("Prawdopodobieństwo", f"{prob*100:.1f}%")
+    
+    with col3:
+        final_rates = [tree[5][j] for j in range(6)]
+        min_rate = min(final_rates)
+        max_rate = max(final_rates)
+        st.metric("Zakres", f"{min_rate:.4f} - {max_rate:.4f}")
+    
+    st.subheader("🌳 Drzewo Dwumianowe")
+    
+    fig = go.Figure()
+    
+    weekdays = ["Pon", "Wt", "Śr", "Czw", "Pt"]
+    
+    for day in range(6):
+        for j in range(day + 1):
+            rate = tree[day][j]
+            x = day
+            y = j - day/2
+            
+            is_most_probable = (j == most_probable_path[day])
+            
+            fig.add_trace(
+                go.Scatter(
+                    x=[x],
+                    y=[y],
+                    mode='markers',
+                    marker=dict(
+                        size=20 if is_most_probable else 15,
+                        color='#ff6b35' if is_most_probable else '#2e68a5',
+                        line=dict(width=3 if is_most_probable else 2, color='white')
+                    ),
+                    showlegend=False,
+                    hovertemplate=f"Dzień {day}<br>Kurs: {rate:.4f}<extra></extra>"
+                )
+            )
+            
+            fig.add_trace(
+                go.Scatter(
+                    x=[x],
+                    y=[y + 0.25],
+                    mode='text',
+                    text=f"{rate:.4f}",
+                    textposition="middle center",
+                    textfont=dict(
+                        color='#ff6b35' if is_most_probable else '#2e68a5',
+                        size=12 if is_most_probable else 10,
+                        family="Arial Black" if is_most_probable else "Arial"
+                    ),
+                    showlegend=False,
+                    hoverinfo='skip'
+                )
+            )
+            
+            if day < 5:
+                if j < day + 1:
+                    next_y_up = (j + 1) - (day + 1)/2
+                    is_prob_connection = (j == most_probable_path[day] and (j + 1) == most_probable_path[day + 1])
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[x, x + 1],
+                            y=[y, next_y_up],
+                            mode='lines',
+                            line=dict(
+                                color='#ff6b35' if is_prob_connection else 'lightgray',
+                                width=4 if is_prob_connection else 1
+                            ),
+                            showlegend=False,
+                            hoverinfo='skip'
+                        )
+                    )
+                
+                if j >= 0:
+                    next_y_down = j - (day + 1)/2
+                    is_prob_connection = (j == most_probable_path[day] and j == most_probable_path[day + 1])
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[x, x + 1],
+                            y=[y, next_y_down],
+                            mode='lines',
+                            line=dict(
+                                color='#ff6b35' if is_prob_connection else 'lightgray',
+                                width=4 if is_prob_connection else 1
+                            ),
+                            showlegend=False,
+                            hoverinfo='skip'
+                        )
+                    )
+    
+    fig.add_trace(
+        go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(size=20, color='#ff6b35'),
+            name='🎯 Najczęstsza ścieżka',
+            showlegend=True
+        )
+    )
+    
+    fig.add_trace(
+        go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            marker=dict(size=15, color='#2e68a5'),
+            name='Inne możliwe kursy',
+            showlegend=True
+        )
+    )
+    
+    fig.update_layout(
+        title="Drzewo dwumianowe EUR/PLN - 5 dni roboczych",
+        xaxis_title="Dzień roboczy",
+        yaxis_title="Poziom w drzewie",
+        height=500,
+        xaxis=dict(
+            tickmode='array',
+            tickvals=list(range(6)),
+            ticktext=[f"Dzień {i}" if i == 0 else f"Dzień {i}\n{weekdays[i-1]}" for i in range(6)]
+        ),
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
 
 
 def main():
