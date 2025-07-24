@@ -6,23 +6,17 @@ import requests
 from datetime import datetime, timedelta
 import math
 
-# ============================================================================
 # CONFIG & SETUP
-# ============================================================================
-
 st.set_page_config(
-    page_title="🚀 Professional FX Calculator",
-    page_icon="🚀",
+    page_title="Professional FX Calculator",
+    page_icon="chart",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Beautiful CSS that actually works
+# Clean CSS without emoji
 st.markdown("""
 <style>
-    /* Import safe fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
-    
     .main-header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 2rem;
@@ -76,10 +70,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ============================================================================
-# CORE API CLASSES - Rock Solid
-# ============================================================================
-
+# CORE API CLASSES
 class RobustAlphaVantageAPI:
     def __init__(self):
         self.api_key = "MQGKUNL9JWIJHF9S"
@@ -202,22 +193,17 @@ class RobustAlphaVantageAPI:
 
 class BondYieldsAPI:
     def __init__(self):
-        self.fred_key = "demo"  # Can be improved with real key
+        self.fred_key = "demo"
     
     def get_yields(self):
         """Get bond yields with fallbacks"""
-        # For now, return market-realistic values
-        # Can be extended with FRED API integration
         return {
             'Poland_10Y': {'value': 5.65, 'date': '2025-01-24', 'source': 'Market Data'},
             'Germany_10Y': {'value': 2.45, 'date': '2025-01-24', 'source': 'Market Data'},
             'US_10Y': {'value': 4.35, 'date': '2025-01-24', 'source': 'Market Data'}
         }
 
-# ============================================================================
 # SESSION STATE MANAGEMENT
-# ============================================================================
-
 def init_session_state():
     if 'dealer_config' not in st.session_state:
         st.session_state.dealer_config = {
@@ -236,10 +222,7 @@ def init_session_state():
     if 'pricing_data' not in st.session_state:
         st.session_state.pricing_data = None
 
-# ============================================================================
 # FORWARD CALCULATOR ENGINE
-# ============================================================================
-
 class ProfessionalForwardCalculator:
     def __init__(self):
         self.points_factor = 0.70
@@ -264,7 +247,7 @@ class ProfessionalForwardCalculator:
         
         for months in range(1, 13):
             days = months * 30
-            tenor_name = f"{months} {'miesiąc' if months == 1 else 'miesiące' if months <= 4 else 'miesięcy'}"
+            tenor_name = f"{months} miesiac" if months == 1 else f"{months} miesiace" if months <= 4 else f"{months} miesiecy"
             
             # Calculate theoretical forward
             theoretical = self.calculate_theoretical_forward(
@@ -311,10 +294,7 @@ class ProfessionalForwardCalculator:
         
         return curve_data
 
-# ============================================================================
 # BINOMIAL MODEL
-# ============================================================================
-
 def calculate_binomial_coeff(n, k):
     """Safe binomial coefficient calculation"""
     if k > n or k < 0:
@@ -359,10 +339,7 @@ def create_binomial_tree(spot, volatility, days, p=0.5):
     
     return tree, most_probable_path
 
-# ============================================================================
 # UI COMPONENTS
-# ============================================================================
-
 def render_header():
     st.markdown("""
     <div class="main-header">
@@ -373,14 +350,14 @@ def render_header():
     """, unsafe_allow_html=True)
 
 def render_dealer_panel():
-    st.header("🔧 Dealer Panel")
+    st.header("Dealer Panel")
     
     # Initialize APIs
     forex_api = RobustAlphaVantageAPI()
     bonds_api = BondYieldsAPI()
     
     # Get market data
-    with st.spinner("📡 Loading market data..."):
+    with st.spinner("Loading market data..."):
         forex_data = forex_api.get_eur_pln_rate()
         bond_data = bonds_api.get_yields()
         historical_data = forex_api.get_historical_data(30)
@@ -391,300 +368,8 @@ def render_dealer_panel():
     with col1:
         status_color = "#11998e" if forex_data['success'] else "#e17055"
         st.markdown(f"""
-        <div class="api-status">
-            <h4>Historical Data</h4>
-            <p><strong>Points:</strong> {historical_data['count']}</p>
-            <p><strong>Source:</strong> {historical_data['source']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Calculate empirical volatility
-    try:
-        if historical_data['success'] and len(historical_data['rates']) >= 15:
-            rates = historical_data['rates']
-            returns = [np.log(rates[i]/rates[i-1]) for i in range(1, len(rates))]
-            empirical_vol = np.std(returns)
-            empirical_mean = np.mean(returns)
-            
-            # Simple probability estimation
-            positive_moves = sum(1 for r in returns if r > 0)
-            p_up_empirical = positive_moves / len(returns)
-            
-            st.success(f"✅ Empirical model: Vol={empirical_vol*100:.2f}% daily, P(up)={p_up_empirical:.3f}")
-        else:
-            raise Exception("Insufficient data")
-    except:
-        empirical_vol = 0.008
-        p_up_empirical = 0.5
-        st.warning("⚠️ Using default parameters")
-    
-    # Model parameters
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        spot_rate = st.number_input("Starting Rate", value=current_forex['rate'], 
-                                  min_value=3.5, max_value=6.0, step=0.0001, format="%.4f")
-    
-    with col2:
-        days = st.selectbox("Forecast Horizon", [3, 5, 7, 10], index=1)
-    
-    with col3:
-        use_empirical = st.checkbox("Use Empirical Parameters", value=True)
-        
-        if use_empirical:
-            volatility = empirical_vol
-            p_up = p_up_empirical
-            st.info(f"Vol: {volatility*100:.2f}%")
-        else:
-            volatility = st.slider("Daily Volatility (%)", 0.1, 2.0, 0.8, 0.1) / 100
-            p_up = st.slider("Up Probability", 0.3, 0.7, 0.5, 0.01)
-    
-    # Generate binomial tree
-    if st.button("🌳 Generate Tree Model"):
-        tree, most_probable_path = create_binomial_tree(spot_rate, volatility, days, p_up)
-        
-        # Final prediction
-        st.subheader("🎯 Model Forecast")
-        
-        final_j = most_probable_path[days]
-        predicted_rate = tree[days][final_j]
-        change_pct = ((predicted_rate - spot_rate) / spot_rate) * 100
-        
-        final_prob = calculate_binomial_coeff(days, final_j) * (p_up ** final_j) * ((1 - p_up) ** (days - final_j))
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric(f"Forecast ({days} days)", f"{predicted_rate:.4f}", delta=f"{change_pct:+.2f}%")
-        
-        with col2:
-            st.metric("Path Probability", f"{final_prob*100:.1f}%")
-        
-        with col3:
-            all_final_rates = [tree[days][j] for j in range(days + 1)]
-            rate_range = max(all_final_rates) - min(all_final_rates)
-            st.metric("Rate Range", f"{rate_range:.4f}")
-        
-        # All possible outcomes
-        st.subheader("📋 All Possible Outcomes")
-        
-        outcomes = []
-        for j in range(days + 1):
-            final_rate = tree[days][j]
-            prob = calculate_binomial_coeff(days, j) * (p_up ** j) * ((1 - p_up) ** (days - j))
-            change = ((final_rate - spot_rate) / spot_rate) * 100
-            
-            is_most_probable = (j == final_j)
-            
-            outcomes.append({
-                "Scenario": f"{j} up, {days-j} down",
-                "Final Rate": f"{final_rate:.4f}",
-                "Change %": f"{change:+.2f}%",
-                "Probability": f"{prob*100:.1f}%",
-                "Most Likely": "🎯 YES" if is_most_probable else ""
-            })
-        
-        df_outcomes = pd.DataFrame(outcomes)
-        st.dataframe(df_outcomes, use_container_width=True, hide_index=True)
-        
-        # Visualization
-        st.subheader("🌳 Binomial Tree Visualization")
-        
-        try:
-            fig = go.Figure()
-            
-            # Plot all nodes
-            for day in range(days + 1):
-                for j in range(day + 1):
-                    rate = tree[day][j]
-                    x = day
-                    y = j - day/2
-                    
-                    is_on_path = (j == most_probable_path[day])
-                    
-                    # Node
-                    fig.add_trace(go.Scatter(
-                        x=[x], y=[y],
-                        mode='markers',
-                        marker=dict(
-                            size=25 if is_on_path else 18,
-                            color='#ff6b35' if is_on_path else '#2e68a5',
-                            line=dict(width=3, color='white')
-                        ),
-                        showlegend=False,
-                        hovertemplate=f"Day {day}<br>Rate: {rate:.4f}<br>Node: {j}<extra></extra>",
-                        name=f"node_{day}_{j}"
-                    ))
-                    
-                    # Rate label
-                    fig.add_trace(go.Scatter(
-                        x=[x], y=[y + 0.3],
-                        mode='text',
-                        text=f"{rate:.4f}",
-                        textfont=dict(
-                            size=12 if is_on_path else 10,
-                            color='#ff6b35' if is_on_path else '#2e68a5'
-                        ),
-                        showlegend=False,
-                        hoverinfo='skip',
-                        name=f"label_{day}_{j}"
-                    ))
-                    
-                    # Connections
-                    if day < days:
-                        # Up connection
-                        if j < day + 1:
-                            next_y_up = (j + 1) - (day + 1)/2
-                            is_path_connection = (j == most_probable_path[day] and (j + 1) == most_probable_path[day + 1])
-                            
-                            fig.add_trace(go.Scatter(
-                                x=[x, x + 1], y=[y, next_y_up],
-                                mode='lines',
-                                line=dict(
-                                    color='#ff6b35' if is_path_connection else 'lightgray',
-                                    width=4 if is_path_connection else 1
-                                ),
-                                showlegend=False,
-                                hoverinfo='skip',
-                                name=f"up_{day}_{j}"
-                            ))
-                        
-                        # Down connection
-                        if j >= 0:
-                            next_y_down = j - (day + 1)/2
-                            is_path_connection = (j == most_probable_path[day] and j == most_probable_path[day + 1])
-                            
-                            fig.add_trace(go.Scatter(
-                                x=[x, x + 1], y=[y, next_y_down],
-                                mode='lines',
-                                line=dict(
-                                    color='#ff6b35' if is_path_connection else 'lightgray',
-                                    width=4 if is_path_connection else 1
-                                ),
-                                showlegend=False,
-                                hoverinfo='skip',
-                                name=f"down_{day}_{j}"
-                            ))
-            
-            # Legend
-            fig.add_trace(go.Scatter(
-                x=[None], y=[None],
-                mode='markers',
-                marker=dict(size=25, color='#ff6b35'),
-                name='🎯 Most Probable Path',
-                showlegend=True
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=[None], y=[None],
-                mode='markers', 
-                marker=dict(size=18, color='#2e68a5'),
-                name='Other Possible Rates',
-                showlegend=True
-            ))
-            
-            fig.update_layout(
-                title=f"EUR/PLN Binomial Tree - {days} Day Forecast",
-                xaxis_title="Day",
-                yaxis_title="Tree Level",
-                height=600,
-                showlegend=True,
-                hovermode='closest'
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-        except Exception as e:
-            st.error(f"Visualization error: {str(e)}")
-            st.info("Tree calculation completed successfully. Visualization temporarily unavailable.")
-        
-        # Statistical summary
-        st.subheader("📊 Statistical Summary")
-        
-        all_rates = [tree[days][j] for j in range(days + 1)]
-        all_probs = [calculate_binomial_coeff(days, j) * (p_up ** j) * ((1 - p_up) ** (days - j)) for j in range(days + 1)]
-        
-        expected_rate = sum(rate * prob for rate, prob in zip(all_rates, all_probs))
-        variance = sum(((rate - expected_rate) ** 2) * prob for rate, prob in zip(all_rates, all_probs))
-        std_dev = math.sqrt(variance)
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Expected Rate", f"{expected_rate:.4f}")
-        
-        with col2:
-            st.metric("Standard Deviation", f"{std_dev:.4f}")
-        
-        with col3:
-            st.metric("Min Possible", f"{min(all_rates):.4f}")
-        
-        with col4:
-            st.metric("Max Possible", f"{max(all_rates):.4f}")
-
-# ============================================================================
-# MAIN APPLICATION
-# ============================================================================
-
-def main():
-    # Initialize
-    init_session_state()
-    
-    # Render header
-    render_header()
-    
-    # Sync status
-    if st.session_state.pricing_data:
-        config = st.session_state.dealer_config
-        st.markdown(f"""
-        <div class="sync-status">
-            System Synchronized | Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} days | Source: {config['spot_source']}
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.info("Waiting for dealer configuration...")
-    
-    # Main tabs
-    tab1, tab2, tab3 = st.tabs([
-        "Dealer Panel", 
-        "Client Hedging", 
-        "Binomial Model"
-    ])
-    
-    with tab1:
-        try:
-            render_dealer_panel()
-        except Exception as e:
-            st.error(f"Dealer panel error: {str(e)}")
-            st.info("Please refresh the page or check your internet connection.")
-    
-    with tab2:
-        try:
-            render_client_panel()
-        except Exception as e:
-            st.error(f"Client panel error: {str(e)}")
-            st.info("Ensure dealer panel is configured first.")
-    
-    with tab3:
-        try:
-            render_binomial_model()
-        except Exception as e:
-            st.error(f"Binomial model error: {str(e)}")
-            st.info("Model temporarily unavailable. Please try again.")
-
-# Run the application
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        st.error(f"Application startup error: {str(e)}")
-        st.markdown("## 🔄 Application Recovery")
-        st.info("Please refresh the page. If the problem persists, clear your browser cache.")
-        
-        if st.button("🔄 Restart Application"):
-            st.rerun()
         <div class="api-status" style="background: {status_color};">
-            <h4>💱 FX Data Source</h4>
+            <h4>FX Data Source</h4>
             <p><strong>Rate:</strong> {forex_data['rate']:.4f}</p>
             <p><strong>Source:</strong> {forex_data['source']}</p>
         </div>
@@ -700,7 +385,7 @@ if __name__ == "__main__":
         """, unsafe_allow_html=True)
     
     # Configuration
-    st.subheader("⚙️ Market Configuration")
+    st.subheader("Market Configuration")
     
     col1, col2 = st.columns([1, 2])
     
@@ -737,7 +422,7 @@ if __name__ == "__main__":
         st.metric("PL-DE Spread", f"{spread:.2f}pp")
     
     # Advanced parameters
-    st.subheader("🔧 Advanced Parameters")
+    st.subheader("Advanced Parameters")
     
     col1, col2, col3 = st.columns(3)
     
@@ -766,7 +451,7 @@ if __name__ == "__main__":
                                    min_value=-0.02, max_value=0.02, step=0.001, format="%.4f")
     
     # Update configuration
-    if st.button("🔄 Update Pricing", use_container_width=True):
+    if st.button("Update Pricing", use_container_width=True):
         st.session_state.dealer_config.update({
             'spot_rate': spot_rate,
             'spot_source': spot_source,
@@ -787,12 +472,12 @@ if __name__ == "__main__":
         
         st.session_state.pricing_data = calculator.generate_forward_curve(st.session_state.dealer_config)
         
-        st.success("✅ Pricing updated successfully!")
+        st.success("Pricing updated successfully!")
         st.rerun()
     
     # Display current pricing
     if st.session_state.pricing_data:
-        st.subheader("💼 Current Dealer Pricing")
+        st.subheader("Current Dealer Pricing")
         
         # Create pricing table
         pricing_table = []
@@ -811,7 +496,7 @@ if __name__ == "__main__":
         st.dataframe(df_pricing, use_container_width=True, height=400)
         
         # Portfolio analytics
-        st.subheader("📊 Portfolio Analytics")
+        st.subheader("Portfolio Analytics")
         
         nominal_amount = st.number_input("Nominal Amount (EUR)", value=2_500_000, 
                                        min_value=10_000, max_value=100_000_000, step=100_000)
@@ -1006,18 +691,6 @@ def render_client_panel():
         marker_color='lightblue',
         opacity=0.7,
         hovertemplate='%{x}: %{y:,.0f} PLN<extra></extra>'
-    ))
-    
-    fig.update_layout(
-        title="Forward Rates vs Spot Rate + PLN Benefits",
-        xaxis_title="Tenor",
-        yaxis_title="EUR/PLN Rate",
-        yaxis2=dict(title="Benefit (PLN)", overlaying='y', side='right'),
-        height=500,
-        hovermode='x unified'
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)f} PLN<extra></extra>'
     ))
     
     fig.update_layout(
@@ -1286,4 +959,62 @@ def render_binomial_model():
         
         with col4:
             st.metric("Max Possible", f"{max(all_rates):.4f}")
+
+# MAIN APPLICATION
+def main():
+    # Initialize
+    init_session_state()
+    
+    # Render header
+    render_header()
+    
+    # Sync status
+    if st.session_state.pricing_data:
+        config = st.session_state.dealer_config
         st.markdown(f"""
+        <div class="sync-status">
+            System Synchronized | Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} days | Source: {config['spot_source']}
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("Waiting for dealer configuration...")
+    
+    # Main tabs
+    tab1, tab2, tab3 = st.tabs([
+        "Dealer Panel", 
+        "Client Hedging", 
+        "Binomial Model"
+    ])
+    
+    with tab1:
+        try:
+            render_dealer_panel()
+        except Exception as e:
+            st.error(f"Dealer panel error: {str(e)}")
+            st.info("Please refresh the page or check your internet connection.")
+    
+    with tab2:
+        try:
+            render_client_panel()
+        except Exception as e:
+            st.error(f"Client panel error: {str(e)}")
+            st.info("Ensure dealer panel is configured first.")
+    
+    with tab3:
+        try:
+            render_binomial_model()
+        except Exception as e:
+            st.error(f"Binomial model error: {str(e)}")
+            st.info("Model temporarily unavailable. Please try again.")
+
+# Run the application
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        st.error(f"Application startup error: {str(e)}")
+        st.markdown("## Application Recovery")
+        st.info("Please refresh the page. If the problem persists, clear your browser cache.")
+        
+        if st.button("Restart Application"):
+            st.rerun()
