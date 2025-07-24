@@ -392,7 +392,7 @@ def render_dealer_panel():
         status_color = "#11998e" if forex_data['success'] else "#e17055"
         st.markdown(f"""
         <div class="api-status">
-            <h4>📊 Historical Data</h4>
+            <h4>Historical Data</h4>
             <p><strong>Points:</strong> {historical_data['count']}</p>
             <p><strong>Source:</strong> {historical_data['source']}</p>
         </div>
@@ -693,7 +693,7 @@ if __name__ == "__main__":
     with col2:
         st.markdown(f"""
         <div class="api-status">
-            <h4>📊 Historical Data</h4>
+            <h4>Historical Data</h4>
             <p><strong>Points:</strong> {historical_data['count']}</p>
             <p><strong>Source:</strong> {historical_data['source']}</p>
         </div>
@@ -1036,7 +1036,7 @@ def render_binomial_model():
     with col1:
         st.markdown(f"""
         <div class="api-status">
-            <h4>📈 Current Rate</h4>
+            <h4>Current Rate</h4>
             <p><strong>Rate:</strong> {current_forex['rate']:.4f}</p>
             <p><strong>Source:</strong> {current_forex['source']}</p>
         </div>
