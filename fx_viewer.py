@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 import calendar
 from typing import Dict, List, Tuple
 import math
+import requests
+import json
 
 # Konfiguracja strony
 st.set_page_config(
@@ -24,6 +26,70 @@ if 'quoted_transactions' not in st.session_state:
 
 # Stałe
 SPOT_RATE = 4.2500
+FRED_API_KEY = "693819ccc32ac43704fbbc15cfb4a6d7"
+
+@st.cache_data(ttl=3600)  # Cache na 1 godzinę
+def get_bond_yields():
+    """Pobiera aktualne rentowności obligacji 10-letnich z FRED API"""
+    try:
+        # Kody serii FRED
+        poland_series = "IRLTLT01PLM156N"  # Polska 10Y
+        germany_series = "IRLTLT01DEM156N"  # Niemcy 10Y
+        
+        base_url = "https://api.stlouisfed.org/fred/series/observations"
+        
+        # Pobierz dane dla Polski
+        pl_response = requests.get(base_url, params={
+            'series_id': poland_series,
+            'api_key': FRED_API_KEY,
+            'file_type': 'json',
+            'limit': 1,
+            'sort_order': 'desc'
+        })
+        
+        # Pobierz dane dla Niemiec
+        de_response = requests.get(base_url, params={
+            'series_id': germany_series,
+            'api_key': FRED_API_KEY,
+            'file_type': 'json',
+            'limit': 1,
+            'sort_order': 'desc'
+        })
+        
+        if pl_response.status_code == 200 and de_response.status_code == 200:
+            pl_data = pl_response.json()
+            de_data = de_response.json()
+            
+            # Wyciągnij najnowsze wartości
+            pl_yield = float(pl_data['observations'][0]['value'])
+            de_yield = float(de_data['observations'][0]['value'])
+            
+            # Daty ostatniej aktualizacji
+            pl_date = pl_data['observations'][0]['date']
+            de_date = de_data['observations'][0]['date']
+            
+            return {
+                'pl_yield': pl_yield,
+                'de_yield': de_yield,
+                'pl_date': pl_date,
+                'de_date': de_date,
+                'success': True
+            }
+        else:
+            return {
+                'pl_yield': 5.42,  # fallback
+                'de_yield': 2.63,  # fallback
+                'success': False,
+                'error': f"API Error: PL={pl_response.status_code}, DE={de_response.status_code}"
+            }
+            
+    except Exception as e:
+        return {
+            'pl_yield': 5.42,  # fallback
+            'de_yield': 2.63,  # fallback
+            'success': False,
+            'error': str(e)
+        }
 
 def get_polish_month_name(date: datetime) -> str:
     months = [
@@ -64,7 +130,7 @@ def generate_working_days(year: int, month: int) -> List[Dict]:
     
     return working_days
 
-def calculate_forward_rate(start_date: datetime, window_days: int) -> Dict:
+def calculate_forward_rate(start_date: datetime, window_days: int, pl_yield: float, de_yield: float) -> Dict:
     configs = {
         30: {'points_factor': 0.80, 'risk_factor': 0.35},
         60: {'points_factor': 0.75, 'risk_factor': 0.40},
@@ -76,8 +142,7 @@ def calculate_forward_rate(start_date: datetime, window_days: int) -> Dict:
     today = datetime.now()
     days_to_maturity = max((start_date - today).days, 1)
     
-    pl_yield = 5.42
-    de_yield = 2.63
+    # Używamy aktualnych rentowności z FRED
     T = days_to_maturity / 365.0
     theoretical_forward_rate = SPOT_RATE * (1 + pl_yield/100 * T) / (1 + de_yield/100 * T)
     theoretical_forward_points = theoretical_forward_rate - SPOT_RATE
@@ -98,7 +163,7 @@ def calculate_forward_rate(start_date: datetime, window_days: int) -> Dict:
         'days_to_maturity': days_to_maturity
     }
 
-def add_to_quote(day_data: Dict, window_days: int, forward_calc: Dict, settlement_date: datetime, volume: float):
+def add_to_quote(day_data: Dict, window_days: int, forward_calc: Dict, settlement_date: datetime, volume: float, pl_yield: float, de_yield: float):
     new_transaction = {
         'id': len(st.session_state.quoted_transactions) + 1,
         'open_date': format_polish_date(day_data['date']),
@@ -109,7 +174,9 @@ def add_to_quote(day_data: Dict, window_days: int, forward_calc: Dict, settlemen
         'days_to_maturity': forward_calc['days_to_maturity'],
         'added_at': datetime.now().strftime("%H:%M:%S"),
         'month': get_polish_month_name(day_data['date']),
-        'volume': volume or 0
+        'volume': volume or 0,
+        'pl_yield_used': pl_yield,
+        'de_yield_used': de_yield
     }
     
     st.session_state.quoted_transactions.append(new_transaction)
@@ -173,6 +240,8 @@ def generate_email_body() -> str:
 
 Data wyceny: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
 Kurs spot referencyjny: {SPOT_RATE:.4f}
+Rentowności używane: PL 10Y = {bond_data['pl_yield']:.2f}%, DE 10Y = {bond_data['de_yield']:.2f}%
+Źródło: FRED API St. Louis Fed
 
 LISTA TRANSAKCJI:
 ================
@@ -220,12 +289,35 @@ Wygenerowane przez Kalendarz FX"""
 # GŁÓWNA APLIKACJA
 st.title("💱 Kalendarz FX")
 
+# Pobierz aktualne rentowności obligacji
+bond_data = get_bond_yields()
+
+col_info, col_refresh = st.columns([4, 1])
+with col_info:
+    if bond_data['success']:
+        st.success(f"✅ Dane FRED załadowane: PL={bond_data['pl_yield']:.2f}% ({bond_data['pl_date']}), DE={bond_data['de_yield']:.2f}% ({bond_data['de_date']})")
+    else:
+        st.warning(f"⚠️ Błąd API FRED: {bond_data.get('error', 'Nieznany błąd')}. Używam wartości domyślnych.")
+
+with col_refresh:
+    if st.button("🔄 Odśwież FRED", help="Odśwież dane rentowności obligacji"):
+        st.cache_data.clear()
+        st.rerun()
+
+pl_yield = bond_data['pl_yield']
+de_yield = bond_data['de_yield']
+
 # Karty informacyjne
-col1, col2 = st.columns(2)
+spread = pl_yield - de_yield
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.info(f"**Kurs Spot EUR/PLN**: {SPOT_RATE:.4f}")
 with col2:
-    st.success(f"**Miesiąc**: {get_polish_month_name(st.session_state.current_month)}")
+    st.info(f"**PL 10Y**: {pl_yield:.2f}%")
+with col3:
+    st.info(f"**DE 10Y**: {de_yield:.2f}%")
+with col4:
+    st.metric("**Spread PL-DE**", f"{spread:.2f} pkt", help="Różnica między rentownościami Polski i Niemiec")
 
 # Tabs
 tab1, tab2 = st.tabs([
@@ -304,7 +396,7 @@ with tab1:
                         )
                         
                         # Obliczenia
-                        forward_calc = calculate_forward_rate(day_data['date'], window_days)
+                        forward_calc = calculate_forward_rate(day_data['date'], window_days, pl_yield, de_yield)
                         settlement_date = calculate_settlement_date(day_data['date'], window_days)
                         rate_advantage = ((forward_calc['client_rate'] - SPOT_RATE) / SPOT_RATE) * 100
                         
@@ -320,7 +412,7 @@ with tab1:
                         
                         # Przycisk dodawania
                         if st.button("➕ Dodaj", key=f"add_{date_str}", use_container_width=True):
-                            add_to_quote(day_data, window_days, forward_calc, settlement_date, volume)
+                            add_to_quote(day_data, window_days, forward_calc, settlement_date, volume, pl_yield, de_yield)
                             st.success("Dodano do wyceny!")
                             st.rerun()
 
@@ -359,7 +451,9 @@ with tab2:
                 'Kurs Forward': f"{t['forward_rate']:.4f}",
                 'vs Spot %': f"{benefit_vs_spot:+.2f}%",
                 'Wartość PLN': f"{value_pln:,.0f}" if t['volume'] > 0 else '-',
-                'Miesiąc': t['month']
+                'Miesiąc': t['month'],
+                'PL Yield': f"{t.get('pl_yield_used', 'N/A'):.2f}%",
+                'DE Yield': f"{t.get('de_yield_used', 'N/A'):.2f}%"
             })
         
         df = pd.DataFrame(df_transactions)
