@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
-import statsmodels.api as sm
+from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
+import numpy as np
 
 # ---------- Load CSVs with English headers ----------
 def load_data(uploaded_file):
@@ -54,16 +55,35 @@ if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, us
     fx_data = fx_data[["Date", "Price_EURPLN", "Price_USDPLN", "EURPLN_Spread", "USDPLN_Spread"]]
     fx_data.sort_values("Date", inplace=True)
 
-    # ---------- Regressions ----------
-    X_eur = sm.add_constant(fx_data["EURPLN_Spread"])
-    y_eur = fx_data["Price_EURPLN"]
-    model_eur = sm.OLS(y_eur, X_eur).fit()
+    # ---------- Regressions using sklearn ----------
+    # EUR/PLN regression
+    model_eur = LinearRegression()
+    X_eur = fx_data["EURPLN_Spread"].values.reshape(-1, 1)
+    y_eur = fx_data["Price_EURPLN"].values
+    model_eur.fit(X_eur, y_eur)
     fx_data["Predicted_EURPLN"] = model_eur.predict(X_eur)
-
-    X_usd = sm.add_constant(fx_data["USDPLN_Spread"])
-    y_usd = fx_data["Price_USDPLN"]
-    model_usd = sm.OLS(y_usd, X_usd).fit()
+    
+    # USD/PLN regression
+    model_usd = LinearRegression()
+    X_usd = fx_data["USDPLN_Spread"].values.reshape(-1, 1)
+    y_usd = fx_data["Price_USDPLN"].values
+    model_usd.fit(X_usd, y_usd)
     fx_data["Predicted_USDPLN"] = model_usd.predict(X_usd)
+
+    # ---------- Display Model Statistics ----------
+    r2_eur = model_eur.score(X_eur, y_eur)
+    r2_usd = model_usd.score(X_usd, y_usd)
+    
+    st.write("### 📊 Model Performance")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("EUR/PLN R²", f"{r2_eur:.3f}")
+        st.write(f"**Coefficient:** {model_eur.coef_[0]:.4f}")
+        st.write(f"**Intercept:** {model_eur.intercept_:.4f}")
+    with col2:
+        st.metric("USD/PLN R²", f"{r2_usd:.3f}")
+        st.write(f"**Coefficient:** {model_usd.coef_[0]:.4f}")
+        st.write(f"**Intercept:** {model_usd.intercept_:.4f}")
 
     # ---------- Matplotlib Charts ----------
     fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=False)
@@ -119,3 +139,12 @@ if all(df is not None for df in [germany_bond, poland_bond, us_bond, eur_pln, us
         st.metric("Actual USD/PLN", f"{price_actual_usd:.4f}")
         st.metric("Predicted USD/PLN", f"{price_pred_usd:.4f}")
         st.write(f"**% Difference USD/PLN:** {percent_diff_usd:.2f}%")
+
+else:
+    st.write("### ⬆️ Please upload all 5 CSV files to begin analysis")
+    st.write("Required files:")
+    st.write("- Germany Bond Yield CSV")
+    st.write("- Poland Bond Yield CSV")
+    st.write("- US Bond Yield CSV")  
+    st.write("- EUR/PLN FX CSV")
+    st.write("- USD/PLN FX CSV")
