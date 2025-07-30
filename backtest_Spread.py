@@ -11,17 +11,39 @@ warnings.filterwarnings('ignore')
 st.title("Real Rate vs Historical Rate Analysis")
 st.write("Upload CSV files for currency pair, domestic bond yield, and foreign bond yield")
 
+# Currency pair specification
+st.sidebar.header("Currency Pair Setup")
+currency_pair = st.sidebar.text_input("Currency Pair (e.g., EUR/USD, GBP/JPY)", value="EUR/USD", help="Format: BASE/QUOTE where BASE is the first currency, QUOTE is the second")
+
+# Parse currency pair
+if "/" in currency_pair:
+    base_currency, quote_currency = currency_pair.split("/")
+    base_currency = base_currency.strip().upper()
+    quote_currency = quote_currency.strip().upper()
+else:
+    st.sidebar.warning("Please enter currency pair in BASE/QUOTE format (e.g., EUR/USD)")
+    base_currency, quote_currency = "BASE", "QUOTE"
+
+st.sidebar.write(f"**Base Currency**: {base_currency} (Position Size)")
+st.sidebar.write(f"**Quote Currency**: {quote_currency} (PnL Results)")
+
 # File uploaders
 col1, col2, col3 = st.columns(3)
 
 with col1:
     fx_file = st.file_uploader("Currency Pair CSV", type="csv", key="fx")
+    if currency_pair:
+        st.caption(f"📈 {currency_pair} exchange rate data")
     
 with col2:
     domestic_file = st.file_uploader("Domestic Bond Yield CSV", type="csv", key="domestic")
+    if base_currency != "BASE":
+        st.caption(f"🏠 {base_currency} bond yields")
     
 with col3:
     foreign_file = st.file_uploader("Foreign Bond Yield CSV", type="csv", key="foreign")
+    if quote_currency != "QUOTE":
+        st.caption(f"🌍 {quote_currency} bond yields")
 
 # Model parameters
 st.sidebar.header("Model Parameters")
@@ -31,11 +53,23 @@ min_r2 = st.sidebar.slider("Minimum R² for Trading", 0.1, 0.9, 0.3, 0.05)
 st.sidebar.header("Strategy Parameters")
 # Changed to exact days instead of months
 hold_period_days = st.sidebar.slider("Holding Period (Days)", 1, 365, 90)
-position_size = st.sidebar.number_input("Position Size (Volume per Trade)", min_value=1000, max_value=10000000, value=100000, step=10000)
+position_size = st.sidebar.number_input(f"Position Size ({base_currency})", min_value=1000, max_value=10000000, value=100000, step=10000, help=f"Amount of {base_currency} to trade per position")
 leverage = st.sidebar.slider("Leverage", 1, 20, 1)
 strategy_type = st.sidebar.selectbox("Strategy Type", ["Long and Short", "Long Only", "Short Only"])
 show_detailed_trades = st.sidebar.checkbox("Show Detailed Trades", True)
 entry_frequency = st.sidebar.selectbox("Entry Frequency", ["Monday Only", "Any Day with Signal"])
+
+# Add currency info box
+st.sidebar.info(f"""
+**Currency Setup:**
+- Position Size: {base_currency}
+- PnL Results: {quote_currency}
+- Margin: {quote_currency}
+
+**Example:** If {currency_pair} moves from 1.0500 to 1.0600:
+- Raw PnL: 0.0100 {quote_currency} per {base_currency}
+- For 100,000 {base_currency}: 1,000 {quote_currency} profit
+""")
 
 def load_and_clean_data(file, data_type):
     """Load and clean data from uploaded CSV"""
@@ -387,29 +421,29 @@ if fx_file and domestic_file and foreign_file:
                 st.metric("Entry Frequency", entry_frequency)
             
             # Display nominal value metrics
-            st.subheader("Nominal Value Performance")
+            st.subheader(f"Nominal Value Performance ({quote_currency})")
             col1, col2, col3, col4, col5 = st.columns(5)
             
             with col1:
-                st.metric("Total Nominal PnL", f"{total_nominal_pnl:,.0f}")
+                st.metric(f"Total Nominal PnL ({quote_currency})", f"{total_nominal_pnl:,.0f}")
             with col2:
-                st.metric("Avg Nominal PnL", f"{avg_nominal_pnl:,.0f}")
+                st.metric(f"Avg Nominal PnL ({quote_currency})", f"{avg_nominal_pnl:,.0f}")
             with col3:
-                st.metric("Best Trade", f"{max_nominal_pnl:,.0f}")
+                st.metric(f"Best Trade ({quote_currency})", f"{max_nominal_pnl:,.0f}")
             with col4:
-                st.metric("Worst Trade", f"{min_nominal_pnl:,.0f}")
+                st.metric(f"Worst Trade ({quote_currency})", f"{min_nominal_pnl:,.0f}")
             with col5:
-                st.metric("Position Size", f"{position_size:,}")
+                st.metric(f"Position Size ({base_currency})", f"{position_size:,}")
             
             # Capital deployment info
-            st.subheader("Capital Deployment & Leverage")
+            st.subheader(f"Capital Deployment & Leverage ({quote_currency})")
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric("Total Margin Used", f"{total_capital_deployed:,}")
+                st.metric(f"Total Margin Used ({quote_currency})", f"{total_capital_deployed:,}")
             with col2:
                 total_notional = sum(p['position_size'] for p in positions)
-                st.metric("Total Notional Value", f"{total_notional:,}")
+                st.metric(f"Total Notional Value ({base_currency})", f"{total_notional:,}")
             with col3:
                 leverage_ratio = total_notional / total_capital_deployed if total_capital_deployed > 0 else 1
                 st.metric("Effective Leverage", f"{leverage_ratio:.1f}:1")
@@ -426,7 +460,7 @@ if fx_file and domestic_file and foreign_file:
                 long_avg_pnl_pct = sum(p['pnl_pct'] for p in long_trades) / len(long_trades)
                 long_leveraged_return = long_avg_pnl_pct * leverage
                 long_avg_hold = np.mean([p['hold_days'] for p in long_trades])
-                st.write(f"**Long Performance**: {len(long_trades)} trades, {long_win_rate:.1f}% win rate, {long_avg_pnl_pct:.2f}% avg return, {long_leveraged_return:.2f}% leveraged return, {long_nominal_pnl:,.0f} nominal PnL, {long_avg_hold:.1f} avg hold days")
+                st.write(f"**Long Performance**: {len(long_trades)} trades, {long_win_rate:.1f}% win rate, {long_avg_pnl_pct:.2f}% avg return, {long_leveraged_return:.2f}% leveraged return, {long_nominal_pnl:,.0f} {quote_currency} nominal PnL, {long_avg_hold:.1f} avg hold days")
             
             if short_trades:
                 short_nominal_pnl = sum(p['nominal_pnl'] for p in short_trades)
@@ -435,7 +469,7 @@ if fx_file and domestic_file and foreign_file:
                 short_avg_pnl_pct = sum(p['pnl_pct'] for p in short_trades) / len(short_trades)
                 short_leveraged_return = short_avg_pnl_pct * leverage
                 short_avg_hold = np.mean([p['hold_days'] for p in short_trades])
-                st.write(f"**Short Performance**: {len(short_trades)} trades, {short_win_rate:.1f}% win rate, {short_avg_pnl_pct:.2f}% avg return, {short_leveraged_return:.2f}% leveraged return, {short_nominal_pnl:,.0f} nominal PnL, {short_avg_hold:.1f} avg hold days")
+                st.write(f"**Short Performance**: {len(short_trades)} trades, {short_win_rate:.1f}% win rate, {short_avg_pnl_pct:.2f}% avg return, {short_leveraged_return:.2f}% leveraged return, {short_nominal_pnl:,.0f} {quote_currency} nominal PnL, {short_avg_hold:.1f} avg hold days")
                 
         else:
             st.warning(f"No trades generated with current parameters (R² ≥ {min_r2}, {hold_period_days} day hold)")
@@ -447,23 +481,23 @@ if fx_file and domestic_file and foreign_file:
         with col1:
             st.metric("Average R²", f"{np.nanmean(r_squared_values):.3f}")
         with col2:
-            st.metric("Current FX Price", f"{df['fx_price'].iloc[-1]:.4f}")
+            st.metric(f"Current {currency_pair} Price", f"{df['fx_price'].iloc[-1]:.4f}")
         with col3:
             if not np.isnan(real_rates[-1]):
                 st.metric("Current Real Rate", f"{real_rates[-1]:.4f}")
             else:
                 st.metric("Current Real Rate", "N/A")
         with col4:
-            st.metric("Current Spread", f"{df['yield_spread'].iloc[-1]:.2f}%")
+            st.metric(f"Current Spread ({base_currency}-{quote_currency})", f"{df['yield_spread'].iloc[-1]:.2f}%")
         
         # Main Chart: Real Rate vs Historical Rate with Signals
-        st.header(f"Real Rate vs Historical FX Rate with Trading Signals ({strategy_type})")
+        st.header(f"Real Rate vs Historical {currency_pair} Rate with Trading Signals ({strategy_type})")
         
         fig, ax = plt.subplots(figsize=(15, 8))
         
         # Plot historical FX price
         ax.plot(df.index, df['fx_price'], 
-                label='Historical FX Rate', 
+                label=f'Historical {currency_pair} Rate', 
                 color='black', 
                 linewidth=2, 
                 alpha=0.8)
@@ -493,10 +527,10 @@ if fx_file and domestic_file and foreign_file:
                       label=f'Sell Signals ({len(sell_signals)})', zorder=5)
         
         # Add title and labels
-        ax.set_title(f'Real Rate vs Historical FX Rate ({strategy_type}, {hold_period_days} Day Hold, {entry_frequency})', 
+        ax.set_title(f'Real Rate vs Historical {currency_pair} Rate ({strategy_type}, {hold_period_days} Day Hold, {entry_frequency})', 
                     fontsize=16, fontweight='bold')
         ax.set_xlabel('Date', fontsize=12)
-        ax.set_ylabel('FX Rate', fontsize=12)
+        ax.set_ylabel(f'{currency_pair} Rate', fontsize=12)
         ax.legend(fontsize=12)
         ax.grid(True, alpha=0.3)
         
