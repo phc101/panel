@@ -548,7 +548,18 @@ if fx_file and domestic_file and foreign_file:
                 with col3:
                     st.metric("Best Regression Period", f"{int(best_strategy['regression_period'])} days")
                 with col4:
-                    metric_value = best_strategy[optimization_metric.lower().replace(' ', '_').replace('%', '_pct')]
+                    # Fix metric name mapping
+                    metric_mapping = {
+                        "Total Return %": "total_return_pct",
+                        "Sharpe Ratio": "sharpe_ratio", 
+                        "Total PnL": "total_pnl",
+                        "Win Rate": "win_rate",
+                        "Profit Factor": "profit_factor"
+                    }
+                    
+                    metric_column = metric_mapping.get(optimization_metric, "total_return_pct")
+                    metric_value = best_strategy[metric_column]
+                    
                     if optimization_metric == "Profit Factor" and np.isinf(metric_value):
                         metric_display = "∞"
                     else:
