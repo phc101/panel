@@ -311,26 +311,64 @@ def run_strategy_optimization(df, fx_prices, yield_spreads, base_currency, quote
     hold_min, hold_max = hold_range
     reg_min, reg_max = regression_range
     
-    # Create parameter combinations
-    r2_values = np.arange(r2_min, r2_max + 0.05, 0.05)
-    hold_values = np.arange(hold_min, hold_max + 5, 5)
-    reg_values = np.arange(reg_min, reg_max + 10, 10)
+    # Create parameter combinations with proper step sizes
+    r2_step = 0.05
+    hold_step = 5
+    reg_step = 10
     
-    # Limit combinations to avoid excessive computation
-    total_combinations = len(r2_values) * len(hold_values) * len(reg_values)
-    if total_combinations > max_combinations:
-        # Reduce step sizes to fit within limit
-        step_factor = int(np.ceil(total_combinations / max_combinations))
-        r2_values = r2_values[::max(1, step_factor//3)]
-        hold_values = hold_values[::max(1, step_factor//3)]
-        reg_values = reg_values[::max(1, step_factor//3)]
+    # Calculate actual number of values
+    r2_count = int((r2_max - r2_min) / r2_step) + 1
+    hold_count = int((hold_max - hold_min) / hold_step) + 1
+    reg_count = int((reg_max - reg_min) / reg_step) + 1
     
-    st.write(f"Testing {len(r2_values)} × {len(hold_values)} × {len(reg_values)} = {len(r2_values) * len(hold_values) * len(reg_values)} combinations...")
+    # Generate actual value arrays
+    r2_values = np.linspace(r2_min, r2_max, r2_count)
+    hold_values = np.arange(hold_min, hold_max + hold_step, hold_step)
+    reg_values = np.arange(reg_min, reg_max + reg_step, reg_step)
+    
+    # Calculate total combinations BEFORE any reduction
+    total_combinations_theoretical = len(r2_values) * len(hold_values) * len(reg_values)
+    
+    st.write(f"**Initial Parameter Space:**")
+    st.write(f"- R² values: {len(r2_values)} ({r2_min:.2f} to {r2_max:.2f}, step {r2_step})")
+    st.write(f"- Hold periods: {len(hold_values)} ({hold_min} to {hold_max}, step {hold_step})")
+    st.write(f"- Regression periods: {len(reg_values)} ({reg_min} to {reg_max}, step {reg_step})")
+    st.write(f"- **Total theoretical combinations: {total_combinations_theoretical:,}**")
+    
+    # Apply max combinations limit if needed
+    if total_combinations_theoretical > max_combinations:
+        st.warning(f"⚠️ Reducing from {total_combinations_theoretical:,} to {max_combinations} combinations to manage computation time.")
+        
+        # Calculate reduction factor for each dimension
+        reduction_factor = (max_combinations / total_combinations_theoretical) ** (1/3)
+        
+        # Reduce each dimension proportionally
+        r2_reduced = max(3, int(len(r2_values) * reduction_factor))
+        hold_reduced = max(3, int(len(hold_values) * reduction_factor))
+        reg_reduced = max(3, int(len(reg_values) * reduction_factor))
+        
+        # Create reduced arrays by selecting evenly spaced values
+        r2_indices = np.linspace(0, len(r2_values)-1, r2_reduced, dtype=int)
+        hold_indices = np.linspace(0, len(hold_values)-1, hold_reduced, dtype=int)
+        reg_indices = np.linspace(0, len(reg_values)-1, reg_reduced, dtype=int)
+        
+        r2_values = r2_values[r2_indices]
+        hold_values = hold_values[hold_indices]
+        reg_values = reg_values[reg_indices]
+        
+        st.write(f"**Reduced Parameter Space:**")
+        st.write(f"- R² values: {len(r2_values)} (selected: {[f'{x:.2f}' for x in r2_values]})")
+        st.write(f"- Hold periods: {len(hold_values)} (selected: {[int(x) for x in hold_values]})")
+        st.write(f"- Regression periods: {len(reg_values)} (selected: {[int(x) for x in reg_values]})")
+    
+    actual_combinations = len(r2_values) * len(hold_values) * len(reg_values)
+    st.write(f"**Actually testing: {actual_combinations:,} combinations**")
     
     optimization_results = []
     progress_bar = st.progress(0)
-    total_tests = len(r2_values) * len(hold_values) * len(reg_values)
     current_test = 0
+    successful_tests = 0
+    failed_tests = 0
     
     for reg_period in reg_values:
         # Calculate real rates for this regression period
@@ -339,7 +377,7 @@ def run_strategy_optimization(df, fx_prices, yield_spreads, base_currency, quote
         for min_r2_opt in r2_values:
             for hold_days_opt in hold_values:
                 current_test += 1
-                progress_bar.progress(current_test / total_tests)
+                progress_bar.progress(current_test / actual_combinations)
                 
                 try:
                     # Run strategy with these parameters
@@ -361,11 +399,30 @@ def run_strategy_optimization(df, fx_prices, yield_spreads, base_currency, quote
                             'avg_trade_pnl': result['avg_trade_pnl'],
                             'positions': result['positions']
                         })
+                        successful_tests += 1
+                    else:
+                        failed_tests += 1
                 except Exception as e:
-                    # Skip problematic combinations
-                    continue
+                    failed_tests += 1
+                    # Log specific errors for debugging
+                    if current_test <= 5:  # Only show first few errors
+                        st.write(f"Debug: Failed combination R²={min_r2_opt:.2f}, Hold={int(hold_days_opt)}, Reg={int(reg_period)} - {str(e)[:100]}")
     
     progress_bar.empty()
+    
+    # Show optimization summary
+    st.write(f"**Optimization Summary:**")
+    st.write(f"- ✅ Successful combinations: {successful_tests}")
+    st.write(f"- ❌ Failed combinations: {failed_tests}")
+    st.write(f"- 📊 Success rate: {(successful_tests/actual_combinations)*100:.1f}%")
+    
+    if successful_tests == 0:
+        st.error("🚨 **No successful combinations found!** This usually means:")
+        st.write("1. **R² thresholds too high** - try lowering minimum R² to 0.05-0.15")
+        st.write("2. **Data quality issues** - check if your datasets have sufficient overlap")
+        st.write("3. **Hold periods too long** - try shorter holding periods (5-30 days)")
+        st.write("4. **Regression periods inappropriate** - try 20-100 day regression windows")
+    
     return optimization_results
 
 # Load all data
@@ -902,6 +959,147 @@ if fx_file and domestic_file and foreign_file:
         plt.xticks(rotation=45)
         plt.tight_layout()
         st.pyplot(fig)
+        
+        # PnL Over Time Chart
+        if positions:
+            st.header("Cumulative PnL Over Time")
+            
+            # Create detailed PnL timeline
+            pnl_timeline = []
+            
+            for pos in positions:
+                pnl_timeline.append({
+                    'date': pos['exit_date'],
+                    'pnl': pos['nominal_pnl'],
+                    'position_type': pos['position'],
+                    'hold_days': pos['hold_days'],
+                    'target_hold_days': pos['target_hold_days']
+                })
+            
+            if pnl_timeline:
+                pnl_df = pd.DataFrame(pnl_timeline)
+                pnl_df['date'] = pd.to_datetime(pnl_df['date'])
+                pnl_df = pnl_df.sort_values('date')
+                pnl_df['cumulative_pnl'] = pnl_df['pnl'].cumsum()
+                
+                # Create separate cumulative for long and short
+                long_pnl = pnl_df[pnl_df['position_type'] == 'Long'].copy()
+                short_pnl = pnl_df[pnl_df['position_type'] == 'Short'].copy()
+                
+                if len(long_pnl) > 0:
+                    long_pnl['cumulative_long'] = long_pnl['pnl'].cumsum()
+                if len(short_pnl) > 0:
+                    short_pnl['cumulative_short'] = short_pnl['pnl'].cumsum()
+                
+                fig2, ax2 = plt.subplots(figsize=(15, 8))
+                
+                # Plot cumulative PnL
+                ax2.plot(pnl_df['date'], pnl_df['cumulative_pnl'], 
+                         label=f'Total Cumulative PnL ({strategy_type})', 
+                         color='blue', linewidth=3, alpha=0.8)
+                
+                # Plot long cumulative PnL if strategy allows
+                if strategy_type in ["Long and Short", "Long Only"] and len(long_pnl) > 0:
+                    ax2.plot(long_pnl['date'], long_pnl['cumulative_long'], 
+                             label='Long Positions', color='green', 
+                             linewidth=2, alpha=0.7, linestyle='--')
+                
+                # Plot short cumulative PnL if strategy allows
+                if strategy_type in ["Long and Short", "Short Only"] and len(short_pnl) > 0:
+                    ax2.plot(short_pnl['date'], short_pnl['cumulative_short'], 
+                             label='Short Positions', color='red', 
+                             linewidth=2, alpha=0.7, linestyle='--')
+                
+                # Add zero line
+                ax2.axhline(0, color='gray', linestyle='-', alpha=0.5)
+                
+                # Mark individual trade exits with color coding for exact hold period
+                for i, row in pnl_df.iterrows():
+                    pnl_color = 'green' if row['pnl'] > 0 else 'red'
+                    marker = '^' if row['position_type'] == 'Long' else 'v'
+                    
+                    # Different marker size based on whether exact hold period was achieved
+                    marker_size = 40 if row['hold_days'] == row['target_hold_days'] else 20
+                    alpha = 0.8 if row['hold_days'] == row['target_hold_days'] else 0.4
+                    
+                    ax2.scatter(row['date'], row['cumulative_pnl'], 
+                               color=pnl_color, marker=marker, s=marker_size, 
+                               alpha=alpha, zorder=5)
+                
+                ax2.set_title(f'Cumulative PnL Over Time ({hold_period_days} Day Hold Period) - Results in {quote_currency}', 
+                              fontsize=14, fontweight='bold')
+                ax2.set_xlabel('Date', fontsize=12)
+                ax2.set_ylabel(f'Cumulative PnL ({quote_currency})', fontsize=12)
+                ax2.legend(fontsize=10)
+                ax2.grid(True, alpha=0.3)
+                ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
+                
+                # Format x-axis
+                ax2.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+                ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+                
+                plt.xticks(rotation=45)
+                plt.tight_layout()
+                st.pyplot(fig2)
+                
+                # Show legend explanation
+                st.write("**Chart Legend**: Large markers = exact hold period achieved, small markers = early/late exit")
+        
+        # Secondary Chart: Yield Spread
+        st.header(f"Yield Spread Over Time ({base_currency} vs {quote_currency} Bonds)")
+        
+        fig3, ax3 = plt.subplots(figsize=(15, 6))
+        
+        ax3.plot(df.index, df['yield_spread'], 
+                 label=f'Yield Spread ({base_currency} - {quote_currency})', 
+                 color='blue', 
+                 linewidth=2)
+        
+        ax3.axhline(0, color='gray', linestyle='--', alpha=0.5)
+        ax3.set_title(f'Yield Spread ({base_currency} - {quote_currency} Bond Yields)', fontsize=16, fontweight='bold')
+        ax3.set_xlabel('Date', fontsize=12)
+        ax3.set_ylabel('Yield Spread (%)', fontsize=12)
+        ax3.legend(fontsize=12)
+        ax3.grid(True, alpha=0.3)
+        
+        # Format x-axis
+        ax3.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+        ax3.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+        
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig3)
+        
+        # Model Quality Chart: R² over time
+        st.header("Model Quality (R²) Over Time")
+        
+        fig4, ax4 = plt.subplots(figsize=(15, 6))
+        
+        valid_mask = ~np.isnan(df['real_rate'])
+        valid_data = df[valid_mask]
+        
+        ax4.plot(valid_data.index, valid_data['r_squared'], 
+                 label='R² (Model Fit Quality)', 
+                 color='green', 
+                 linewidth=2)
+        
+        ax4.axhline(0.5, color='orange', linestyle='--', alpha=0.7, label='50% R²')
+        ax4.axhline(min_r2, color='red', linestyle='--', alpha=0.7, label=f'{min_r2*100:.0f}% R² (Trading Threshold)')
+        
+        ax4.set_title('Regression Model Quality Over Time', fontsize=16, fontweight='bold')
+        ax4.set_xlabel('Date', fontsize=12)
+        ax4.set_ylabel('R² Value', fontsize=12)
+        ax4.set_ylim(0, 1)
+        ax4.legend(fontsize=12)
+        ax4.grid(True, alpha=0.3)
+        
+        # Format x-axis
+        ax4.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
+        ax4.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+        
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig4)
         
         # Charts and detailed analysis would continue here
         # Show detailed trades if requested
