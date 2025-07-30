@@ -159,7 +159,7 @@ def rolling_regression(y, x, window):
     
     return predictions, r_squared
 
-def run_single_strategy(df, real_rates_opt, r_squared_opt, hold_days_opt, min_r2_opt, reg_period):
+def run_single_strategy(df, real_rates_opt, r_squared_opt, hold_days_opt, min_r2_opt, reg_period, strategy_type_param, entry_frequency_param, position_size_param, leverage_param):
     """Run a single strategy configuration and return performance metrics"""
     
     # Create a copy of dataframe with optimization parameters
@@ -167,9 +167,11 @@ def run_single_strategy(df, real_rates_opt, r_squared_opt, hold_days_opt, min_r2
     df_opt['real_rate'] = real_rates_opt
     df_opt['r_squared'] = r_squared_opt
     df_opt['tradeable'] = df_opt['r_squared'] >= min_r2_opt
+    df_opt['weekday'] = df_opt.index.weekday
+    df_opt['is_monday'] = df_opt['weekday'] == 0
     
     # Determine entry dates
-    if entry_frequency == "Monday Only":
+    if entry_frequency_param == "Monday Only":
         entry_dates = df_opt[(df_opt['is_monday']) & (df_opt['tradeable']) & (~df_opt['real_rate'].isna())].index
     else:
         entry_dates = df_opt[(df_opt['tradeable']) & (~df_opt['real_rate'].isna())].index
@@ -217,14 +219,14 @@ def run_single_strategy(df, real_rates_opt, r_squared_opt, hold_days_opt, min_r2
                     'hold_days': (pos['exit_date'] - pos['entry_date']).days,
                     'pnl': pnl,
                     'pnl_pct': (pnl / pos['entry_price']) * 100,
-                    'nominal_pnl': pnl * position_size * leverage,
+                    'nominal_pnl': pnl * position_size_param * leverage_param,
                 })
             
             # Remove closed positions
             active_positions = [pos for pos in active_positions if pos['exit_date'] > entry_date]
             
             # Enter new positions
-            if fx_price < real_rate and strategy_type in ["Long and Short", "Long Only"]:
+            if fx_price < real_rate and strategy_type_param in ["Long and Short", "Long Only"]:
                 active_positions.append({
                     'entry_date': entry_date,
                     'exit_date': exit_date,
@@ -232,7 +234,7 @@ def run_single_strategy(df, real_rates_opt, r_squared_opt, hold_days_opt, min_r2
                     'position_type': 'Long'
                 })
             
-            if fx_price > real_rate and strategy_type in ["Long and Short", "Short Only"]:
+            if fx_price > real_rate and strategy_type_param in ["Long and Short", "Short Only"]:
                 active_positions.append({
                     'entry_date': entry_date,
                     'exit_date': exit_date,
@@ -259,7 +261,7 @@ def run_single_strategy(df, real_rates_opt, r_squared_opt, hold_days_opt, min_r2
             'hold_days': (actual_exit_date - pos['entry_date']).days,
             'pnl': pnl,
             'pnl_pct': (pnl / pos['entry_price']) * 100,
-            'nominal_pnl': pnl * position_size * leverage,
+            'nominal_pnl': pnl * position_size_param * leverage_param,
         })
     
     if len(positions) == 0:
@@ -271,7 +273,7 @@ def run_single_strategy(df, real_rates_opt, r_squared_opt, hold_days_opt, min_r2
     win_rate = (winning_trades / total_trades) * 100
     
     total_pnl = sum(p['nominal_pnl'] for p in positions)
-    total_capital = sum(position_size / leverage for p in positions)
+    total_capital = sum(position_size_param / leverage_param for p in positions)
     total_return_pct = (total_pnl / total_capital) * 100 if total_capital > 0 else 0
     
     # Calculate Sharpe ratio
@@ -380,9 +382,10 @@ def run_strategy_optimization(df, fx_prices, yield_spreads, base_currency, quote
                 progress_bar.progress(current_test / actual_combinations)
                 
                 try:
-                    # Run strategy with these parameters
+                    # Run strategy with these parameters - NOW PASSING ALL REQUIRED PARAMETERS
                     result = run_single_strategy(df, real_rates_opt, r_squared_opt, 
-                                               int(hold_days_opt), min_r2_opt, int(reg_period))
+                                               int(hold_days_opt), min_r2_opt, int(reg_period),
+                                               strategy_type, entry_frequency, position_size, leverage)
                     
                     if result and len(result['positions']) > 0:
                         optimization_results.append({
@@ -562,7 +565,7 @@ if fx_file and domestic_file and foreign_file:
                 st.subheader("📊 Current vs Optimal Strategy Comparison")
                 
                 # Run current strategy for comparison
-                current_result = run_single_strategy(df, real_rates, r_squared_values, hold_period_days, min_r2, lookback_days)
+                current_result = run_single_strategy(df, real_rates, r_squared_values, hold_period_days, min_r2, lookback_days, strategy_type, entry_frequency, position_size, leverage)
                 
                 if current_result:
                     comparison_data = {
