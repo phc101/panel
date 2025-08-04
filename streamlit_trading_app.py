@@ -1,467 +1,364 @@
-# TRADING PAIRS SUMMARY TABLE - Add to your ultra-fast app
+# CURRENCY PAIRS TRADING SUMMARY TABLE
 
 import streamlit as st
 import pandas as pd
-import numpy as np
-import time
-from datetime import datetime
 import MetaTrader5 as mt5
+from concurrent.futures import ThreadPoolExecutor
+import time
 
-# Enhanced batch data loader with more pairs
+# Fast data loader for all major pairs
 @st.cache_data(ttl=30, show_spinner=False)
-def get_all_pairs_data():
-    """Load data for all major pairs efficiently"""
+def load_pairs_summary():
+    """Load trading data for all major currency pairs"""
+    
     pairs = [
-        'EURUSD.pro', 'GBPUSD.pro', 'USDJPY.pro', 'AUDUSD.pro',
+        'EURUSD.pro', 'GBPUSD.pro', 'USDJPY.pro', 'AUDUSD.pro', 
         'USDCHF.pro', 'NZDUSD.pro', 'USDCAD.pro', 'EURJPY.pro',
         'GBPJPY.pro', 'EURGBP.pro', 'AUDCAD.pro', 'XAUUSD.pro'
     ]
     
-    batch_data = {}
-    
-    def load_pair_data(symbol):
+    def get_pair_data(symbol):
         try:
             # Get current price
             tick = mt5.symbol_info_tick(symbol)
             if not tick:
-                return symbol, None
+                return None
+                
+            # Get last 14 daily bars for calculation
+            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_D1, 0, 14)
+            if rates is None or len(rates) < 7:
+                return None
             
-            # Get last 20 daily candles for signal calculation
-            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_D1, 0, 20)
-            if rates is None or len(rates) < 10:
-                return symbol, None
+            # Calculate pivot levels
+            recent_rates = rates[-7:]  # Last 7 days
+            high = max([r['high'] for r in recent_rates])
+            low = min([r['low'] for r in recent_rates])
+            close = recent_rates[-1]['close']
             
-            # Calculate basic indicators
-            highs = [r['high'] for r in rates[-10:]]
-            lows = [r['low'] for r in rates[-10:]]
-            closes = [r['close'] for r in rates[-10:]]
+            # Standard pivot calculation
+            pivot = (high + low + close) / 3
+            r1 = 2 * pivot - low
+            s1 = 2 * pivot - high
+            r2 = pivot + (high - low)
+            s2 = pivot - (high - low)
             
-            # Pivot points
-            pivot = (max(highs) + min(lows) + closes[-1]) / 3
-            r1 = 2 * pivot - min(lows)
-            s1 = 2 * pivot - max(highs)
-            r2 = pivot + (max(highs) - min(lows))
-            s2 = pivot - (max(highs) - min(lows))
-            
-            # Simple trend analysis
-            ma_5 = sum(closes[-5:]) / 5
-            ma_10 = sum(closes[-10:]) / 10
-            trend = "UP" if ma_5 > ma_10 else "DOWN" if ma_5 < ma_10 else "FLAT"
-            
-            # Signal generation
+            # Current price
             current_price = tick.ask
+            
+            # Generate signal based on pivot levels
             signal = "NEUTRAL"
             strength = 0
             
             if current_price <= s2:
-                signal = "STRONG BUY"
-                strength = 3
-            elif current_price <= s1:
                 signal = "BUY"
-                strength = 2
+                strength = 3  # Strong
+            elif current_price <= s1:
+                signal = "BUY" 
+                strength = 2  # Medium
+            elif current_price <= pivot:
+                signal = "BUY"
+                strength = 1  # Weak
             elif current_price >= r2:
-                signal = "STRONG SELL"
-                strength = -3
+                signal = "SELL"
+                strength = 3  # Strong
             elif current_price >= r1:
                 signal = "SELL"
-                strength = -2
-            elif current_price < pivot and trend == "UP":
-                signal = "WEAK BUY"
-                strength = 1
-            elif current_price > pivot and trend == "DOWN":
-                signal = "WEAK SELL"
-                strength = -1
+                strength = 2  # Medium
+            elif current_price >= pivot:
+                signal = "SELL"
+                strength = 1  # Weak
             
-            # Price change calculation
-            if len(rates) > 1:
+            # Calculate price change
+            if len(rates) >= 2:
                 prev_close = rates[-2]['close']
                 change_pct = ((current_price - prev_close) / prev_close) * 100
             else:
                 change_pct = 0
             
-            return symbol, {
-                'bid': tick.bid,
-                'ask': tick.ask,
-                'spread': (tick.ask - tick.bid) * 10000,  # in pips
-                'change_pct': change_pct,
-                'pivot': pivot,
-                'r1': r1, 'r2': r2,
-                's1': s1, 's2': s2,
+            return {
+                'symbol': symbol.replace('.pro', ''),
+                'price': current_price,
+                'change': change_pct,
                 'signal': signal,
                 'strength': strength,
-                'trend': trend,
-                'volume': getattr(tick, 'volume', 0),
-                'time': tick.time
+                'pivot': pivot,
+                'spread': (tick.ask - tick.bid) * 10000  # in pips
             }
             
         except Exception as e:
             print(f"Error loading {symbol}: {e}")
-            return symbol, None
+            return None
     
     # Load all pairs in parallel
-    from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=6) as executor:
-        results = executor.map(load_pair_data, pairs)
+        results = list(executor.map(get_pair_data, pairs))
     
-    for symbol, data in results:
-        if data:
-            batch_data[symbol] = data
-    
-    return batch_data
+    # Filter successful results
+    valid_results = [r for r in results if r is not None]
+    return valid_results
 
-# Create the summary table
-def create_pairs_summary_table():
-    """Create a comprehensive pairs summary table"""
+def create_trading_table():
+    """Create the main trading summary table"""
     
-    # Get all pairs data
-    pairs_data = get_all_pairs_data()
+    # Load data
+    pairs_data = load_pairs_summary()
     
     if not pairs_data:
-        st.error("No market data available")
+        st.error("❌ No trading data available")
         return
     
-    # Convert to DataFrame for easy manipulation
-    summary_data = []
+    # Convert to DataFrame
+    df = pd.DataFrame(pairs_data)
     
-    for symbol, data in pairs_data.items():
-        # Clean symbol name
-        clean_symbol = symbol.replace('.pro', '')
+    # Sort by signal strength (strongest first)
+    df['sort_key'] = df.apply(lambda row: row['strength'] if row['signal'] == 'BUY' else -row['strength'], axis=1)
+    df = df.sort_values('sort_key', ascending=False)
+    
+    # Create display table
+    display_data = []
+    for _, row in df.iterrows():
         
-        summary_data.append({
-            'Pair': clean_symbol,
-            'Price': data['ask'],
-            'Change%': data['change_pct'],
-            'Spread': data['spread'],
-            'Signal': data['signal'],
-            'Strength': data['strength'],
-            'Trend': data['trend'],
-            'Pivot': data['pivot'],
-            'R2': data['r2'],
-            'R1': data['r1'],
-            'S1': data['s1'],
-            'S2': data['s2'],
-            'Volume': data['volume'],
-            'Updated': datetime.fromtimestamp(data['time']).strftime('%H:%M:%S')
+        # Signal with strength indicators
+        if row['signal'] == 'BUY':
+            if row['strength'] == 3:
+                signal_display = "🟢 STRONG BUY"
+                signal_color = "#00ff00"
+            elif row['strength'] == 2:
+                signal_display = "🟢 BUY"
+                signal_color = "#90EE90"
+            else:
+                signal_display = "🟢 WEAK BUY"
+                signal_color = "#98FB98"
+        elif row['signal'] == 'SELL':
+            if row['strength'] == 3:
+                signal_display = "🔴 STRONG SELL"
+                signal_color = "#ff0000"
+            elif row['strength'] == 2:
+                signal_display = "🔴 SELL"
+                signal_color = "#FFB6C1"
+            else:
+                signal_display = "🔴 WEAK SELL"
+                signal_color = "#FFC0CB"
+        else:
+            signal_display = "⚪ NEUTRAL"
+            signal_color = "#f0f0f0"
+        
+        # Strength bars
+        strength_bars = "█" * row['strength'] if row['strength'] > 0 else "─"
+        
+        display_data.append({
+            'Pair': row['symbol'],
+            'Price': f"{row['price']:.5f}",
+            'Change%': f"{row['change']:+.2f}%",
+            'Signal': signal_display,
+            'Strength': strength_bars,
+            'Pivot': f"{row['pivot']:.5f}",
+            'Spread': f"{row['spread']:.1f}"
         })
     
-    df = pd.DataFrame(summary_data)
+    display_df = pd.DataFrame(display_data)
     
-    # Sort by signal strength (strongest signals first)
-    df = df.sort_values('Strength', key=abs, ascending=False)
-    
-    return df
+    return display_df, pairs_data
 
-# Enhanced display function with color coding
-def display_pairs_summary():
-    """Display the pairs summary with advanced formatting"""
+def display_summary_metrics(pairs_data):
+    """Display summary statistics"""
     
-    st.markdown("## 📊 **Live Trading Pairs Summary**")
+    buy_signals = sum(1 for p in pairs_data if p['signal'] == 'BUY')
+    sell_signals = sum(1 for p in pairs_data if p['signal'] == 'SELL')
+    strong_signals = sum(1 for p in pairs_data if p['strength'] == 3)
     
-    # Get summary data
-    df = create_pairs_summary_table()
-    
-    if df.empty:
-        st.warning("No trading data available")
-        return
-    
-    # Create metrics row
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        total_pairs = len(df)
-        st.metric("📈 Total Pairs", total_pairs)
+        st.metric("📊 Total Pairs", len(pairs_data))
     
     with col2:
-        buy_signals = len(df[df['Signal'].str.contains('BUY')])
         st.metric("🟢 Buy Signals", buy_signals)
-    
+        
     with col3:
-        sell_signals = len(df[df['Signal'].str.contains('SELL')])
         st.metric("🔴 Sell Signals", sell_signals)
-    
+        
     with col4:
-        strong_signals = len(df[df['Signal'].str.contains('STRONG')])
         st.metric("⚡ Strong Signals", strong_signals)
-    
+        
     with col5:
-        avg_spread = df['Spread'].mean()
+        avg_spread = sum(p['spread'] for p in pairs_data) / len(pairs_data)
         st.metric("📏 Avg Spread", f"{avg_spread:.1f}")
+
+def main_trading_summary():
+    """Main function to display the trading summary"""
     
-    st.markdown("---")
+    # Page header
+    st.markdown("# 📈 **CURRENCY PAIRS TRADING SUMMARY**")
+    st.markdown("*Real-time signals based on pivot point analysis*")
     
-    # Style the dataframe
-    def style_dataframe(df):
-        """Apply conditional formatting to the dataframe"""
-        
-        def color_signal(val):
-            if 'STRONG BUY' in val:
-                return 'background-color: #00ff00; color: black; font-weight: bold'
-            elif 'BUY' in val:
-                return 'background-color: #90EE90; color: black'
-            elif 'STRONG SELL' in val:
-                return 'background-color: #ff0000; color: white; font-weight: bold'
-            elif 'SELL' in val:
-                return 'background-color: #FFB6C1; color: black'
-            else:
-                return 'background-color: #f0f0f0; color: black'
-        
-        def color_change(val):
-            if val > 0:
-                return 'color: green; font-weight: bold'
-            elif val < 0:
-                return 'color: red; font-weight: bold'
-            else:
-                return 'color: gray'
-        
-        def color_trend(val):
-            if val == 'UP':
-                return 'color: green'
-            elif val == 'DOWN':
-                return 'color: red'
-            else:
-                return 'color: orange'
-        
-        # Apply styles
-        styled = df.style.applymap(color_signal, subset=['Signal']) \
-                        .applymap(color_change, subset=['Change%']) \
-                        .applymap(color_trend, subset=['Trend']) \
-                        .format({
-                            'Price': '{:.5f}',
-                            'Change%': '{:+.2f}%',
-                            'Spread': '{:.1f}',
-                            'Pivot': '{:.5f}',
-                            'R2': '{:.5f}',
-                            'R1': '{:.5f}',
-                            'S1': '{:.5f}',
-                            'S2': '{:.5f}',
-                            'Volume': '{:,.0f}'
-                        })
-        
-        return styled
-    
-    # Display the styled table
-    styled_df = style_dataframe(df)
-    st.dataframe(styled_df, use_container_width=True, height=400)
-    
-    # Quick action buttons
-    st.markdown("### ⚡ Quick Actions")
-    col1, col2, col3, col4 = st.columns(4)
-    
+    # Add refresh button
+    col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
-        if st.button("🔍 Refresh All", key="refresh_all"):
+        if st.button("🔄 Refresh Data"):
             st.cache_data.clear()
             st.rerun()
     
     with col2:
-        strong_buy_pairs = df[df['Signal'] == 'STRONG BUY']
-        if not strong_buy_pairs.empty and st.button("🚀 Execute Strong Buys", key="exec_buy"):
-            st.success(f"Would execute BUY orders for: {', '.join(strong_buy_pairs['Pair'].tolist())}")
+        last_update = time.strftime("%H:%M:%S")
+        st.info(f"🕒 Updated: {last_update}")
     
-    with col3:
-        strong_sell_pairs = df[df['Signal'] == 'STRONG SELL']
-        if not strong_sell_pairs.empty and st.button("📉 Execute Strong Sells", key="exec_sell"):
-            st.success(f"Would execute SELL orders for: {', '.join(strong_sell_pairs['Pair'].tolist())}")
-    
-    with col4:
-        if st.button("📊 Export Data", key="export"):
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="💾 Download CSV",
-                data=csv,
-                file_name=f"trading_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
+    # Create and display table
+    try:
+        display_df, pairs_data = create_trading_table()
+        
+        if display_df is not None:
+            # Display summary metrics
+            display_summary_metrics(pairs_data)
+            
+            st.markdown("---")
+            
+            # Main trading table
+            st.markdown("### 📋 **TRADING SIGNALS TABLE**")
+            
+            # Style the dataframe
+            def style_signal_column(val):
+                if "STRONG BUY" in val:
+                    return "background-color: #00ff00; color: black; font-weight: bold;"
+                elif "WEAK BUY" in val or val == "🟢 BUY":
+                    return "background-color: #90EE90; color: black;"
+                elif "STRONG SELL" in val:
+                    return "background-color: #ff0000; color: white; font-weight: bold;"
+                elif "WEAK SELL" in val or val == "🔴 SELL":
+                    return "background-color: #FFB6C1; color: black;"
+                else:
+                    return "background-color: #f0f0f0; color: black;"
+            
+            def style_change_column(val):
+                if "+" in val:
+                    return "color: green; font-weight: bold;"
+                elif "-" in val:
+                    return "color: red; font-weight: bold;"
+                else:
+                    return "color: gray;"
+            
+            # Apply styling
+            styled_df = display_df.style.applymap(
+                style_signal_column, subset=['Signal']
+            ).applymap(
+                style_change_column, subset=['Change%']
+            ).set_properties(**{
+                'text-align': 'center',
+                'font-size': '14px'
+            })
+            
+            # Display the table
+            st.dataframe(
+                styled_df, 
+                use_container_width=True, 
+                height=400,
+                hide_index=True
             )
+            
+            # Quick action buttons
+            st.markdown("### ⚡ **QUICK ACTIONS**")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                strong_buys = [p for p in pairs_data if p['signal'] == 'BUY' and p['strength'] == 3]
+                if strong_buys:
+                    if st.button(f"🚀 Execute {len(strong_buys)} Strong Buys"):
+                        buy_pairs = [p['symbol'] for p in strong_buys]
+                        st.success(f"Ready to BUY: {', '.join(buy_pairs)}")
+            
+            with col2:
+                strong_sells = [p for p in pairs_data if p['signal'] == 'SELL' and p['strength'] == 3]
+                if strong_sells:
+                    if st.button(f"📉 Execute {len(strong_sells)} Strong Sells"):
+                        sell_pairs = [p['symbol'] for p in strong_sells]
+                        st.success(f"Ready to SELL: {', '.join(sell_pairs)}")
+            
+            with col3:
+                if st.button("💾 Export CSV"):
+                    csv = display_df.to_csv(index=False)
+                    st.download_button(
+                        "📁 Download Data",
+                        csv,
+                        f"trading_signals_{time.strftime('%Y%m%d_%H%M%S')}.csv",
+                        "text/csv"
+                    )
+        
+    except Exception as e:
+        st.error(f"❌ Error creating table: {str(e)}")
 
 # Auto-refresh functionality
 def setup_auto_refresh():
-    """Setup auto-refresh with countdown"""
+    """Setup automatic refresh"""
     
-    col1, col2 = st.columns([3, 1])
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
     
     with col1:
-        auto_refresh = st.checkbox("🔄 Auto Refresh (30s)", key="auto_refresh")
+        auto_refresh = st.checkbox("🔄 Auto Refresh", value=False)
     
     with col2:
-        refresh_interval = st.selectbox("Interval", [15, 30, 60, 120], index=1, key="refresh_interval")
-    
-    if auto_refresh:
-        # Show countdown
-        placeholder = st.empty()
-        
-        if 'last_refresh' not in st.session_state:
-            st.session_state.last_refresh = time.time()
-        
-        time_since_refresh = time.time() - st.session_state.last_refresh
-        time_to_refresh = refresh_interval - time_since_refresh
-        
-        if time_to_refresh <= 0:
-            st.cache_data.clear()
-            st.session_state.last_refresh = time.time()
-            st.rerun()
-        else:
-            placeholder.info(f"⏱️ Next refresh in {time_to_refresh:.0f} seconds")
-            time.sleep(1)
-            st.rerun()
-
-# Compact view for mobile/small screens
-def display_compact_summary():
-    """Compact view for better mobile experience"""
-    
-    if st.checkbox("📱 Compact View"):
-        df = create_pairs_summary_table()
-        
-        # Show only essential columns
-        compact_df = df[['Pair', 'Price', 'Change%', 'Signal', 'Updated']].copy()
-        
-        # Add emoji indicators
-        def add_signal_emoji(signal):
-            if 'STRONG BUY' in signal:
-                return '🚀 ' + signal
-            elif 'BUY' in signal:
-                return '📈 ' + signal
-            elif 'STRONG SELL' in signal:
-                return '📉 ' + signal
-            elif 'SELL' in signal:
-                return '🔻 ' + signal
+        if auto_refresh:
+            refresh_seconds = st.selectbox("Refresh Every", [30, 60, 120, 300], index=0)
+            
+            # Auto refresh logic
+            if 'last_refresh' not in st.session_state:
+                st.session_state.last_refresh = time.time()
+            
+            elapsed = time.time() - st.session_state.last_refresh
+            
+            if elapsed >= refresh_seconds:
+                st.cache_data.clear()
+                st.session_state.last_refresh = time.time()
+                st.rerun()
             else:
-                return '➖ ' + signal
-        
-        compact_df['Signal'] = compact_df['Signal'].apply(add_signal_emoji)
-        
-        st.dataframe(compact_df, use_container_width=True, height=300)
+                remaining = refresh_seconds - elapsed
+                st.info(f"⏰ Next refresh in {remaining:.0f}s")
 
-# Integration with your existing ultra-fast app
-def enhanced_ultra_fast_app():
-    """Enhanced version with pairs summary table"""
+# Integration with your existing app
+def run_trading_summary_app():
+    """Complete app with trading summary"""
     
-    # Add the CSS for better styling
+    # Custom CSS for better styling
     st.markdown("""
     <style>
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    .stApp {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    
+    .metric-container {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
         padding: 1rem;
         border-radius: 10px;
         color: white;
         text-align: center;
-        margin: 0.5rem 0;
+        margin: 0.5rem;
     }
     
-    .signal-strong-buy {
-        background-color: #00ff00 !important;
-        color: black !important;
-        font-weight: bold !important;
+    .dataframe td {
+        font-weight: 500 !important;
     }
     
-    .signal-strong-sell {
-        background-color: #ff0000 !important;
-        color: white !important;
-        font-weight: bold !important;
-    }
-    
-    .stDataFrame {
-        border: 1px solid #333;
-        border-radius: 5px;
+    h1, h3 {
+        text-align: center;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # App title
-    st.markdown("# ⚡ **Ultra Fast Pivot Trading Bot**")
-    
-    # Connection status (your existing code)
-    if st.session_state.get('mt5_connected', False):
-        account = st.session_state.get('mt5_account_info', {})
-        st.success(f"✅ Connected | Balance: {account.get('balance', 0):.0f} | Server: {account.get('server', 'Unknown')}")
-    else:
-        st.error("🔴 MT5 Disconnected - Please connect first")
-    
-    # Add the pairs summary table at the top
-    display_pairs_summary()
-    
-    # Auto-refresh setup
-    setup_auto_refresh()
-    
-    # Compact view option
-    display_compact_summary()
-    
-    # Separator
-    st.markdown("---")
-    
-    # Your existing minimal UI can go here
-    st.markdown("### 🎯 Quick Actions")
-    minimal_trading_ui()  # Your existing function
-
-# Usage in your main app
-if __name__ == "__main__":
-    # Initialize MT5 connection (your existing code)
+    # Check MT5 connection
     if not st.session_state.get('mt5_connected', False):
-        # Your MT5 connection code here
-        pass
+        st.warning("⚠️ MT5 not connected. Please connect to MetaTrader 5 first.")
+        # Add your MT5 connection form here
+        return
     
-    # Run the enhanced app
-    enhanced_ultra_fast_app()
-
-# Additional utility functions for the summary table
-
-def get_market_hours_status():
-    """Check if major markets are open"""
-    now = datetime.now()
-    hour = now.hour
+    # Main trading summary
+    main_trading_summary()
     
-    # Simplified market hours (UTC)
-    market_status = {
-        'FOREX': 'OPEN' if 0 <= hour <= 23 else 'CLOSED',  # Forex is almost always open
-        'LONDON': 'OPEN' if 8 <= hour <= 16 else 'CLOSED',
-        'NEW_YORK': 'OPEN' if 13 <= hour <= 21 else 'CLOSED',
-        'TOKYO': 'OPEN' if 23 <= hour or hour <= 7 else 'CLOSED'
-    }
-    
-    return market_status
+    # Auto refresh setup
+    setup_auto_refresh()
 
-def display_market_status():
-    """Display market hours status"""
-    status = get_market_hours_status()
-    
-    st.markdown("#### 🌍 Market Hours")
-    cols = st.columns(len(status))
-    
-    for i, (market, state) in enumerate(status.items()):
-        with cols[i]:
-            emoji = "🟢" if state == "OPEN" else "🔴"
-            st.metric(f"{emoji} {market}", state)
-
-# Performance monitoring for the table
-def monitor_table_performance():
-    """Monitor how fast the table loads"""
-    if st.checkbox("📊 Performance Monitor"):
-        start_time = time.time()
-        
-        # Measure table creation time
-        df = create_pairs_summary_table()
-        table_time = (time.time() - start_time) * 1000
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Table Load Time", f"{table_time:.0f}ms")
-        with col2:
-            st.metric("Pairs Loaded", len(df))
-        with col3:
-            cache_info = st.cache_data.get_stats()
-            st.metric("Cache Hits", len(cache_info))
-
-# Add this to your existing config.toml for even better performance
-additional_config = """
-# Add to your .streamlit/config.toml for table optimization
-
-[theme]
-base = "dark"
-primaryColor = "#00ff00"
-backgroundColor = "#0E1117"
-secondaryBackgroundColor = "#262730"
-textColor = "#FAFAFA"
-
-[server]
-maxUploadSize = 50
-maxMessageSize = 50
-enableStaticServing = false
-"""
+# Run the app
+if __name__ == "__main__":
+    run_trading_summary_app()
