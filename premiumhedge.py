@@ -70,6 +70,223 @@ FOREX_SYMBOLS = {
 class PivotBacktester:
     def __init__(self, lookback_days=7):
         self.lookback_days = lookback_days
+    
+    def load_csv_data(self, uploaded_file):
+        """Załaduj dane z pliku CSV - wspiera format Investing.com i inne"""
+        try:
+            # Spróbuj różnych separatorów i enkodingów
+            df = None
+            successful_config = None
+            
+            for encoding in ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']:
+                for sep in [',', ';', '\t']:
+                    try:
+                        uploaded_file.seek(0)
+                        df = pd.read_csv(uploaded_file, sep=sep, encoding=encoding, thousands=',')
+                        if len(df.columns) >= 5:  # Musi mieć co najmniej 5 kolumn
+                            successful_config = f"{encoding} + separator '{sep}'"
+                            break
+                    except:
+                        continue
+                if df is not None and len(df.columns) >= 5:
+                    break
+            
+            if df is None or len(df.columns) < 5:
+                st.error("❌ Nie można odczytać pliku CSV. Sprawdź format.")
+                return None
+            
+            st.info(f"✅ Odczytano plik używając: {successful_config}")
+            
+            # Wyświetl kolumny dla debugowania
+            st.info(f"📋 Znalezione kolumny: {', '.join(df.columns.tolist())}")
+            
+            # Normalizuj nazwy kolumn (wielkość liter, spacje)
+            df.columns = df.columns.str.strip().str.lower().str.replace('"', '')
+            
+            # Mapowanie możliwych nazw kolumn (włącznie z formatem Investing.com)
+            column_mapping = {}
+            
+            # Data - Investing.com używa "Date" lub "date"
+            date_cols = ['date', 'datetime', 'time', 'timestamp', 'data', 'datum']
+            for col in df.columns:
+                if col in date_cols or any(d in col for d in date_cols):
+                    column_mapping['Date'] = col
+                    break
+            
+            # OHLC - Investing.com używa: Price, Open, High, Low (Close może być jako "Price")
+            ohlc_mapping = {
+                'Open': ['open', 'o', 'opening'],
+                'High': ['high', 'h', 'max', 'hi'],
+                'Low': ['low', 'l', 'min', 'lo'],
+                'Close': ['close', 'c', 'last', 'price', 'closing']  # Investing.com czasem używa "Price"
+            }
+            
+            for target, possible_names in ohlc_mapping.items():
+                for col in df.columns:
+                    if col in possible_names or any(name in col for name in possible_names):
+                        column_mapping[target] = col
+                        break
+            
+            # Volume (opcjonalnie) - Investing.com używa "Vol."
+            volume_cols = ['volume', 'vol', 'v', 'vol.', 'wolumen', 'volume.']
+            for col in df.columns:
+                if col in volume_cols or any(v in col for v in volume_cols):
+                    column_mapping['Volume'] = col
+                    break
+            
+            # Sprawdź czy mamy wszystkie wymagane kolumny
+            required = ['Date', 'Open', 'High', 'Low', 'Close']
+            missing = [col for col in required if col not in column_mapping]
+            
+            if missing:
+                st.error(f"❌ Brakujące kolumny: {', '.join(missing)}")
+                st.info(f"💡 Dostępne kolumny w pliku: {', '.join(df.columns.tolist())}")
+                
+                # Podpowiedzi dla Investing.com
+                st.info("""
+                **Format Investing.com:** Upewnij się że pobierasz dane w wersji angielskiej.
+                Oczekiwane kolumny: Date, Price/Close, Open, High, Low, Vol. (Change% opcjonalnie)
+                """)
+                return None
+            
+            # Utwórz nowy DataFrame z poprawnie nazwanymi kolumnami
+            new_df = pd.DataFrame()
+            
+            for target, source in column_mapping.items():
+                new_df[target] = df[source].copy()
+            
+            # Jeśli brak Volume, dodaj zerowe wartości
+            if 'Volume' not in new_df.columns:
+                new_df['Volume'] = 0
+            
+            # Parsuj daty - Investing.com używa różnych formatów
+            # Typowe: "Jan 02, 2024", "02/01/2024", "2024-01-02"
+            try:
+                # Próba automatyczna
+                new_df['Date'] = pd.to_datetime(new_df['Date'], errors='coerce')
+                
+                # Jeśli większość dat to NaN, spróbuj konkretnych formatów
+                if new_df['Date'].isna().sum() > len(new_df) * 0.5:
+                    uploaded_file.seek(0)
+                    sample_date = df[column_mapping['Date']].iloc[0] if len(df) > 0 else None
+                    
+                    # Formaty Investing.com
+                    date_formats = [
+                        '%b %d, %Y',      # "Jan 02, 2024"
+                        '%B %d, %Y',      # "January 02, 2024"  
+                        '%m/%d/%Y',       # "01/02/2024"
+                        '%d/%m/%Y',       # "02/01/2024"
+                        '%Y-%m-%d',       # "2024-01-02"
+                        '%d.%m.%Y',       # "02.01.2024"
+                        '%Y/%m/%d',       # "2024/01/02"
+                        '%d-%m-%Y'        # "02-01-2024"
+                    ]
+                    
+                    for date_format in date_formats:
+                        try:
+                            test_date = pd.to_datetime(sample_date, format=date_format, errors='coerce')
+                            if pd.notna(test_date):
+                                new_df['Date'] = pd.to_datetime(df[column_mapping['Date']], format=date_format, errors='coerce')
+                                st.success(f"✅ Wykryto format daty: {date_format}")
+                                break
+                        except:
+                            continue
+                            
+            except Exception as e:
+                st.warning(f"⚠️ Problem z parsowaniem dat: {str(e)}")
+            
+            # Usuń wiersze z nieprawidłowymi datami
+            before_count = len(new_df)
+            new_df = new_df.dropna(subset=['Date'])
+            if len(new_df) < before_count:
+                st.warning(f"⚠️ Usunięto {before_count - len(new_df)} wierszy z nieprawidłowymi datami")
+            
+            # Konwertuj kolumny OHLC na float
+            # Investing.com może używać przecinków jako separatorów tysięcy lub dziesiętnych
+            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                try:
+                    if new_df[col].dtype == 'object':
+                        # Usuń spacje i znaki specjalne
+                        new_df[col] = new_df[col].astype(str).str.strip()
+                        
+                        # Obsłuż różne formaty liczb
+                        # Format Investing.com: "1,234.56" lub "1.234,56" lub "1234.56"
+                        
+                        # Sprawdź który separator jest używany
+                        sample_val = new_df[col].iloc[0] if len(new_df) > 0 else "0"
+                        
+                        if ',' in str(sample_val) and '.' in str(sample_val):
+                            # Oba separatory - sprawdź który jest ostatni
+                            if str(sample_val).rfind(',') > str(sample_val).rfind('.'):
+                                # Przecinek jako separator dziesiętny (format europejski)
+                                new_df[col] = new_df[col].str.replace('.', '').str.replace(',', '.')
+                            else:
+                                # Przecinek jako separator tysięcy (format US)
+                                new_df[col] = new_df[col].str.replace(',', '')
+                        elif ',' in str(sample_val):
+                            # Tylko przecinek - może być tysiące lub dziesiętne
+                            # Sprawdź pozycję przecinka
+                            comma_pos = str(sample_val).rfind(',')
+                            if len(str(sample_val)) - comma_pos == 3:  # 3 cyfry po przecinku = tysiące
+                                new_df[col] = new_df[col].str.replace(',', '')
+                            else:  # Inaczej = separator dziesiętny
+                                new_df[col] = new_df[col].str.replace(',', '.')
+                        
+                        # Usuń ewentualne pozostałe znaki
+                        new_df[col] = new_df[col].str.replace('%', '').str.replace(' ', '')
+                    
+                    new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
+                    
+                except Exception as e:
+                    st.error(f"❌ Błąd konwersji kolumny {col}: {str(e)}")
+                    return None
+            
+            # Usuń wiersze z brakującymi wartościami OHLC
+            before_count = len(new_df)
+            new_df = new_df.dropna(subset=['Open', 'High', 'Low', 'Close'])
+            if len(new_df) < before_count:
+                st.warning(f"⚠️ Usunięto {before_count - len(new_df)} wierszy z brakującymi wartościami OHLC")
+            
+            # Sortuj po dacie (Investing.com zwykle ma dane od najnowszych)
+            new_df = new_df.sort_values('Date').reset_index(drop=True)
+            
+            # Walidacja danych
+            if len(new_df) == 0:
+                st.error("❌ Brak prawidłowych danych po przetworzeniu")
+                return None
+            
+            # Sprawdź logikę OHLC (High >= Low, etc.)
+            invalid_rows = (new_df['High'] < new_df['Low']) | \
+                          (new_df['High'] < new_df['Open']) | \
+                          (new_df['High'] < new_df['Close']) | \
+                          (new_df['Low'] > new_df['Open']) | \
+                          (new_df['Low'] > new_df['Close'])
+            
+            if invalid_rows.any():
+                st.warning(f"⚠️ Znaleziono {invalid_rows.sum()} wierszy z nieprawidłowymi wartościami OHLC. Zostaną usunięte.")
+                new_df = new_df[~invalid_rows]
+            
+            st.success(f"✅ Załadowano {len(new_df)} prawidłowych wierszy danych")
+            st.info(f"📅 Okres: {new_df['Date'].min().strftime('%Y-%m-%d')} do {new_df['Date'].max().strftime('%Y-%m-%d')}")
+            
+            # Pokaż przykładowe dane
+            with st.expander("👁️ Podgląd danych (pierwsze i ostatnie 3 wiersze)"):
+                preview_top = new_df.head(3).copy()
+                preview_bottom = new_df.tail(3).copy()
+                preview = pd.concat([preview_top, preview_bottom])
+                preview['Date'] = preview['Date'].dt.strftime('%Y-%m-%d')
+                for col in ['Open', 'High', 'Low', 'Close']:
+                    preview[col] = preview[col].round(5)
+                st.dataframe(preview, use_container_width=True, hide_index=False)
+            
+            return new_df
+            
+        except Exception as e:
+            st.error(f"❌ Błąd wczytywania CSV: {str(e)}")
+            import traceback
+            with st.expander("🔍 Szczegóły błędu"):
+                st.code(traceback.format_exc())
+            return None
         
     def get_forex_data(self, symbol, days=365):
         """Pobierz dane forex"""
@@ -276,23 +493,70 @@ st.markdown("**Strategia: Kup przy S3 → Sprzedaj przy R3**")
 # Sidebar
 st.sidebar.header("⚙️ Konfiguracja Backtestu")
 
-# Wybór pary walutowej
-major_pairs = ['EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY']
-cross_pairs = ['EURJPY', 'GBPJPY', 'EURGBP']
-pln_pairs = ['EURPLN', 'USDPLN', 'GBPPLN', 'CHFPLN']
-
-pair_category = st.sidebar.radio(
-    "Kategoria par:",
-    ["🌍 Pary główne", "🔄 Pary krzyżowe", "🇵🇱 Pary PLN"],
+# Wybór źródła danych
+data_source = st.sidebar.radio(
+    "📂 Źródło danych:",
+    ["📥 Załaduj CSV", "🌐 Pobierz z Yahoo Finance"],
     index=0
 )
 
-if pair_category == "🌍 Pary główne":
-    selected_symbol = st.sidebar.selectbox("Wybierz parę:", major_pairs, index=0)
-elif pair_category == "🔄 Pary krzyżowe":
-    selected_symbol = st.sidebar.selectbox("Wybierz parę:", cross_pairs, index=0)
-else:
-    selected_symbol = st.sidebar.selectbox("Wybierz parę:", pln_pairs, index=0)
+selected_symbol = None
+uploaded_file = None
+
+if data_source == "📥 Załaduj CSV":
+    st.sidebar.markdown("### 📁 Upload pliku CSV")
+    uploaded_file = st.sidebar.file_uploader(
+        "Wybierz plik CSV z danymi OHLC",
+        type=['csv'],
+        help="Plik powinien zawierać kolumny: Date, Open, High, Low, Close (opcjonalnie Volume)"
+    )
+    
+    if uploaded_file:
+        selected_symbol = st.sidebar.text_input(
+            "Nazwa pary walutowej:",
+            value="CUSTOM_PAIR",
+            help="Podaj nazwę dla identyfikacji"
+        )
+    
+    # Informacje o formacie
+    with st.sidebar.expander("ℹ️ Format pliku CSV"):
+        st.markdown("""
+        **Wymagane kolumny:**
+        - `Date` - data (YYYY-MM-DD lub inne popularne formaty)
+        - `Open` - cena otwarcia
+        - `High` - najwyższa cena
+        - `Low` - najniższa cena
+        - `Close` - cena zamknięcia
+        - `Volume` - wolumen (opcjonalnie)
+        
+        **Przykład:**
+        ```
+        Date,Open,High,Low,Close,Volume
+        2024-01-01,1.1050,1.1080,1.1040,1.1070,12345
+        2024-01-02,1.1070,1.1100,1.1060,1.1095,23456
+        ```
+        
+        **Separator:** przecinek (,) lub średnik (;)
+        """)
+
+else:  # Yahoo Finance
+    # Wybór pary walutowej
+    major_pairs = ['EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY']
+    cross_pairs = ['EURJPY', 'GBPJPY', 'EURGBP']
+    pln_pairs = ['EURPLN', 'USDPLN', 'GBPPLN', 'CHFPLN']
+    
+    pair_category = st.sidebar.radio(
+        "Kategoria par:",
+        ["🌍 Pary główne", "🔄 Pary krzyżowe", "🇵🇱 Pary PLN"],
+        index=0
+    )
+    
+    if pair_category == "🌍 Pary główne":
+        selected_symbol = st.sidebar.selectbox("Wybierz parę:", major_pairs, index=0)
+    elif pair_category == "🔄 Pary krzyżowe":
+        selected_symbol = st.sidebar.selectbox("Wybierz parę:", cross_pairs, index=0)
+    else:
+        selected_symbol = st.sidebar.selectbox("Wybierz parę:", pln_pairs, index=0)
 
 # Parametry backtestu
 st.sidebar.markdown("### 💰 Parametry Backtestu")
@@ -300,19 +564,43 @@ initial_capital = st.sidebar.number_input("Kapitał początkowy ($)", 1000, 1000
 lot_size = st.sidebar.number_input("Wielkość lota", 0.01, 10.0, 1.0, 0.01)
 spread_pips = st.sidebar.number_input("Spread (pips)", 0.0, 10.0, 2.0, 0.1)
 
-st.sidebar.markdown("### 📅 Okres backtestowania")
-backtest_days = st.sidebar.slider("Liczba dni wstecz", 30, 730, 365)
+st.sidebar.markdown("### 📅 Parametry analizy")
+if data_source == "🌐 Pobierz z Yahoo Finance":
+    backtest_days = st.sidebar.slider("Liczba dni wstecz", 30, 730, 365)
 lookback_days = st.sidebar.slider("Okres pivot (dni)", 3, 14, 7)
 
+# Przycisk uruchomienia
+can_run = False
+if data_source == "📥 Załaduj CSV":
+    can_run = uploaded_file is not None
+else:
+    can_run = selected_symbol is not None
+
+run_button_disabled = not can_run
+
+if run_button_disabled:
+    if data_source == "📥 Załaduj CSV":
+        st.sidebar.warning("⚠️ Załaduj plik CSV aby rozpocząć")
+    else:
+        st.sidebar.warning("⚠️ Wybierz parę walutową")
+
 # Uruchom backtest
-if st.sidebar.button("🚀 Uruchom Backtest", type="primary"):
+if st.sidebar.button("🚀 Uruchom Backtest", type="primary", disabled=run_button_disabled):
     
-    with st.spinner(f"Pobieranie danych dla {selected_symbol}..."):
-        backtester = PivotBacktester(lookback_days=lookback_days)
-        df = backtester.get_forex_data(selected_symbol, backtest_days)
+    backtester = PivotBacktester(lookback_days=lookback_days)
+    df = None
+    
+    # Załaduj dane w zależności od źródła
+    if data_source == "📥 Załaduj CSV":
+        with st.spinner("Wczytywanie danych z CSV..."):
+            df = backtester.load_csv_data(uploaded_file)
+    else:
+        with st.spinner(f"Pobieranie danych dla {selected_symbol}..."):
+            df = backtester.get_forex_data(selected_symbol, backtest_days)
+            if df is not None:
+                st.success(f"✅ Pobrano {len(df)} dni danych")
     
     if df is not None and len(df) > 0:
-        st.success(f"✅ Pobrano {len(df)} dni danych")
         
         # Oblicz pivot points
         with st.spinner("Obliczanie poziomów pivot..."):
@@ -556,34 +844,88 @@ else:
     st.markdown("""
     ## 📖 Jak używać backtestera?
     
-    ### 1️⃣ Wybierz parametry w panelu bocznym:
-    - **Parę walutową** (główne, krzyżowe lub PLN)
-    - **Kapitał początkowy** - kwota na start
+    ### 1️⃣ Wybierz źródło danych:
+    
+    #### 📥 **Opcja A: Załaduj własny plik CSV**
+    - Kliknij "Browse files" w panelu bocznym
+    - Wybierz plik CSV z danymi historycznymi OHLC
+    - Format: `Date,Open,High,Low,Close,Volume` (Volume opcjonalnie)
+    - Akceptowane separatory: przecinek, średnik, tab
+    - Różne formaty dat są automatycznie wykrywane
+    
+    **Przykładowy format CSV:**
+    ```csv
+    Date,Open,High,Low,Close,Volume
+    2024-01-01,1.1050,1.1080,1.1040,1.1070,12345
+    2024-01-02,1.1070,1.1100,1.1060,1.1095,23456
+    2024-01-03,1.1095,1.1120,1.1085,1.1110,34567
+    ```
+    
+    #### 🌐 **Opcja B: Pobierz z Yahoo Finance**
+    - Wybierz parę walutową z listy
+    - Ustaw okres backtestowania (30-730 dni)
+    - Dane pobierane automatycznie
+    
+    ### 2️⃣ Ustaw parametry backtestu:
+    - **Kapitał początkowy** - kwota na start (np. $10,000)
     - **Wielkość lota** - standardowo 1.0 = 100,000 jednostek
     - **Spread** - typowo 2-3 pipsy dla głównych par
-    - **Okres** - ile dni wstecz testować
+    - **Okres pivot** - ile dni używać do obliczenia poziomów (domyślnie 7)
     
-    ### 2️⃣ Naciśnij "🚀 Uruchom Backtest"
+    ### 3️⃣ Naciśnij "🚀 Uruchom Backtest"
     
-    ### 3️⃣ Strategia:
+    ### 4️⃣ Strategia testowana:
     - **KUPUJ** gdy cena dotknie lub spadnie poniżej poziomu **S3**
     - **SPRZEDAJ** (zamknij pozycję) gdy cena dotknie lub wzrośnie powyżej poziomu **R3**
-    - Poziomy S3/R3 są obliczane na podstawie średnich z ostatnich **7 dni** (domyślnie)
+    - Poziomy S3/R3 są obliczane na podstawie średnich z ostatnich N dni
+    - Jedna pozycja na raz (nie ma nakładania się transakcji)
     
-    ### 4️⃣ Analizuj wyniki:
-    - Krzywa kapitału
-    - Win rate i profit factor
-    - Szczegółowa historia transakcji
-    - Wykres z sygnałami wejścia/wyjścia
+    ### 5️⃣ Analizuj wyniki:
+    - **Krzywa kapitału** - jak zmieniał się Twój kapitał
+    - **Win rate** - procent zyskownych transakcji
+    - **Profit factor** - stosunek zysków do strat
+    - **Szczegółowa historia** - wszystkie transakcje w tabeli
+    - **Wykres z sygnałami** - wizualizacja wejść i wyjść
     
-    ### ⚠️ Uwagi:
-    - To tylko backtest historyczny - przeszłe wyniki nie gwarantują przyszłych
-    - Zawsze testuj strategię na koncie demo przed użyciem na prawdziwym
-    - Uwzględnij spread i ewentualne slippage
-    - Dane z Yahoo Finance mogą mieć opóźnienie ~15 minut
+    ### 📊 Jak pobrać dane z Investing.com?
+    
+    **Krok po kroku:**
+    
+    1. **Wejdź na Investing.com w wersji angielskiej** (en.investing.com)
+    2. **Znajdź swoją parę walutową** (np. EUR/USD)
+    3. **Kliknij zakładkę "Historical Data"**
+    4. **Wybierz okres** (Date range)
+    5. **Kliknij "Download"** - pobierze się plik CSV
+    
+    **Format Investing.com:**
+    - Kolumny: `Date, Price, Open, High, Low, Vol., Change %`
+    - Daty w formacie: `Oct 31 2024` lub `Oct 31, 2024`
+    - Ceny z przecinkiem jako separator dziesiętny: `1,0871`
+    - Dane są posortowane od najnowszych (od góry)
+    
+    **Inne źródła danych CSV:**
+    - **MetaTrader 5** - eksport historii do CSV
+    - **TradingView** - "Export chart data"
+    - **Yahoo Finance** - pobierz historyczne dane
+    - **Investing.com** - dane historyczne walut
+    - **Dukascopy** - Swiss Forex Historical Data
+    
+    **Format MT5:**
+    ```
+    <DATE>	<TIME>	<OPEN>	<HIGH>	<LOW>	<CLOSE>	<TICKVOL>
+    2024.01.01	00:00	1.10500	1.10800	1.10400	1.10700	12345
+    ```
+    *(automatycznie wykrywany)*
+    
+    ### ⚠️ Ważne uwagi:
+    - To tylko backtest historyczny - przeszłość nie gwarantuje przyszłości
+    - Zawsze testuj strategię na koncie demo przed real money
+    - Spread i slippage są uwzględnione w obliczeniach
+    - Im więcej danych, tym bardziej wiarygodne wyniki
+    - Minimalna ilość danych: ~30 dni (im więcej tym lepiej)
     
     ---
-    **Gotowy do testowania? Ustaw parametry i kliknij "Uruchom Backtest"! 🚀**
+    **Gotowy do testowania? Załaduj dane i kliknij "Uruchom Backtest"! 🚀**
     """)
 
 # Footer
@@ -591,5 +933,5 @@ st.markdown("---")
 st.markdown(f"""
 **🕐 Aktualizacja:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  
 **⚠️ Tylko do celów edukacyjnych** - Zawsze testuj na koncie demo!  
-**📊 Źródło danych:** Yahoo Finance
+**📊 Źródła danych:** Yahoo Finance lub własny CSV
 """)
