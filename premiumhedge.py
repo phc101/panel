@@ -635,6 +635,26 @@ if data_source == "🌐 Pobierz z Yahoo Finance":
     backtest_days = st.sidebar.slider("Liczba dni wstecz", 30, 730, 365)
 lookback_days = st.sidebar.slider("Okres pivot (dni)", 3, 14, 7)
 
+# Wyjaśnienie rolling pivots
+with st.sidebar.expander("❓ Jak działają Rolling Pivots?"):
+    st.markdown("""
+    **Rolling Pivots** = Kroczące okno obliczeniowe
+    
+    Dla każdego dnia obliczamy pivot używając 
+    ostatnich N dni (np. 7).
+    
+    **Przykład dla lookback=7:**
+    - Dzień 1-7: Zbieranie danych
+    - Dzień 8: Pierwszy pivot (z dni 1-7)
+    - Dzień 9: Nowy pivot (z dni 2-8)
+    - Dzień 10: Nowy pivot (z dni 3-9)
+    
+    **Pierwsze N dni to "rozgrzewka"** - używane 
+    do obliczenia pierwszego pivot point.
+    
+    📚 Szczegóły w pliku: `ROLLING_PIVOTS_EXPLAINED.md`
+    """)
+
 # Przycisk uruchomienia
 can_run = False
 if data_source == "📥 Załaduj CSV":
@@ -673,6 +693,28 @@ if st.sidebar.button("🚀 Uruchom Backtest", type="primary", disabled=run_butto
             df = backtester.calculate_pivot_points(df)
             df.attrs['symbol'] = selected_symbol
         
+        # Informacja o zakresie z pivotami
+        pivot_data = df[df['Pivot'].notna()].copy()
+        if len(pivot_data) > 0:
+            first_pivot_date = pivot_data['Date'].min()
+            last_pivot_date = pivot_data['Date'].max()
+            total_days = len(df)
+            pivot_days = len(pivot_data)
+            lookback_days_used = total_days - pivot_days
+            
+            st.success(f"✅ Obliczono poziomy pivot dla {pivot_days} dni")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.info(f"📅 **Pełny zakres danych:** {df['Date'].min().strftime('%Y-%m-%d')} → {df['Date'].max().strftime('%Y-%m-%d')} ({total_days} dni)")
+            with col2:
+                st.info(f"📊 **Zakres z pivotami:** {first_pivot_date.strftime('%Y-%m-%d')} → {last_pivot_date.strftime('%Y-%m-%d')} ({pivot_days} dni)")
+            
+            st.warning(f"⚠️ Pierwsze **{lookback_days_used} dni** to okres 'rozgrzewki' - używane do obliczenia pierwszego pivot point (nie uwzględnione w backtescie)")
+        else:
+            st.error("❌ Nie można obliczyć poziomów pivot - za mało danych")
+            st.stop()
+        
         # Uruchom backtest
         with st.spinner("Wykonywanie backtestu..."):
             trades_df, final_capital = backtester.run_backtest(
@@ -681,6 +723,11 @@ if st.sidebar.button("🚀 Uruchom Backtest", type="primary", disabled=run_butto
                 lot_size=lot_size,
                 spread_pips=spread_pips
             )
+        
+        # Info o wykorzystaniu danych
+        total_rows = len(df)
+        used_rows = len(df[df['S3'].notna()])
+        st.info(f"🔢 **Wykorzystano:** {used_rows}/{total_rows} dni danych ({used_rows/total_rows*100:.1f}%)")
         
         # Wyświetl wyniki
         st.markdown("## 📈 Wyniki Backtestu")
@@ -786,8 +833,32 @@ if st.sidebar.button("🚀 Uruchom Backtest", type="primary", disabled=run_butto
             # Wykres ceny z poziomami pivot i transakcjami
             st.markdown("### 📊 Wykres ceny z sygnałami")
             
-            # Przygotuj dane do wykresu
-            chart_data = df[df['S3'].notna()].tail(min(len(df), 200))
+            # Opcja wyboru zakresu wyświetlania
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                chart_range = st.select_slider(
+                    "Zakres wyświetlania wykresu:",
+                    options=['Ostatnie 30 dni', 'Ostatnie 90 dni', 'Ostatnie 180 dni', 'Ostatni rok', 'Wszystkie dane'],
+                    value='Ostatnie 180 dni'
+                )
+            
+            # Przygotuj dane do wykresu - TYLKO te które mają obliczone pivoty
+            chart_data_full = df[df['S3'].notna()].copy()
+            
+            # Filtruj według wybranego zakresu
+            range_map = {
+                'Ostatnie 30 dni': 30,
+                'Ostatnie 90 dni': 90,
+                'Ostatnie 180 dni': 180,
+                'Ostatni rok': 365,
+                'Wszystkie dane': len(chart_data_full)
+            }
+            
+            display_days = range_map[chart_range]
+            chart_data = chart_data_full.tail(min(len(chart_data_full), display_days))
+            
+            with col2:
+                st.metric("Dni na wykresie", len(chart_data))
             
             fig_price = make_subplots(
                 rows=1, cols=1,
@@ -856,10 +927,78 @@ if st.sidebar.button("🚀 Uruchom Backtest", type="primary", disabled=run_butto
                 height=600,
                 xaxis_rangeslider_visible=False,
                 showlegend=True,
-                hovermode='x unified'
+                hovermode='x unified',
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
             )
             
             st.plotly_chart(fig_price, use_container_width=True)
+            
+            # Dodatkowy wykres: Ewolucja poziomów pivot
+            with st.expander("📉 Ewolucja poziomów Pivot w czasie"):
+                st.markdown("Ten wykres pokazuje jak zmieniają się poziomy S3, Pivot i R3 w czasie (rolling calculation)")
+                
+                fig_pivot_evolution = go.Figure()
+                
+                pivot_chart_data = chart_data.copy()
+                
+                # Dodaj poziomy pivot
+                fig_pivot_evolution.add_trace(go.Scatter(
+                    x=pivot_chart_data['Date'],
+                    y=pivot_chart_data['R3'],
+                    mode='lines',
+                    name='R3 (Sell)',
+                    line=dict(color='red', width=1, dash='dot')
+                ))
+                
+                fig_pivot_evolution.add_trace(go.Scatter(
+                    x=pivot_chart_data['Date'],
+                    y=pivot_chart_data['Pivot'],
+                    mode='lines',
+                    name='Pivot',
+                    line=dict(color='black', width=2)
+                ))
+                
+                fig_pivot_evolution.add_trace(go.Scatter(
+                    x=pivot_chart_data['Date'],
+                    y=pivot_chart_data['S3'],
+                    mode='lines',
+                    name='S3 (Buy)',
+                    line=dict(color='green', width=1, dash='dot')
+                ))
+                
+                # Dodaj cenę Close dla odniesienia
+                fig_pivot_evolution.add_trace(go.Scatter(
+                    x=pivot_chart_data['Date'],
+                    y=pivot_chart_data['Close'],
+                    mode='lines',
+                    name='Cena Close',
+                    line=dict(color='blue', width=1),
+                    opacity=0.5
+                ))
+                
+                fig_pivot_evolution.update_layout(
+                    title=f"Ewolucja poziomów Pivot (lookback={lookback_days} dni)",
+                    xaxis_title="Data",
+                    yaxis_title="Cena",
+                    height=400,
+                    showlegend=True,
+                    hovermode='x unified'
+                )
+                
+                st.plotly_chart(fig_pivot_evolution, use_container_width=True)
+                
+                st.info("""
+                💡 **Obserwuj:**
+                - Jak poziomy S3 i R3 "wędrują" wraz z ceną
+                - Dynamiczne dostosowanie do trendu
+                - To pokazuje że pivot points są przeliczane dla każdego dnia!
+                """)
             
             # Tabela transakcji
             st.markdown("### 📝 Historia transakcji")
