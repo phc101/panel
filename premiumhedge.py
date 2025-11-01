@@ -160,7 +160,7 @@ class PivotBacktester:
                 new_df['Volume'] = 0
             
             # Parsuj daty - Investing.com używa różnych formatów
-            # Typowe: "Jan 02, 2024", "02/01/2024", "2024-01-02"
+            # Typowe: "Jan 02, 2024", "02/01/2024", "2024-01-02", "10/31/2025" (MM/DD/YYYY)
             try:
                 # Próba automatyczna
                 new_df['Date'] = pd.to_datetime(new_df['Date'], errors='coerce')
@@ -168,27 +168,67 @@ class PivotBacktester:
                 # Jeśli większość dat to NaN, spróbuj konkretnych formatów
                 if new_df['Date'].isna().sum() > len(new_df) * 0.5:
                     uploaded_file.seek(0)
-                    sample_date = df[column_mapping['Date']].iloc[0] if len(df) > 0 else None
+                    sample_date = str(df[column_mapping['Date']].iloc[0]) if len(df) > 0 else None
                     
-                    # Formaty Investing.com
+                    # Usuń cudzysłowy z sample_date
+                    if sample_date:
+                        sample_date = sample_date.strip().replace('"', '').replace("'", '')
+                    
+                    st.info(f"🔍 Próbka daty: '{sample_date}'")
+                    
+                    # Formaty Investing.com i inne popularne
                     date_formats = [
+                        '%m/%d/%Y',       # "10/31/2025" (MM/DD/YYYY - Investing.com US)
+                        '%d/%m/%Y',       # "31/10/2025" (DD/MM/YYYY)
                         '%b %d, %Y',      # "Jan 02, 2024"
                         '%B %d, %Y',      # "January 02, 2024"  
-                        '%m/%d/%Y',       # "01/02/2024"
-                        '%d/%m/%Y',       # "02/01/2024"
                         '%Y-%m-%d',       # "2024-01-02"
                         '%d.%m.%Y',       # "02.01.2024"
                         '%Y/%m/%d',       # "2024/01/02"
-                        '%d-%m-%Y'        # "02-01-2024"
+                        '%d-%m-%Y',       # "02-01-2024"
+                        '%d %b %Y',       # "02 Jan 2024"
+                        '%b %d %Y'        # "Jan 02 2024"
                     ]
                     
+                    # Najpierw spróbuj wykryć format na podstawie sample_date
+                    detected_format = None
+                    if sample_date and '/' in sample_date:
+                        parts = sample_date.split('/')
+                        if len(parts) == 3:
+                            # Sprawdź czy pierwszy element to miesiąc czy dzień
+                            first_num = int(parts[0])
+                            if first_num > 12:
+                                # Musi być dzień
+                                detected_format = '%d/%m/%Y'
+                                st.info("✅ Wykryto format: DD/MM/YYYY")
+                            elif first_num <= 12:
+                                # Sprawdź drugi element
+                                second_num = int(parts[1])
+                                if second_num > 12:
+                                    # Pierwszy to miesiąc
+                                    detected_format = '%m/%d/%Y'
+                                    st.info("✅ Wykryto format: MM/DD/YYYY (Investing.com)")
+                                else:
+                                    # Domyślnie przyjmij MM/DD/YYYY dla Investing.com
+                                    detected_format = '%m/%d/%Y'
+                                    st.info("✅ Przyjęto format: MM/DD/YYYY (Investing.com)")
+                    
+                    # Spróbuj wykryty format jako pierwszy
+                    if detected_format:
+                        date_formats.insert(0, detected_format)
+                    
+                    # Próbuj wszystkich formatów
                     for date_format in date_formats:
                         try:
-                            test_date = pd.to_datetime(sample_date, format=date_format, errors='coerce')
+                            # Usuń cudzysłowy przed parsowaniem
+                            clean_dates = df[column_mapping['Date']].astype(str).str.strip().str.replace('"', '').str.replace("'", '')
+                            test_date = pd.to_datetime(clean_dates.iloc[0], format=date_format, errors='coerce')
+                            
                             if pd.notna(test_date):
-                                new_df['Date'] = pd.to_datetime(df[column_mapping['Date']], format=date_format, errors='coerce')
-                                st.success(f"✅ Wykryto format daty: {date_format}")
-                                break
+                                new_df['Date'] = pd.to_datetime(clean_dates, format=date_format, errors='coerce')
+                                if new_df['Date'].notna().sum() > len(new_df) * 0.5:
+                                    st.success(f"✅ Użyto formatu daty: {date_format}")
+                                    break
                         except:
                             continue
                             
@@ -206,39 +246,62 @@ class PivotBacktester:
             for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
                 try:
                     if new_df[col].dtype == 'object':
-                        # Usuń spacje i znaki specjalne
-                        new_df[col] = new_df[col].astype(str).str.strip()
+                        # Usuń cudzysłowy i spacje
+                        new_df[col] = new_df[col].astype(str).str.strip().str.replace('"', '').str.replace("'", '')
                         
                         # Obsłuż różne formaty liczb
-                        # Format Investing.com: "1,234.56" lub "1.234,56" lub "1234.56"
+                        # Format Investing.com może być: "1,234.56" (US) lub "1.234,56" (EU) lub "1234.56" lub "4.2537" (PLN)
                         
-                        # Sprawdź który separator jest używany
-                        sample_val = new_df[col].iloc[0] if len(new_df) > 0 else "0"
+                        # Sprawdź próbkę wartości
+                        sample_val = str(new_df[col].iloc[0]) if len(new_df) > 0 else "0"
                         
-                        if ',' in str(sample_val) and '.' in str(sample_val):
-                            # Oba separatory - sprawdź który jest ostatni
-                            if str(sample_val).rfind(',') > str(sample_val).rfind('.'):
-                                # Przecinek jako separator dziesiętny (format europejski)
+                        # Zlicz wystąpienia separatorów
+                        comma_count = sample_val.count(',')
+                        dot_count = sample_val.count('.')
+                        
+                        if comma_count > 0 and dot_count > 0:
+                            # Oba separatory - sprawdź który jest ostatni (ten będzie dziesiętnym)
+                            last_comma_pos = sample_val.rfind(',')
+                            last_dot_pos = sample_val.rfind('.')
+                            
+                            if last_comma_pos > last_dot_pos:
+                                # Przecinek jako separator dziesiętny (format europejski: 1.234,56)
                                 new_df[col] = new_df[col].str.replace('.', '').str.replace(',', '.')
                             else:
-                                # Przecinek jako separator tysięcy (format US)
+                                # Kropka jako separator dziesiętny (format US: 1,234.56)
                                 new_df[col] = new_df[col].str.replace(',', '')
-                        elif ',' in str(sample_val):
-                            # Tylko przecinek - może być tysiące lub dziesiętne
-                            # Sprawdź pozycję przecinka
-                            comma_pos = str(sample_val).rfind(',')
-                            if len(str(sample_val)) - comma_pos == 3:  # 3 cyfry po przecinku = tysiące
+                                
+                        elif comma_count > 0 and dot_count == 0:
+                            # Tylko przecinek - sprawdź pozycję
+                            comma_pos = sample_val.rfind(',')
+                            digits_after = len(sample_val) - comma_pos - 1
+                            
+                            if digits_after == 3:
+                                # 3 cyfry po przecinku = separator tysięcy (1,234)
                                 new_df[col] = new_df[col].str.replace(',', '')
-                            else:  # Inaczej = separator dziesiętny
+                            else:
+                                # Inaczej = separator dziesiętny (1,23)
                                 new_df[col] = new_df[col].str.replace(',', '.')
+                                
+                        elif dot_count > 0 and comma_count == 0:
+                            # Tylko kropka - sprawdź czy separator tysięcy czy dziesiętny
+                            dot_pos = sample_val.rfind('.')
+                            digits_after = len(sample_val) - dot_pos - 1
+                            
+                            if digits_after == 3 and dot_count > 1:
+                                # Wiele kropek z 3 cyframi = separator tysięcy (1.234.567)
+                                new_df[col] = new_df[col].str.replace('.', '')
+                            # else: kropka jako separator dziesiętny - zostaw jak jest
                         
                         # Usuń ewentualne pozostałe znaki
-                        new_df[col] = new_df[col].str.replace('%', '').str.replace(' ', '')
+                        new_df[col] = new_df[col].str.replace('%', '').str.replace(' ', '').str.replace('\xa0', '')
                     
+                    # Konwersja na numeric
                     new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
                     
                 except Exception as e:
                     st.error(f"❌ Błąd konwersji kolumny {col}: {str(e)}")
+                    st.code(f"Przykładowa wartość: {new_df[col].iloc[0] if len(new_df) > 0 else 'brak'}")
                     return None
             
             # Usuń wiersze z brakującymi wartościami OHLC
@@ -338,6 +401,9 @@ class PivotBacktester:
         """Oblicz punkty pivot z poziomami S3 i R3"""
         if len(df) < self.lookback_days:
             return df
+        
+        # Reset index to ensure we can use iloc properly
+        df = df.reset_index(drop=True)
             
         pivot_data = []
         
@@ -361,7 +427,7 @@ class PivotBacktester:
             s3 = s2 - range_val
             
             pivot_data.append({
-                'Date': df.loc[i, 'Date'],
+                'Date': df.iloc[i]['Date'],
                 'Pivot': pivot,
                 'R1': r1,
                 'R2': r2,
