@@ -839,13 +839,14 @@ if st.sidebar.button("🚀 Uruchom Backtest", type="primary", disabled=run_butto
                 chart_range = st.select_slider(
                     "Zakres wyświetlania wykresu:",
                     options=['Ostatnie 30 dni', 'Ostatnie 90 dni', 'Ostatnie 180 dni', 'Ostatni rok', 'Wszystkie dane'],
-                    value='Ostatnie 180 dni'
+                    value='Wszystkie dane'
                 )
             
-            # Przygotuj dane do wykresu - TYLKO te które mają obliczone pivoty
+            # WAŻNE: Używamy WSZYSTKICH danych z obliczonymi pivotami
+            # Pivoty są już obliczone dla całej historii w df
             chart_data_full = df[df['S3'].notna()].copy()
             
-            # Filtruj według wybranego zakresu
+            # Filtruj według wybranego zakresu TYLKO do wyświetlenia
             range_map = {
                 'Ostatnie 30 dni': 30,
                 'Ostatnie 90 dni': 90,
@@ -859,6 +860,8 @@ if st.sidebar.button("🚀 Uruchom Backtest", type="primary", disabled=run_butto
             
             with col2:
                 st.metric("Dni na wykresie", len(chart_data))
+            
+            st.info(f"💡 Pivoty obliczone dla **{len(chart_data_full)} dni** (cała historia), wykres pokazuje ostatnie **{len(chart_data)}**")
             
             fig_price = make_subplots(
                 rows=1, cols=1,
