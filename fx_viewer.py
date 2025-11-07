@@ -51,7 +51,69 @@ def extract_financial_data(root):
         return result
     
     all_data = extract_values(root)
+    
+    # Próbujemy wyciągnąć okres/datę sprawozdania
+    period = None
+    for key, value in all_data.items():
+        if 'okres' in key.lower() or 'data' in key.lower():
+            period = value
+            break
+    
+    all_data['_period'] = period
     return all_data
+
+def compare_periods(data_list):
+    """Porównuje dane z różnych okresów"""
+    if len(data_list) < 2:
+        return None
+    
+    # Sortujemy według okresu
+    sorted_data = sorted(data_list, key=lambda x: x.get('_period', ''))
+    
+    comparisons = []
+    
+    # Kluczowe pozycje do porównania
+    key_metrics = [
+        'przychody_netto', 'zysk_netto', 'zysk_operacyjny',
+        'aktywa', 'aktywa_obrotowe', 'kapital_wlasny',
+        'zobowiazania', 'zobowiazania_krotkoterminowe',
+        'suma_przeplywy_operacyjne'
+    ]
+    
+    # Porównujemy ostatni okres z poprzednim
+    if len(sorted_data) >= 2:
+        current = sorted_data[-1]
+        previous = sorted_data[-2]
+        
+        for key in key_metrics:
+            current_val = None
+            previous_val = None
+            
+            # Szukamy klucza w danych (może być zagnieżdżony)
+            for k, v in current.items():
+                if key in k.lower() and isinstance(v, (int, float)):
+                    current_val = v
+                    break
+            
+            for k, v in previous.items():
+                if key in k.lower() and isinstance(v, (int, float)):
+                    previous_val = v
+                    break
+            
+            if current_val is not None and previous_val is not None and previous_val != 0:
+                change_pct = ((current_val - previous_val) / abs(previous_val)) * 100
+                change_abs = current_val - previous_val
+                
+                comparisons.append({
+                    'metric': key.replace('_', ' ').title(),
+                    'previous': previous_val,
+                    'current': current_val,
+                    'change_abs': change_abs,
+                    'change_pct': change_pct,
+                    'trend': '📈' if change_pct > 0 else '📉' if change_pct < 0 else '➡️'
+                })
+    
+    return comparisons
 
 def calculate_financial_ratios(data):
     """Oblicza wskaźniki finansowe"""
@@ -113,6 +175,63 @@ def analyze_cashflow(data):
     
     return analysis
 
+def analyze_changes(data, comparisons):
+    """Analizuje przyczyny zmian w wynikach"""
+    insights = []
+    
+    if not comparisons:
+        return insights
+    
+    # Analiza przychodów
+    revenue_change = next((c for c in comparisons if 'przychody' in c['metric'].lower()), None)
+    profit_change = next((c for c in comparisons if 'zysk netto' in c['metric'].lower()), None)
+    
+    if revenue_change and profit_change:
+        if revenue_change['change_pct'] > 0 and profit_change['change_pct'] > revenue_change['change_pct']:
+            insights.append({
+                'typ': 'Pozytywny',
+                'opis': f"Rentowność rośnie szybciej niż przychody (+{profit_change['change_pct']:.1f}% vs +{revenue_change['change_pct']:.1f}%) - poprawa efektywności operacyjnej",
+                'ikona': '✅'
+            })
+        elif revenue_change['change_pct'] > 0 and profit_change['change_pct'] < 0:
+            insights.append({
+                'typ': 'Ostrzeżenie',
+                'opis': f"Przychody rosną (+{revenue_change['change_pct']:.1f}%), ale zysk spada ({profit_change['change_pct']:.1f}%) - rosnące koszty lub marże",
+                'ikona': '⚠️'
+            })
+        elif revenue_change['change_pct'] < 0 and profit_change['change_pct'] < revenue_change['change_pct']:
+            insights.append({
+                'typ': 'Negatywny',
+                'opis': f"Zysk spada szybciej niż przychody - problemy z kontrolą kosztów",
+                'ikona': '🔴'
+            })
+    
+    # Analiza aktywów i kapitału
+    assets_change = next((c for c in comparisons if 'aktywa' in c['metric'].lower() and 'obrotowe' not in c['metric'].lower()), None)
+    equity_change = next((c for c in comparisons if 'kapital' in c['metric'].lower()), None)
+    
+    if assets_change and equity_change:
+        if assets_change['change_pct'] > equity_change['change_pct']:
+            debt_growth = assets_change['change_pct'] - equity_change['change_pct']
+            insights.append({
+                'typ': 'Ostrzeżenie',
+                'opis': f"Aktywa rosną szybciej niż kapitał własny (różnica {debt_growth:.1f}pp) - wzrost zadłużenia",
+                'ikona': '⚠️'
+            })
+    
+    # Analiza cashflow
+    cashflow_change = next((c for c in comparisons if 'przeplywy operacyjne' in c['metric'].lower()), None)
+    if cashflow_change and profit_change:
+        if cashflow_change['current'] > 0 and profit_change['current'] > 0:
+            if cashflow_change['current'] > profit_change['current']:
+                insights.append({
+                    'typ': 'Pozytywny',
+                    'opis': "Cashflow operacyjny wyższy niż zysk netto - dobra jakość zysków",
+                    'ikona': '✅'
+                })
+    
+    return insights
+
 def detect_warning_signals(data, ratios):
     """Wykrywa niepokojące sygnały"""
     warnings = []
@@ -162,7 +281,14 @@ st.markdown("---")
 # Sidebar
 with st.sidebar:
     st.header("⚙️ Konfiguracja")
-    uploaded_file = st.file_uploader("Wgraj sprawozdanie finansowe (XML)", type=['xml'])
+    
+    # Możliwość wgrania wielu plików
+    uploaded_files = st.file_uploader(
+        "Wgraj sprawozdania finansowe (XML)", 
+        type=['xml'],
+        accept_multiple_files=True,
+        help="Możesz wgrać wiele plików z różnych okresów do porównania"
+    )
     
     st.markdown("---")
     st.markdown("### 📋 O aplikacji")
@@ -170,66 +296,186 @@ with st.sidebar:
     Aplikacja analizuje sprawozdania finansowe i dostarcza:
     - Kluczowe wskaźniki finansowe
     - Analizę cashflow
+    - **Porównania rok do roku**
+    - **Analizę trendów**
     - Wykrywanie sygnałów ostrzegawczych
     - Ocenę kondycji finansowej
+    
+    💡 **Tip**: Wgraj kilka sprawozdań z różnych lat aby zobaczyć trendy!
     """)
+    
+    if uploaded_files and len(uploaded_files) > 1:
+        st.success(f"✅ Wgrano {len(uploaded_files)} plików - analiza porównawcza aktywna!")
 
 # Główna część aplikacji
-if uploaded_file is not None:
-    # Wczytanie i parsowanie XML
-    xml_content = uploaded_file.read()
-    root = parse_financial_xml(xml_content)
+if uploaded_files is not None and len(uploaded_files) > 0:
+    # Wczytanie i parsowanie wszystkich XML
+    all_financial_data = []
     
-    if root is not None:
-        # Ekstrakcja danych
-        financial_data = extract_financial_data(root)
+    for uploaded_file in uploaded_files:
+        xml_content = uploaded_file.read()
+        root = parse_financial_xml(xml_content)
         
-        if financial_data:
-            # Obliczenie wskaźników
-            ratios = calculate_financial_ratios(financial_data)
+        if root is not None:
+            financial_data = extract_financial_data(root)
+            financial_data['_filename'] = uploaded_file.name
+            all_financial_data.append(financial_data)
+    
+    if all_financial_data:
+        # Używamy najnowszych danych jako głównych
+        financial_data = all_financial_data[-1]
+        
+        # Porównanie okresów (jeśli jest więcej niż jeden plik)
+        comparisons = None
+        if len(all_financial_data) > 1:
+            comparisons = compare_periods(all_financial_data)
+        
+        # Obliczenie wskaźników
+        ratios = calculate_financial_ratios(financial_data)
+        
+        # Analiza cashflow
+        cf_analysis = analyze_cashflow(financial_data)
+        
+        # Wykrywanie ostrzeżeń
+        warnings = detect_warning_signals(financial_data, ratios)
+        
+        # Analiza zmian (jeśli są porównania)
+        insights = []
+        if comparisons:
+            insights = analyze_changes(financial_data, comparisons)
+        
+        # Dashboard - Podsumowanie
+        st.header("🎯 Podsumowanie Wykonawcze")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            status_color = "🟢" if len(warnings) == 0 else "🟡" if len(warnings) <= 2 else "🔴"
+            st.metric("Status ogólny", f"{status_color} {'Dobry' if len(warnings) == 0 else 'Wymaga uwagi' if len(warnings) <= 2 else 'Niepokojący'}")
+        
+        with col2:
+            if 'wskaznik_plynnosciI' in ratios:
+                st.metric("Płynność bieżąca", f"{ratios['wskaznik_plynnosciI']:.2f}")
+        
+        with col3:
+            if 'wskaznik_zadluzenia' in ratios:
+                st.metric("Zadłużenie", f"{ratios['wskaznik_zadluzenia']*100:.1f}%")
+        
+        with col4:
+            if 'roe' in ratios:
+                st.metric("ROE", f"{ratios['roe']:.2f}%")
+        
+        st.markdown("---")
+        
+        # NOWA SEKCJA: Analiza trendów (tylko jeśli jest więcej niż 1 plik)
+        if comparisons:
+            st.header("📊 Analiza Trendów - Co się zmienia?")
             
-            # Analiza cashflow
-            cf_analysis = analyze_cashflow(financial_data)
+            # Grupujemy zmiany według kierunku
+            increases = [c for c in comparisons if c['change_pct'] > 5]
+            decreases = [c for c in comparisons if c['change_pct'] < -5]
+            stable = [c for c in comparisons if -5 <= c['change_pct'] <= 5]
             
-            # Wykrywanie ostrzeżeń
-            warnings = detect_warning_signals(financial_data, ratios)
-            
-            # Dashboard - Podsumowanie
-            st.header("🎯 Podsumowanie Wykonawcze")
-            
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3 = st.columns(3)
             
             with col1:
-                status_color = "🟢" if len(warnings) == 0 else "🟡" if len(warnings) <= 2 else "🔴"
-                st.metric("Status ogólny", f"{status_color} {'Dobry' if len(warnings) == 0 else 'Wymaga uwagi' if len(warnings) <= 2 else 'Niepokojący'}")
+                st.subheader("📈 Wzrosty")
+                if increases:
+                    for item in sorted(increases, key=lambda x: x['change_pct'], reverse=True)[:5]:
+                        st.metric(
+                            item['metric'],
+                            f"{item['current']:,.0f}",
+                            delta=f"{item['change_pct']:+.1f}%"
+                        )
+                else:
+                    st.info("Brak znaczących wzrostów")
             
             with col2:
-                if 'wskaznik_plynnosciI' in ratios:
-                    st.metric("Płynność bieżąca", f"{ratios['wskaznik_plynnosciI']:.2f}")
+                st.subheader("📉 Spadki")
+                if decreases:
+                    for item in sorted(decreases, key=lambda x: x['change_pct'])[:5]:
+                        st.metric(
+                            item['metric'],
+                            f"{item['current']:,.0f}",
+                            delta=f"{item['change_pct']:+.1f}%"
+                        )
+                else:
+                    st.info("Brak znaczących spadków")
             
             with col3:
-                if 'wskaznik_zadluzenia' in ratios:
-                    st.metric("Zadłużenie", f"{ratios['wskaznik_zadluzenia']*100:.1f}%")
+                st.subheader("➡️ Stabilne")
+                if stable:
+                    for item in stable[:5]:
+                        st.metric(
+                            item['metric'],
+                            f"{item['current']:,.0f}",
+                            delta=f"{item['change_pct']:+.1f}%"
+                        )
+                else:
+                    st.info("Brak stabilnych pozycji")
             
-            with col4:
-                if 'roe' in ratios:
-                    st.metric("ROE", f"{ratios['roe']:.2f}%")
+            # Wykres porównawczy dla kluczowych metryk
+            st.subheader("📊 Porównanie kluczowych wskaźników")
             
-            st.markdown("---")
-            
-            # Sekcja ostrzeżeń
-            if warnings:
-                st.header("⚠️ Sygnały ostrzegawcze")
+            if comparisons:
+                # Top 6 największych zmian (bezwzględnie)
+                top_changes = sorted(comparisons, key=lambda x: abs(x['change_pct']), reverse=True)[:6]
                 
-                for warning in warnings:
-                    if warning['poziom'] == 'Krytyczny':
-                        st.error(f"{warning['ikona']} **{warning['typ']}**: {warning['opis']}")
-                    else:
-                        st.warning(f"{warning['ikona']} **{warning['typ']}**: {warning['opis']}")
-            else:
-                st.success("✅ Nie wykryto niepokojących sygnałów")
+                fig = go.Figure()
+                
+                fig.add_trace(go.Bar(
+                    name='Poprzedni okres',
+                    x=[c['metric'] for c in top_changes],
+                    y=[c['previous'] for c in top_changes],
+                    marker_color='lightblue'
+                ))
+                
+                fig.add_trace(go.Bar(
+                    name='Bieżący okres',
+                    x=[c['metric'] for c in top_changes],
+                    y=[c['current'] for c in top_changes],
+                    marker_color='darkblue'
+                ))
+                
+                fig.update_layout(
+                    title="Porównanie okresów - największe zmiany",
+                    xaxis_title="",
+                    yaxis_title="Wartość",
+                    barmode='group',
+                    height=400
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
             
             st.markdown("---")
+            
+            # NOWA SEKCJA: Analiza przyczyn zmian
+            if insights:
+                st.header("🔍 Z czego wynikają zmiany?")
+                
+                for insight in insights:
+                    if insight['typ'] == 'Pozytywny':
+                        st.success(f"{insight['ikona']} **{insight['typ']}**: {insight['opis']}")
+                    elif insight['typ'] == 'Negatywny':
+                        st.error(f"{insight['ikona']} **{insight['typ']}**: {insight['opis']}")
+                    else:
+                        st.warning(f"{insight['ikona']} **{insight['typ']}**: {insight['opis']}")
+                
+                st.markdown("---")
+        
+        # Sekcja ostrzeżeń
+        if warnings:
+            st.header("⚠️ Sygnały ostrzegawcze")
+            
+            for warning in warnings:
+                if warning['poziom'] == 'Krytyczny':
+                    st.error(f"{warning['ikona']} **{warning['typ']}**: {warning['opis']}")
+                else:
+                    st.warning(f"{warning['ikona']} **{warning['typ']}**: {warning['opis']}")
+        else:
+            st.success("✅ Nie wykryto niepokojących sygnałów")
+        
+        st.markdown("---")
             
             # Analiza Cashflow
             st.header("💰 Analiza Cashflow")
