@@ -49,9 +49,9 @@ def extract_mf_data(root):
         'okres_do': okres_do.text if okres_do is not None else 'N/A'
     }
     
-    # Mapowanie znaczników na czytelne nazwy
+    # Mapowanie znaczników na czytelne nazwy - DOKŁADNE DOPASOWANIE
     mapping = {
-        # BILANS - AKTYWA
+        # BILANS - AKTYWA (ns2:)
         'Aktywa': 'suma_aktywow',
         'Aktywa_A': 'aktywa_trwale',
         'Aktywa_B': 'aktywa_obrotowe',
@@ -59,7 +59,7 @@ def extract_mf_data(root):
         'Aktywa_B_II': 'naleznosci_krotkoterminowe',
         'Aktywa_B_III': 'srodki_pieniezne',
         
-        # BILANS - PASYWA
+        # BILANS - PASYWA (ns2:)
         'Pasywa': 'suma_pasywow',
         'Pasywa_A': 'kapital_wlasny',
         'Pasywa_B': 'zobowiazania_i_rezerwy',
@@ -67,30 +67,31 @@ def extract_mf_data(root):
         'Pasywa_B_II': 'zobowiazania_dlugoterminowe',
         'Pasywa_B_III': 'zobowiazania_krotkoterminowe',
         
-        # RACHUNEK ZYSKÓW I STRAT
-        'RZiSPor_A': 'przychody_netto_sprzedazy',
-        'RZiSPor_A_I': 'przychody_netto_produktow',
-        'RZiSPor_A_IV': 'przychody_netto_towarow',
-        'RZiSPor_B': 'koszty_dzialalnosci_operacyjnej',
-        'RZiSPor_B_I': 'amortyzacja',
-        'RZiSPor_B_II': 'zuzycie_materialow',
-        'RZiSPor_B_III': 'uslugi_obce',
-        'RZiSPor_B_IV': 'podatki_oplaty',
-        'RZiSPor_B_V': 'wynagrodzenia',
-        'RZiSPor_B_VIII': 'pozostale_koszty_operacyjne',
-        'RZiSPor_C': 'zysk_strata_sprzedazy',
-        'RZiSPor_D': 'pozostale_przychody_operacyjne',
-        'RZiSPor_E': 'pozostale_koszty_operacyjne',
-        'RZiSPor_F': 'zysk_strata_dzialalnosci_operacyjnej',
-        'RZiSPor_G': 'przychody_finansowe',
-        'RZiSPor_H': 'koszty_finansowe',
-        'RZiSPor_I': 'zysk_strata_brutto',
-        'RZiSPor_J': 'podatek_dochodowy',
-        'RZiSPor_K': 'zysk_strata_netto',
+        # RACHUNEK ZYSKÓW I STRAT (ns2: - bez "RZiSPor_" prefix!)
+        'A': 'przychody_netto_sprzedazy',
+        'A_I': 'przychody_netto_produktow',
+        'A_IV': 'przychody_netto_towarow',
+        'B': 'koszty_dzialalnosci_operacyjnej',
+        'B_I': 'amortyzacja',
+        'B_II': 'zuzycie_materialow',
+        'B_III': 'uslugi_obce',
+        'B_IV': 'podatki_oplaty',
+        'B_V': 'wynagrodzenia',
+        'B_VIII': 'pozostale_koszty_operacyjne',
+        'C': 'zysk_strata_sprzedazy',
+        'D': 'pozostale_przychody_operacyjne',
+        'E': 'pozostale_koszty_operacyjne',
+        'F': 'zysk_strata_dzialalnosci_operacyjnej',
+        'G': 'przychody_finansowe',
+        'H': 'koszty_finansowe',
+        'I': 'zysk_strata_brutto',
+        'J': 'podatek_dochodowy',
+        'K': 'zysk_strata_netto',
     }
     
     # Iterujemy przez wszystkie elementy
     for element in root.iter():
+        # Usuwamy namespace z tagu
         tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
         
         # Sprawdzamy czy to element z kwotami
@@ -99,21 +100,19 @@ def extract_mf_data(root):
         
         if kwota_a is not None and kwota_b is not None:
             try:
-                # Szukamy mapowania
-                mapped_name = None
-                for key, value in mapping.items():
-                    if key in tag:
-                        mapped_name = value
-                        break
+                val_a = float(kwota_a.text)
+                val_b = float(kwota_b.text)
                 
-                if mapped_name:
-                    data_current[mapped_name] = float(kwota_a.text)
-                    data_previous[mapped_name] = float(kwota_b.text)
+                # Sprawdzamy mapowanie
+                if tag in mapping:
+                    mapped_name = mapping[tag]
+                    data_current[mapped_name] = val_a
+                    data_previous[mapped_name] = val_b
                 else:
-                    # Zapisujemy z oryginalną nazwą
-                    data_current[tag] = float(kwota_a.text)
-                    data_previous[tag] = float(kwota_b.text)
-            except (ValueError, AttributeError):
+                    # Zapisujemy z oryginalną nazwą dla debugowania
+                    data_current[f"raw_{tag}"] = val_a
+                    data_previous[f"raw_{tag}"] = val_b
+            except (ValueError, AttributeError, TypeError):
                 pass
     
     return data_current, data_previous, info
@@ -534,6 +533,74 @@ if uploaded_files is not None and len(uploaded_files) > 0:
             st.metric("Kapitał własny", f"{kap_wl:,.0f} PLN")
             st.metric("Zobowiązania razem", f"{zob:,.0f} PLN")
             st.metric("Zobowiązania krótkot.", f"{zob_kr:,.0f} PLN")
+        
+        # Wykres struktury przychodów
+        if przychody > 0:
+            st.subheader("📊 Struktura wyników")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Wykres kołowy - struktura aktywów
+                if suma_akt > 0:
+                    fig_aktywa = go.Figure(data=[go.Pie(
+                        labels=['Aktywa trwałe', 'Aktywa obrotowe'],
+                        values=[akt_trw, akt_obr],
+                        hole=0.3,
+                        marker_colors=['#1f77b4', '#ff7f0e']
+                    )])
+                    fig_aktywa.update_layout(
+                        title="Struktura aktywów",
+                        height=300
+                    )
+                    st.plotly_chart(fig_aktywa, use_container_width=True)
+            
+            with col2:
+                # Wykres kołowy - struktura pasywów
+                if suma_akt > 0:
+                    fig_pasywa = go.Figure(data=[go.Pie(
+                        labels=['Kapitał własny', 'Zobowiązania'],
+                        values=[kap_wl, zob],
+                        hole=0.3,
+                        marker_colors=['#2ca02c', '#d62728']
+                    )])
+                    fig_pasywa.update_layout(
+                        title="Struktura pasywów",
+                        height=300
+                    )
+                    st.plotly_chart(fig_pasywa, use_container_width=True)
+            
+            # Waterfall chart - przepływ od przychodów do zysku
+            if przychody > 0 and zysk_netto is not None:
+                st.subheader("💧 Przepływ wyniku finansowego")
+                
+                koszty_op = financial_data.get('koszty_dzialalnosci_operacyjnej', 0)
+                pozostale_przych = financial_data.get('pozostale_przychody_operacyjne', 0)
+                pozostale_koszty = financial_data.get('pozostale_koszty_operacyjne', 0)
+                przych_fin = financial_data.get('przychody_finansowe', 0)
+                koszty_fin = financial_data.get('koszty_finansowe', 0)
+                podatek = financial_data.get('podatek_dochodowy', 0)
+                
+                fig_waterfall = go.Figure(go.Waterfall(
+                    name="Wynik finansowy",
+                    orientation="v",
+                    measure=["absolute", "relative", "relative", "relative", "relative", "relative", "relative", "total"],
+                    x=["Przychody", "Koszty operacyjne", "Przych. operacyjne", "Koszty operacyjne", 
+                       "Przych. finansowe", "Koszty finansowe", "Podatek", "Zysk netto"],
+                    textposition="outside",
+                    y=[przychody, -koszty_op if koszty_op else 0, pozostale_przych, 
+                       -pozostale_koszty if pozostale_koszty else 0,
+                       przych_fin, -koszty_fin if koszty_fin else 0, 
+                       -podatek if podatek else 0, zysk_netto],
+                    connector={"line": {"color": "rgb(63, 63, 63)"}},
+                ))
+                
+                fig_waterfall.update_layout(
+                    title="Od przychodów do zysku netto",
+                    showlegend=False,
+                    height=400
+                )
+                st.plotly_chart(fig_waterfall, use_container_width=True)
         
         st.markdown("---")
         
