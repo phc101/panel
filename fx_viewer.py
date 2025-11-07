@@ -476,106 +476,106 @@ if uploaded_files is not None and len(uploaded_files) > 0:
             st.success("✅ Nie wykryto niepokojących sygnałów")
         
         st.markdown("---")
+        
+        # Analiza Cashflow
+        st.header("💰 Analiza Cashflow")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            if cf_analysis['details']:
+                cf_df = pd.DataFrame([
+                    {'Kategoria': k, 'Wartość': v if v is not None else 0}
+                    for k, v in cf_analysis['details'].items()
+                    if v is not None
+                ])
+                
+                if not cf_df.empty:
+                    fig = go.Figure(data=[
+                        go.Bar(
+                            x=cf_df['Kategoria'],
+                            y=cf_df['Wartość'],
+                            marker_color=['green' if x > 0 else 'red' for x in cf_df['Wartość']]
+                        )
+                    ])
+                    fig.update_layout(
+                        title="Przepływy pieniężne",
+                        xaxis_title="",
+                        yaxis_title="Wartość (tys. PLN)",
+                        height=400
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            st.subheader("Status Cashflow")
+            if cf_analysis['status'] == 'Dobry':
+                st.success(f"✅ {cf_analysis['status']}")
+            else:
+                st.error(f"⚠️ {cf_analysis['status']}")
             
-            # Analiza Cashflow
-            st.header("💰 Analiza Cashflow")
-            
-            col1, col2 = st.columns([2, 1])
+            if cf_analysis['alerts']:
+                st.markdown("**Uwagi:**")
+                for alert in cf_analysis['alerts']:
+                    st.markdown(f"- {alert}")
+        
+        st.markdown("---")
+        
+        # Wskaźniki finansowe
+        st.header("📈 Wskaźniki Finansowe")
+        
+        if ratios:
+            col1, col2 = st.columns(2)
             
             with col1:
-                if cf_analysis['details']:
-                    cf_df = pd.DataFrame([
-                        {'Kategoria': k, 'Wartość': v if v is not None else 0}
-                        for k, v in cf_analysis['details'].items()
-                        if v is not None
-                    ])
-                    
-                    if not cf_df.empty:
-                        fig = go.Figure(data=[
-                            go.Bar(
-                                x=cf_df['Kategoria'],
-                                y=cf_df['Wartość'],
-                                marker_color=['green' if x > 0 else 'red' for x in cf_df['Wartość']]
-                            )
-                        ])
-                        fig.update_layout(
-                            title="Przepływy pieniężne",
-                            xaxis_title="",
-                            yaxis_title="Wartość (tys. PLN)",
-                            height=400
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
+                st.subheader("Płynność i Zadłużenie")
+                ratios_df = pd.DataFrame([
+                    {'Wskaźnik': 'Płynność bieżąca', 'Wartość': ratios.get('wskaznik_plynnosciI', 0), 'Norma': '1.5-2.0'},
+                    {'Wskaźnik': 'Zadłużenie', 'Wartość': ratios.get('wskaznik_zadluzenia', 0) * 100, 'Norma': '< 70%'}
+                ])
+                st.dataframe(ratios_df, hide_index=True, use_container_width=True)
             
             with col2:
-                st.subheader("Status Cashflow")
-                if cf_analysis['status'] == 'Dobry':
-                    st.success(f"✅ {cf_analysis['status']}")
-                else:
-                    st.error(f"⚠️ {cf_analysis['status']}")
-                
-                if cf_analysis['alerts']:
-                    st.markdown("**Uwagi:**")
-                    for alert in cf_analysis['alerts']:
-                        st.markdown(f"- {alert}")
-            
-            st.markdown("---")
-            
-            # Wskaźniki finansowe
-            st.header("📈 Wskaźniki Finansowe")
-            
-            if ratios:
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.subheader("Płynność i Zadłużenie")
-                    ratios_df = pd.DataFrame([
-                        {'Wskaźnik': 'Płynność bieżąca', 'Wartość': ratios.get('wskaznik_plynnosciI', 0), 'Norma': '1.5-2.0'},
-                        {'Wskaźnik': 'Zadłużenie', 'Wartość': ratios.get('wskaznik_zadluzenia', 0) * 100, 'Norma': '< 70%'}
-                    ])
-                    st.dataframe(ratios_df, hide_index=True, use_container_width=True)
-                
-                with col2:
-                    st.subheader("Rentowność")
-                    profitability_df = pd.DataFrame([
-                        {'Wskaźnik': 'ROE', 'Wartość': f"{ratios.get('roe', 0):.2f}%"},
-                        {'Wskaźnik': 'ROA', 'Wartość': f"{ratios.get('roa', 0):.2f}%"}
-                    ])
-                    st.dataframe(profitability_df, hide_index=True, use_container_width=True)
-            
-            st.markdown("---")
-            
-            # Szczegółowe dane
-            with st.expander("🔍 Szczegółowe dane finansowe"):
-                st.subheader("Wszystkie wyekstrahowane dane")
-                df_details = pd.DataFrame([
-                    {'Pozycja': k, 'Wartość': v}
-                    for k, v in financial_data.items()
-                    if isinstance(v, (int, float))
+                st.subheader("Rentowność")
+                profitability_df = pd.DataFrame([
+                    {'Wskaźnik': 'ROE', 'Wartość': f"{ratios.get('roe', 0):.2f}%"},
+                    {'Wskaźnik': 'ROA', 'Wartość': f"{ratios.get('roa', 0):.2f}%"}
                 ])
-                st.dataframe(df_details, use_container_width=True)
-            
-            # Rekomendacje
-            st.header("💡 Rekomendacje")
-            
-            recommendations = []
-            
-            if 'wskaznik_plynnosciI' in ratios and ratios['wskaznik_plynnosciI'] < 1.5:
-                recommendations.append("📍 Rozważ poprawę płynności finansowej poprzez zarządzanie należnościami i zapasami")
-            
-            if 'wskaznik_zadluzenia' in ratios and ratios['wskaznik_zadluzenia'] > 0.6:
-                recommendations.append("📍 Wysokie zadłużenie - rozważ redukcję zobowiązań lub zwiększenie kapitału własnego")
-            
-            if 'roe' in ratios and ratios['roe'] < 10:
-                recommendations.append("📍 Niska rentowność - analiza kosztów i możliwości zwiększenia marży")
-            
-            if not recommendations:
-                st.success("✅ Sytuacja finansowa spółki jest stabilna. Kontynuuj obecną strategię.")
-            else:
-                for rec in recommendations:
-                    st.info(rec)
+                st.dataframe(profitability_df, hide_index=True, use_container_width=True)
         
+        st.markdown("---")
+        
+        # Szczegółowe dane
+        with st.expander("🔍 Szczegółowe dane finansowe"):
+            st.subheader("Wszystkie wyekstrahowane dane")
+            df_details = pd.DataFrame([
+                {'Pozycja': k, 'Wartość': v}
+                for k, v in financial_data.items()
+                if isinstance(v, (int, float))
+            ])
+            st.dataframe(df_details, use_container_width=True)
+        
+        # Rekomendacje
+        st.header("💡 Rekomendacje")
+        
+        recommendations = []
+        
+        if 'wskaznik_plynnosciI' in ratios and ratios['wskaznik_plynnosciI'] < 1.5:
+            recommendations.append("📍 Rozważ poprawę płynności finansowej poprzez zarządzanie należnościami i zapasami")
+        
+        if 'wskaznik_zadluzenia' in ratios and ratios['wskaznik_zadluzenia'] > 0.6:
+            recommendations.append("📍 Wysokie zadłużenie - rozważ redukcję zobowiązań lub zwiększenie kapitału własnego")
+        
+        if 'roe' in ratios and ratios['roe'] < 10:
+            recommendations.append("📍 Niska rentowność - analiza kosztów i możliwości zwiększenia marży")
+        
+        if not recommendations:
+            st.success("✅ Sytuacja finansowa spółki jest stabilna. Kontynuuj obecną strategię.")
         else:
-            st.warning("⚠️ Nie udało się wyekstrahować danych finansowych z pliku XML. Sprawdź format pliku.")
+            for rec in recommendations:
+                st.info(rec)
+    
+    else:
+        st.warning("⚠️ Nie udało się wyekstrahować danych finansowych z pliku XML. Sprawdź format pliku.")
 
 else:
     # Ekran startowy
