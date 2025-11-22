@@ -3,8 +3,15 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
-import seaborn as sns
-import io
+
+# Install seaborn if not available
+try:
+    import seaborn as sns
+except ImportError:
+    import subprocess
+    import sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "seaborn", "--break-system-packages"])
+    import seaborn as sns
 
 st.set_page_config(page_title="Window Forward Analyzer", layout="wide", page_icon="📊")
 
@@ -23,6 +30,7 @@ def calculate_pivot_points_mt5(window_df):
     return {
         'pivot': pivot,
         'r2': pivot + range_hl,
+        's2': pivot - range_hl
     }
 
 def backtest_window_forward(df, lookback_days, hold_days, stop_loss_pct, signal_direction='SELL'):
@@ -42,15 +50,13 @@ def backtest_window_forward(df, lookback_days, hold_days, stop_loss_pct, signal_
         pivots = calculate_pivot_points_mt5(lookback_window)
         entry_price = current_row['Open']
         
-        # Tylko SELL sygnały na R2
+        # SELL sygnały na R2
         if signal_direction == 'SELL':
             if entry_price < pivots['r2']:
                 continue
             signal = 'SELL'
-        else:  # BUY
-            # Dla BUY używamy S2
-            s2 = pivots['pivot'] - (lookback_window['High'].mean() - lookback_window['Low'].mean())
-            if entry_price > s2:
+        else:  # BUY na S2
+            if entry_price > pivots['s2']:
                 continue
             signal = 'BUY'
         
@@ -513,7 +519,7 @@ with tab2:
         
         st.markdown("### 🏆 TOP 10 strategii")
         st.dataframe(
-            top10[[' lookback', 'hold_days', 'stop_loss', 'total_trades', 'win_rate', 
+            top10[['lookback', 'hold_days', 'stop_loss', 'total_trades', 'win_rate', 
                    'total_return', 'avg_pct_below', 'max_dd', 'sharpe']].style.format({
                 'win_rate': '{:.1f}%',
                 'total_return': '{:+.2f}%',
@@ -625,23 +631,26 @@ with tab3:
         display_df['entry_date'] = display_df['entry_date'].dt.strftime('%Y-%m-%d')
         display_df['exit_date'] = display_df['exit_date'].dt.strftime('%Y-%m-%d')
         
+        # Formatowanie z highlightowaniem
+        def highlight_pnl(val):
+            if isinstance(val, (int, float)):
+                if val > 0:
+                    return 'background-color: #90EE90'
+                elif val < 0:
+                    return 'background-color: #FFB6C6'
+            return ''
+        
         st.dataframe(
             display_df.style.format({
                 'entry_price': '{:.4f}',
                 'exit_price': '{:.4f}',
-                'actual_pnl_pct': '{:+.2f}%',
-                'best_possible_pnl': '{:+.2f}%',
-                'opportunity_missed': '{:.2f}%',
-                'pct_days_below': '{:.1f}%',
-                'max_favorable_move': '{:.2f}%',
-                'max_adverse_move': '{:.2f}%'
-            }).applymap(
-                lambda x: 'background-color: #90EE90' if isinstance(x, str) and '+' in x and '%' in x else '',
-                subset=['actual_pnl_pct']
-            ).applymap(
-                lambda x: 'background-color: #FFB6C6' if isinstance(x, str) and '-' in x and '%' in x else '',
-                subset=['actual_pnl_pct']
-            ),
+                'actual_pnl_pct': '{:+.2f}',
+                'best_possible_pnl': '{:+.2f}',
+                'opportunity_missed': '{:.2f}',
+                'pct_days_below': '{:.1f}',
+                'max_favorable_move': '{:.2f}',
+                'max_adverse_move': '{:.2f}'
+            }).apply(lambda x: [highlight_pnl(v) if x.name == 'actual_pnl_pct' else '' for v in x], axis=0),
             use_container_width=True,
             height=600
         )
