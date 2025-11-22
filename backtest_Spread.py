@@ -33,6 +33,51 @@ def backtest_window_forward(df, lookback_days, hold_days, stop_loss_pct, signal_
     df['DayOfWeek'] = df['Date'].dt.dayofweek
     trades = []
     
+    # Jeśli BOTH, uruchom dla SELL i BUY osobno
+    if signal_direction == 'BOTH':
+        trades_sell = []
+        trades_buy = []
+        
+        # SELL signals
+        for idx in range(lookback_days, len(df)):
+            current_row = df.iloc[idx]
+            if current_row['DayOfWeek'] != 0:  # Tylko poniedziałki
+                continue
+            
+            lookback_window = df.iloc[idx-lookback_days:idx]
+            pivots = calculate_pivot_points_mt5(lookback_window)
+            entry_price = current_row['Open']
+            
+            if entry_price < pivots['r2']:
+                continue
+            
+            trade = process_trade(df, idx, lookback_window, pivots, entry_price, 
+                                hold_days, stop_loss_pct, 'SELL', pair_name)
+            if trade:
+                trades_sell.append(trade)
+        
+        # BUY signals
+        for idx in range(lookback_days, len(df)):
+            current_row = df.iloc[idx]
+            if current_row['DayOfWeek'] != 0:
+                continue
+            
+            lookback_window = df.iloc[idx-lookback_days:idx]
+            pivots = calculate_pivot_points_mt5(lookback_window)
+            entry_price = current_row['Open']
+            
+            if entry_price > pivots['s2']:
+                continue
+            
+            trade = process_trade(df, idx, lookback_window, pivots, entry_price, 
+                                hold_days, stop_loss_pct, 'BUY', pair_name)
+            if trade:
+                trades_buy.append(trade)
+        
+        trades = trades_sell + trades_buy
+        return pd.DataFrame(trades).sort_values('entry_date').reset_index(drop=True) if trades else None
+    
+    # Standardowa logika dla SELL lub BUY
     for idx in range(lookback_days, len(df)):
         current_row = df.iloc[idx]
         if current_row['DayOfWeek'] != 0:  # Tylko poniedziałki
@@ -46,118 +91,124 @@ def backtest_window_forward(df, lookback_days, hold_days, stop_loss_pct, signal_
         if signal_direction == 'SELL':
             if entry_price < pivots['r2']:
                 continue
-            signal = 'SELL'
         else:  # BUY na S2
             if entry_price > pivots['s2']:
                 continue
-            signal = 'BUY'
         
-        entry_date = current_row['Date']
-        exit_date = entry_date + timedelta(days=hold_days)
-        
-        future_dates = df[df['Date'] >= exit_date]
-        if len(future_dates) == 0:
-            continue
-        
-        exit_row = future_dates.iloc[0]
-        exit_price = exit_row['Price']
-        
-        # Analiza window forward
-        trade_period = df[(df['Date'] > entry_date) & (df['Date'] <= exit_row['Date'])].copy()
-        
-        if len(trade_period) == 0:
-            continue
-        
-        days_below_entry = 0
-        max_favorable_move = 0
-        max_adverse_move = 0
-        best_exit_price = entry_price
-        worst_case_price = entry_price
-        
-        for _, day in trade_period.iterrows():
-            if signal == 'SELL':
-                if day['Price'] < entry_price:
-                    days_below_entry += 1
-                if day['Low'] < best_exit_price:
-                    best_exit_price = day['Low']
-                if day['High'] > worst_case_price:
-                    worst_case_price = day['High']
-                favorable = (entry_price - day['Low']) / entry_price * 100
-                adverse = (day['High'] - entry_price) / entry_price * 100
-            else:  # BUY
-                if day['Price'] > entry_price:
-                    days_below_entry += 1
-                if day['High'] > best_exit_price:
-                    best_exit_price = day['High']
-                if day['Low'] < worst_case_price:
-                    worst_case_price = day['Low']
-                favorable = (day['High'] - entry_price) / entry_price * 100
-                adverse = (entry_price - day['Low']) / entry_price * 100
-            
-            if favorable > max_favorable_move:
-                max_favorable_move = favorable
-            if adverse > max_adverse_move:
-                max_adverse_move = adverse
-        
-        total_days = len(trade_period)
-        
-        # Stop loss
-        stop_loss_hit = False
-        if signal == 'SELL':
-            max_loss_price = entry_price * (1 + stop_loss_pct)
-            for _, day in trade_period.iterrows():
-                if day['High'] >= max_loss_price:
-                    stop_loss_hit = True
-                    exit_price = max_loss_price
-                    exit_row = day
-                    break
-        else:  # BUY
-            max_loss_price = entry_price * (1 - stop_loss_pct)
-            for _, day in trade_period.iterrows():
-                if day['Low'] <= max_loss_price:
-                    stop_loss_hit = True
-                    exit_price = max_loss_price
-                    exit_row = day
-                    break
-        
-        # P/L
-        if signal == 'SELL':
-            actual_pnl_pct = ((entry_price - exit_price) / entry_price) * 100
-            best_possible_pnl = ((entry_price - best_exit_price) / entry_price) * 100
-            worst_possible_pnl = ((entry_price - worst_case_price) / entry_price) * 100
-        else:  # BUY
-            actual_pnl_pct = ((exit_price - entry_price) / entry_price) * 100
-            best_possible_pnl = ((best_exit_price - entry_price) / entry_price) * 100
-            worst_possible_pnl = ((worst_case_price - entry_price) / entry_price) * 100
-        
-        pct_days_below = (days_below_entry / total_days * 100) if total_days > 0 else 0
-        
-        trades.append({
-            'pair': pair_name,
-            'entry_date': entry_date,
-            'exit_date': exit_row['Date'],
-            'signal': signal,
-            'entry_price': entry_price,
-            'exit_price': exit_price,
-            'actual_pnl_pct': actual_pnl_pct,
-            'best_possible_pnl': best_possible_pnl,
-            'worst_possible_pnl': worst_possible_pnl,
-            'total_days': total_days,
-            'days_below_entry': days_below_entry,
-            'pct_days_below': pct_days_below,
-            'max_favorable_move': max_favorable_move,
-            'max_adverse_move': max_adverse_move,
-            'stop_loss_hit': stop_loss_hit,
-            'opportunity_missed': best_possible_pnl - actual_pnl_pct
-        })
+        trade = process_trade(df, idx, lookback_window, pivots, entry_price, 
+                            hold_days, stop_loss_pct, signal_direction, pair_name)
+        if trade:
+            trades.append(trade)
     
     return pd.DataFrame(trades) if trades else None
+
+def process_trade(df, idx, lookback_window, pivots, entry_price, hold_days, stop_loss_pct, signal, pair_name):
+    """Helper function to process a single trade"""
+    current_row = df.iloc[idx]
+    entry_date = current_row['Date']
+    exit_date = entry_date + timedelta(days=hold_days)
+    
+    future_dates = df[df['Date'] >= exit_date]
+    if len(future_dates) == 0:
+        return None
+    
+    exit_row = future_dates.iloc[0]
+    exit_price = exit_row['Price']
+    
+    # Analiza window forward
+    trade_period = df[(df['Date'] > entry_date) & (df['Date'] <= exit_row['Date'])].copy()
+    
+    if len(trade_period) == 0:
+        return None
+    
+    days_below_entry = 0
+    max_favorable_move = 0
+    max_adverse_move = 0
+    best_exit_price = entry_price
+    worst_case_price = entry_price
+    
+    for _, day in trade_period.iterrows():
+        if signal == 'SELL':
+            if day['Price'] < entry_price:
+                days_below_entry += 1
+            if day['Low'] < best_exit_price:
+                best_exit_price = day['Low']
+            if day['High'] > worst_case_price:
+                worst_case_price = day['High']
+            favorable = (entry_price - day['Low']) / entry_price * 100
+            adverse = (day['High'] - entry_price) / entry_price * 100
+        else:  # BUY
+            if day['Price'] > entry_price:
+                days_below_entry += 1
+            if day['High'] > best_exit_price:
+                best_exit_price = day['High']
+            if day['Low'] < worst_case_price:
+                worst_case_price = day['Low']
+            favorable = (day['High'] - entry_price) / entry_price * 100
+            adverse = (entry_price - day['Low']) / entry_price * 100
+        
+        if favorable > max_favorable_move:
+            max_favorable_move = favorable
+        if adverse > max_adverse_move:
+            max_adverse_move = adverse
+    
+    total_days = len(trade_period)
+    
+    # Stop loss
+    stop_loss_hit = False
+    if signal == 'SELL':
+        max_loss_price = entry_price * (1 + stop_loss_pct)
+        for _, day in trade_period.iterrows():
+            if day['High'] >= max_loss_price:
+                stop_loss_hit = True
+                exit_price = max_loss_price
+                exit_row = day
+                break
+    else:  # BUY
+        max_loss_price = entry_price * (1 - stop_loss_pct)
+        for _, day in trade_period.iterrows():
+            if day['Low'] <= max_loss_price:
+                stop_loss_hit = True
+                exit_price = max_loss_price
+                exit_row = day
+                break
+    
+    # P/L
+    if signal == 'SELL':
+        actual_pnl_pct = ((entry_price - exit_price) / entry_price) * 100
+        best_possible_pnl = ((entry_price - best_exit_price) / entry_price) * 100
+        worst_possible_pnl = ((entry_price - worst_case_price) / entry_price) * 100
+    else:  # BUY
+        actual_pnl_pct = ((exit_price - entry_price) / entry_price) * 100
+        best_possible_pnl = ((best_exit_price - entry_price) / entry_price) * 100
+        worst_possible_pnl = ((worst_case_price - entry_price) / entry_price) * 100
+    
+    pct_days_below = (days_below_entry / total_days * 100) if total_days > 0 else 0
+    
+    return {
+        'pair': pair_name,
+        'entry_date': entry_date,
+        'exit_date': exit_row['Date'],
+        'signal': signal,
+        'entry_price': entry_price,
+        'exit_price': exit_price,
+        'actual_pnl_pct': actual_pnl_pct,
+        'best_possible_pnl': best_possible_pnl,
+        'worst_possible_pnl': worst_possible_pnl,
+        'total_days': total_days,
+        'days_below_entry': days_below_entry,
+        'pct_days_below': pct_days_below,
+        'max_favorable_move': max_favorable_move,
+        'max_adverse_move': max_adverse_move,
+        'stop_loss_hit': stop_loss_hit,
+        'opportunity_missed': best_possible_pnl - actual_pnl_pct
+    }
 
 def optimize_parameters(df, signal_direction='SELL', pair_name=''):
     """Optymalizacja parametrów"""
     
     lookback_range = [4, 5, 7, 10, 14, 21, 30]
-    hold_range = [7, 14, 21, 30, 45, 60, 90]
+    hold_range = [4, 7, 14, 21, 30, 45, 60, 90]
     sl_range = [0.01, 0.02, 0.03, 0.04, 0.05]
     
     results = []
@@ -433,8 +484,8 @@ with tab1:
         
         signal_direction = st.selectbox(
             "Kierunek sygnału",
-            ['SELL', 'BUY'],
-            help="SELL = short na R2, BUY = long na S2"
+            ['BOTH', 'SELL', 'BUY'],
+            help="SELL = short na R2, BUY = long na S2, BOTH = oba jednocześnie"
         )
         
         lookback_days = st.slider(
@@ -448,11 +499,11 @@ with tab1:
         
         hold_days = st.slider(
             "Holding period (dni)",
-            min_value=7,
+            min_value=4,
             max_value=120,
             value=60,
             step=1,
-            help="Maksymalny czas trzymania pozycji"
+            help="Maksymalny czas trzymania pozycji (min 4 dni)"
         )
         
         stop_loss_pct = st.slider(
@@ -537,6 +588,15 @@ with tab1:
                 cols = st.columns(len(pair_counts))
                 for i, (pair, count) in enumerate(pair_counts.items()):
                     cols[i].metric(pair, count)
+                st.markdown("---")
+            
+            # W trybie BOTH - pokaż rozkład sygnałów
+            if params['direction'] == 'BOTH':
+                st.markdown("**📊 Transakcje według kierunku:**")
+                signal_counts = trades_df['signal'].value_counts()
+                col_buy, col_sell = st.columns(2)
+                col_sell.metric("SELL", signal_counts.get('SELL', 0))
+                col_buy.metric("BUY", signal_counts.get('BUY', 0))
                 st.markdown("---")
             
             # Metryki
@@ -651,6 +711,10 @@ with tab1:
                 st.markdown("**✅ Wygrane transakcje**")
                 st.write(f"Liczba: {len(winning)}")
                 if len(winning) > 0:
+                    if params['direction'] == 'BOTH':
+                        win_signals = winning['signal'].value_counts()
+                        st.write(f"  - SELL: {win_signals.get('SELL', 0)}")
+                        st.write(f"  - BUY: {win_signals.get('BUY', 0)}")
                     st.write(f"Średni % dni ITM: {winning['pct_days_below'].mean():.1f}%")
                     st.write(f"Średni P/L: {winning['actual_pnl_pct'].mean():+.2f}%")
                     st.write(f"Max korzystny: {winning['max_favorable_move'].mean():.2f}%")
@@ -660,6 +724,10 @@ with tab1:
                 st.markdown("**❌ Przegrane transakcje**")
                 st.write(f"Liczba: {len(losing)}")
                 if len(losing) > 0:
+                    if params['direction'] == 'BOTH':
+                        loss_signals = losing['signal'].value_counts()
+                        st.write(f"  - SELL: {loss_signals.get('SELL', 0)}")
+                        st.write(f"  - BUY: {loss_signals.get('BUY', 0)}")
                     st.write(f"Średni % dni ITM: {losing['pct_days_below'].mean():.1f}%")
                     st.write(f"Średni P/L: {losing['actual_pnl_pct'].mean():+.2f}%")
                     st.write(f"Max korzystny: {losing['max_favorable_move'].mean():.2f}%")
@@ -691,7 +759,7 @@ with tab2:
     with col_opt2:
         opt_direction = st.selectbox(
             "Kierunek dla optymalizacji",
-            ['SELL', 'BUY'],
+            ['BOTH', 'SELL', 'BUY'],
             key='opt_direction'
         )
     
@@ -791,7 +859,10 @@ with tab3:
         params = st.session_state['params']
         
         # Filtry
-        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+        if params['direction'] == 'BOTH':
+            col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
+        else:
+            col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns([1.2, 1, 1, 1, 1])
         
         with col_f1:
             # Filtr par (tylko w trybie portfela)
@@ -805,15 +876,26 @@ with tab3:
                 pair_filter = ['Wszystkie']
         
         with col_f2:
+            # Filtr sygnałów (tylko gdy BOTH)
+            if params['direction'] == 'BOTH':
+                signal_filter = st.multiselect(
+                    "Kierunek",
+                    options=['Wszystkie', 'SELL', 'BUY'],
+                    default=['Wszystkie']
+                )
+            else:
+                signal_filter = ['Wszystkie']
+        
+        with col_f3:
             show_type = st.selectbox(
                 "Pokaż",
                 ['Wszystkie', 'Tylko wygrane', 'Tylko przegrane', 'Tylko ze stop loss']
             )
         
-        with col_f3:
+        with col_f4:
             min_pct_itm = st.slider("Min % dni ITM", 0, 100, 0)
         
-        with col_f4:
+        with col_f5:
             sort_by = st.selectbox(
                 "Sortuj według",
                 ['entry_date', 'actual_pnl_pct', 'pct_days_below', 'opportunity_missed']
@@ -825,6 +907,10 @@ with tab3:
         # Filtr par
         if params['pair'] == 'Portfel' and 'Wszystkie' not in pair_filter:
             filtered_df = filtered_df[filtered_df['pair'].isin(pair_filter)]
+        
+        # Filtr sygnałów
+        if params['direction'] == 'BOTH' and 'Wszystkie' not in signal_filter:
+            filtered_df = filtered_df[filtered_df['signal'].isin(signal_filter)]
         
         if show_type == 'Tylko wygrane':
             filtered_df = filtered_df[filtered_df['actual_pnl_pct'] > 0]
@@ -917,7 +1003,7 @@ with tab4:
         
         comp_direction = st.selectbox(
             "Kierunek",
-            ['SELL', 'BUY'],
+            ['BOTH', 'SELL', 'BUY'],
             key='comp_direction'
         )
         
@@ -931,7 +1017,7 @@ with tab4:
         
         comp_hold = st.slider(
             "Hold (dni)",
-            min_value=7,
+            min_value=4,
             max_value=120,
             value=60,
             key='comp_hold'
