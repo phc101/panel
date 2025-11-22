@@ -3,15 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
-
-# Install seaborn if not available
-try:
-    import seaborn as sns
-except ImportError:
-    import subprocess
-    import sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "seaborn", "--break-system-packages"])
-    import seaborn as sns
+from matplotlib.colors import LinearSegmentedColormap
 
 st.set_page_config(page_title="Window Forward Analyzer", layout="wide", page_icon="📊")
 
@@ -217,6 +209,54 @@ def optimize_parameters(df, signal_direction='SELL'):
     status_text.empty()
     
     return pd.DataFrame(results)
+
+def plot_heatmap(pivot_table, title, cbar_label):
+    """Rysuje heatmapę używając matplotlib zamiast seaborn"""
+    fig, ax = plt.subplots(figsize=(10, 7))
+    
+    # Przygotowanie danych
+    data = pivot_table.values
+    
+    # Kolorowa mapa: czerwony -> żółty -> zielony
+    colors = ['#d73027', '#fee08b', '#d9ef8b', '#91cf60', '#1a9850']
+    n_bins = 100
+    cmap = LinearSegmentedColormap.from_list('custom', colors, N=n_bins)
+    
+    # Znajdź centrum (0)
+    vmin, vmax = data.min(), data.max()
+    if vmin < 0 < vmax:
+        # Centruj na 0
+        bound = max(abs(vmin), abs(vmax))
+        vmin, vmax = -bound, bound
+    
+    # Rysuj heatmapę
+    im = ax.imshow(data, cmap=cmap, aspect='auto', vmin=vmin, vmax=vmax)
+    
+    # Etykiety
+    ax.set_xticks(np.arange(len(pivot_table.columns)))
+    ax.set_yticks(np.arange(len(pivot_table.index)))
+    ax.set_xticklabels(pivot_table.columns)
+    ax.set_yticklabels(pivot_table.index)
+    
+    # Obróć etykiety X
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+    
+    # Dodaj wartości w komórkach
+    for i in range(len(pivot_table.index)):
+        for j in range(len(pivot_table.columns)):
+            text = ax.text(j, i, f'{data[i, j]:.1f}',
+                         ha="center", va="center", color="black", fontsize=8)
+    
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    ax.set_xlabel(pivot_table.columns.name)
+    ax.set_ylabel(pivot_table.index.name)
+    
+    # Colorbar
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label(cbar_label, rotation=270, labelpad=15)
+    
+    plt.tight_layout()
+    return fig
 
 # ============================================================================
 # GŁÓWNA APLIKACJA
@@ -465,18 +505,20 @@ with tab1:
             with col_w1:
                 st.markdown("**✅ Wygrane transakcje**")
                 st.write(f"Liczba: {len(winning)}")
-                st.write(f"Średni % dni ITM: {winning['pct_days_below'].mean():.1f}%")
-                st.write(f"Średni P/L: {winning['actual_pnl_pct'].mean():+.2f}%")
-                st.write(f"Max korzystny: {winning['max_favorable_move'].mean():.2f}%")
-                st.write(f"Max niekorzystny: {winning['max_adverse_move'].mean():.2f}%")
+                if len(winning) > 0:
+                    st.write(f"Średni % dni ITM: {winning['pct_days_below'].mean():.1f}%")
+                    st.write(f"Średni P/L: {winning['actual_pnl_pct'].mean():+.2f}%")
+                    st.write(f"Max korzystny: {winning['max_favorable_move'].mean():.2f}%")
+                    st.write(f"Max niekorzystny: {winning['max_adverse_move'].mean():.2f}%")
             
             with col_w2:
                 st.markdown("**❌ Przegrane transakcje**")
                 st.write(f"Liczba: {len(losing)}")
-                st.write(f"Średni % dni ITM: {losing['pct_days_below'].mean():.1f}%")
-                st.write(f"Średni P/L: {losing['actual_pnl_pct'].mean():+.2f}%")
-                st.write(f"Max korzystny: {losing['max_favorable_move'].mean():.2f}%")
-                st.write(f"Max niekorzystny: {losing['max_adverse_move'].mean():.2f}%")
+                if len(losing) > 0:
+                    st.write(f"Średni % dni ITM: {losing['pct_days_below'].mean():.1f}%")
+                    st.write(f"Średni P/L: {losing['actual_pnl_pct'].mean():+.2f}%")
+                    st.write(f"Max korzystny: {losing['max_favorable_move'].mean():.2f}%")
+                    st.write(f"Max niekorzystny: {losing['max_adverse_move'].mean():.2f}%")
 
 with tab2:
     st.header("🔧 Optymalizacja Parametrów")
@@ -547,11 +589,7 @@ with tab2:
                 aggfunc='mean'
             )
             
-            fig, ax = plt.subplots(figsize=(8, 6))
-            sns.heatmap(pivot_table, annot=True, fmt='.1f', cmap='RdYlGn', 
-                       center=0, ax=ax, cbar_kws={'label': 'Return (%)'})
-            ax.set_title('Total Return (%)')
-            plt.tight_layout()
+            fig = plot_heatmap(pivot_table, 'Total Return (%)', 'Return (%)')
             st.pyplot(fig)
         
         with col_h2:
@@ -564,11 +602,7 @@ with tab2:
                 aggfunc='mean'
             )
             
-            fig, ax = plt.subplots(figsize=(8, 6))
-            sns.heatmap(pivot_table2, annot=True, fmt='.1f', cmap='RdYlGn', 
-                       center=0, ax=ax, cbar_kws={'label': 'Return (%)'})
-            ax.set_title('Total Return (%)')
-            plt.tight_layout()
+            fig = plot_heatmap(pivot_table2, 'Total Return (%)', 'Return (%)')
             st.pyplot(fig)
         
         # Download wyników
@@ -650,7 +684,7 @@ with tab3:
                 'pct_days_below': '{:.1f}',
                 'max_favorable_move': '{:.2f}',
                 'max_adverse_move': '{:.2f}'
-            }).apply(lambda x: [highlight_pnl(v) if x.name == 'actual_pnl_pct' else '' for v in x], axis=0),
+            }).applymap(highlight_pnl, subset=['actual_pnl_pct']),
             use_container_width=True,
             height=600
         )
