@@ -1,1172 +1,669 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
-from matplotlib.dates import DateFormatter
-import matplotlib.dates as mdates
-from sklearn.linear_model import LinearRegression
-import warnings
-warnings.filterwarnings('ignore')
+import seaborn as sns
+import io
 
-st.title("Real Rate vs Historical Rate Analysis")
-st.write("Upload CSV files for currency pair, domestic bond yield, and foreign bond yield")
+st.set_page_config(page_title="Window Forward Analyzer", layout="wide", page_icon="📊")
 
-# Currency pair specification
-st.sidebar.header("Currency Pair Setup")
-currency_pair = st.sidebar.text_input("Currency Pair (e.g., EUR/USD, GBP/JPY)", value="EUR/USD", help="Format: BASE/QUOTE where BASE is the first currency, QUOTE is the second")
+# ============================================================================
+# FUNKCJE POMOCNICZE
+# ============================================================================
 
-# Parse currency pair
-if "/" in currency_pair:
-    base_currency, quote_currency = currency_pair.split("/")
-    base_currency = base_currency.strip().upper()
-    quote_currency = quote_currency.strip().upper()
-else:
-    st.sidebar.warning("Please enter currency pair in BASE/QUOTE format (e.g., EUR/USD)")
-    base_currency, quote_currency = "BASE", "QUOTE"
-
-st.sidebar.write(f"**Base Currency**: {base_currency} (Position Size)")
-st.sidebar.write(f"**Quote Currency**: {quote_currency} (PnL Results)")
-
-# File uploaders
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    fx_file = st.file_uploader("Currency Pair CSV", type="csv", key="fx")
-    if currency_pair:
-        st.caption(f"📈 {currency_pair} exchange rate data")
-    
-with col2:
-    domestic_file = st.file_uploader("Domestic Bond Yield CSV", type="csv", key="domestic")
-    if base_currency != "BASE":
-        st.caption(f"🏠 {base_currency} bond yields")
-    
-with col3:
-    foreign_file = st.file_uploader("Foreign Bond Yield CSV", type="csv", key="foreign")
-    if quote_currency != "QUOTE":
-        st.caption(f"🌍 {quote_currency} bond yields")
-
-# Model parameters
-st.sidebar.header("Model Parameters")
-lookback_days = st.sidebar.slider("Regression Lookback Days", 30, 252, 126)
-min_r2 = st.sidebar.slider("Minimum R² for Trading", 0.1, 0.9, 0.3, 0.05)
-
-st.sidebar.header("Strategy Parameters")
-hold_period_days = st.sidebar.slider("Holding Period (Days)", 1, 365, 90)
-position_size = st.sidebar.number_input(f"Position Size ({base_currency})", min_value=1000, max_value=10000000, value=100000, step=10000, help=f"Amount of {base_currency} to trade per position")
-leverage = st.sidebar.slider("Leverage", 1, 20, 1)
-strategy_type = st.sidebar.selectbox("Strategy Type", ["Long and Short", "Long Only", "Short Only"])
-show_detailed_trades = st.sidebar.checkbox("Show Detailed Trades", True)
-entry_frequency = st.sidebar.selectbox("Entry Frequency", ["Monday Only", "Any Day with Signal"])
-
-# Optimization parameters
-st.sidebar.header("Strategy Optimization")
-run_optimization = st.sidebar.checkbox("🚀 Run Strategy Optimization", help="Find the best combination of parameters")
-if run_optimization:
-    optimization_metric = st.sidebar.selectbox("Optimization Target", 
-                                             ["Total Return %", "Sharpe Ratio", "Total PnL", "Win Rate", "Profit Factor"],
-                                             help="Which metric to optimize for")
-    
-    # Parameter ranges for optimization
-    r2_range = st.sidebar.slider("R² Range", 0.1, 0.9, (0.2, 0.6), 0.05, help="Range of R² thresholds to test")
-    hold_range = st.sidebar.slider("Hold Period Range (Days)", 1, 365, (30, 180), 5, help="Range of holding periods to test")
-    regression_range = st.sidebar.slider("Regression Period Range (Days)", 30, 500, (60, 252), 10, help="Range of regression lookback periods to test")
-    
-    max_combinations = st.sidebar.number_input("Max Combinations to Test", 50, 1000, 200, 25, 
-                                             help="Limit total combinations to avoid long computation times")
-
-# Add currency info box
-currency_info = f"""
-**Currency Setup:**
-- Position Size: {base_currency}
-- PnL Results: {quote_currency}
-- Margin: {quote_currency}
-
-**Example:** If {currency_pair} moves from 1.0500 to 1.0600:
-- Raw PnL: 0.0100 {quote_currency} per {base_currency}
-- For 100,000 {base_currency}: 1,000 {quote_currency} profit
-"""
-st.sidebar.info(currency_info)
-
-def load_and_clean_data(file, data_type):
-    """Load and clean data from uploaded CSV"""
-    if file is None:
-        return None
-    
-    df = pd.read_csv(file)
-    df.columns = df.columns.str.strip()
-    
-    # Find date and price columns
-    date_col = None
-    price_col = None
-    
-    for col in df.columns:
-        if 'date' in col.lower():
-            date_col = col
-            break
-    
-    for col in df.columns:
-        if 'price' in col.lower():
-            price_col = col
-            break
-    
-    if date_col is None or price_col is None:
-        st.error(f"Could not find Date and Price columns in {data_type} file")
-        return None
-    
-    # Clean and prepare data
-    df = df.rename(columns={date_col: 'date', price_col: 'price'})
-    df['date'] = pd.to_datetime(df['date'])
-    df = df.set_index('date').sort_index()
-    
-    # Remove any non-numeric characters from price (like % signs)
-    if df['price'].dtype == 'object':
-        df['price'] = df['price'].astype(str).str.replace('%', '').str.replace(',', '')
-        df['price'] = pd.to_numeric(df['price'], errors='coerce')
-    
-    return df[['price']]
-
-def rolling_regression(y, x, window):
-    """Perform rolling regression and return predictions"""
-    predictions = np.full(len(y), np.nan)
-    r_squared = np.full(len(y), np.nan)
-    
-    for i in range(window-1, len(y)):
-        start_idx = i - window + 1
-        
-        # Get data for regression
-        y_window = y[start_idx:i+1]
-        x_window = x[start_idx:i+1]
-        
-        # Remove NaN values
-        mask = ~(np.isnan(y_window) | np.isnan(x_window))
-        if mask.sum() < 10:  # Need at least 10 data points
-            continue
-            
-        y_clean = y_window[mask]
-        x_clean = x_window[mask].reshape(-1, 1)
-        
-        # Fit regression
-        model = LinearRegression()
-        model.fit(x_clean, y_clean)
-        
-        # Make prediction for current point
-        prediction = model.predict([[x[i]]])[0]
-        predictions[i] = prediction
-        
-        # Calculate R²
-        y_pred_all = model.predict(x_clean)
-        r_squared[i] = np.corrcoef(y_clean, y_pred_all)[0, 1] ** 2
-    
-    return predictions, r_squared
-
-def run_single_strategy(df, real_rates_opt, r_squared_opt, hold_days_opt, min_r2_opt, reg_period, strategy_type_param, entry_frequency_param, position_size_param, leverage_param):
-    """Run a single strategy configuration and return performance metrics"""
-    
-    # Create a copy of dataframe with optimization parameters
-    df_opt = df.copy()
-    df_opt['real_rate'] = real_rates_opt
-    df_opt['r_squared'] = r_squared_opt
-    df_opt['tradeable'] = df_opt['r_squared'] >= min_r2_opt
-    df_opt['weekday'] = df_opt.index.weekday
-    df_opt['is_monday'] = df_opt['weekday'] == 0
-    
-    # Determine entry dates
-    if entry_frequency_param == "Monday Only":
-        entry_dates = df_opt[(df_opt['is_monday']) & (df_opt['tradeable']) & (~df_opt['real_rate'].isna())].index
-    else:
-        entry_dates = df_opt[(df_opt['tradeable']) & (~df_opt['real_rate'].isna())].index
-    
-    if len(entry_dates) == 0:
-        return None
-    
-    # Execute strategy
-    positions = []
-    active_positions = []
-    date_to_index = {date: idx for idx, date in enumerate(df_opt.index)}
-    
-    for entry_date in entry_dates:
-        real_rate = df_opt.loc[entry_date, 'real_rate']
-        fx_price = df_opt.loc[entry_date, 'fx_price']
-        r2 = df_opt.loc[entry_date, 'r_squared']
-        
-        if pd.notna(real_rate) and r2 >= min_r2_opt:
-            # Calculate exit date
-            current_idx = date_to_index[entry_date]
-            target_exit_idx = current_idx + hold_days_opt
-            
-            if target_exit_idx >= len(df_opt):
-                exit_date = df_opt.index[-1]
-            else:
-                exit_date = df_opt.index[target_exit_idx]
-            
-            # Close expired positions
-            positions_to_close = [pos for pos in active_positions if pos['exit_date'] <= entry_date]
-            
-            for pos in positions_to_close:
-                exit_price = df_opt.loc[pos['exit_date'], 'fx_price']
-                
-                if pos['position_type'] == 'Long':
-                    pnl = exit_price - pos['entry_price']
-                else:
-                    pnl = pos['entry_price'] - exit_price
-                
-                positions.append({
-                    'entry_date': pos['entry_date'],
-                    'exit_date': pos['exit_date'],
-                    'entry_price': pos['entry_price'],
-                    'exit_price': exit_price,
-                    'position': pos['position_type'],
-                    'hold_days': (pos['exit_date'] - pos['entry_date']).days,
-                    'pnl': pnl,
-                    'pnl_pct': (pnl / pos['entry_price']) * 100,
-                    'nominal_pnl': pnl * position_size_param * leverage_param,
-                })
-            
-            # Remove closed positions
-            active_positions = [pos for pos in active_positions if pos['exit_date'] > entry_date]
-            
-            # Enter new positions
-            if fx_price < real_rate and strategy_type_param in ["Long and Short", "Long Only"]:
-                active_positions.append({
-                    'entry_date': entry_date,
-                    'exit_date': exit_date,
-                    'entry_price': fx_price,
-                    'position_type': 'Long'
-                })
-            
-            if fx_price > real_rate and strategy_type_param in ["Long and Short", "Short Only"]:
-                active_positions.append({
-                    'entry_date': entry_date,
-                    'exit_date': exit_date,
-                    'entry_price': fx_price,
-                    'position_type': 'Short'
-                })
-    
-    # Close remaining positions
-    for pos in active_positions:
-        actual_exit_date = min(pos['exit_date'], df_opt.index[-1])
-        exit_price = df_opt.loc[actual_exit_date, 'fx_price']
-        
-        if pos['position_type'] == 'Long':
-            pnl = exit_price - pos['entry_price']
-        else:
-            pnl = pos['entry_price'] - exit_price
-        
-        positions.append({
-            'entry_date': pos['entry_date'],
-            'exit_date': actual_exit_date,
-            'entry_price': pos['entry_price'],
-            'exit_price': exit_price,
-            'position': pos['position_type'],
-            'hold_days': (actual_exit_date - pos['entry_date']).days,
-            'pnl': pnl,
-            'pnl_pct': (pnl / pos['entry_price']) * 100,
-            'nominal_pnl': pnl * position_size_param * leverage_param,
-        })
-    
-    if len(positions) == 0:
-        return None
-    
-    # Calculate performance metrics
-    total_trades = len(positions)
-    winning_trades = sum(1 for p in positions if p['pnl'] > 0)
-    win_rate = (winning_trades / total_trades) * 100
-    
-    total_pnl = sum(p['nominal_pnl'] for p in positions)
-    total_capital = sum(position_size_param / leverage_param for p in positions)
-    total_return_pct = (total_pnl / total_capital) * 100 if total_capital > 0 else 0
-    
-    # Calculate Sharpe ratio
-    pnl_series = [p['nominal_pnl'] for p in positions]
-    avg_pnl = np.mean(pnl_series)
-    std_pnl = np.std(pnl_series)
-    sharpe_ratio = avg_pnl / std_pnl if std_pnl > 0 else 0
-    
-    # Calculate max drawdown
-    cumulative_pnl = np.cumsum(pnl_series)
-    peak = np.maximum.accumulate(cumulative_pnl)
-    drawdown = peak - cumulative_pnl
-    max_drawdown = np.max(drawdown)
-    
-    # Calculate profit factor
-    winning_pnl = sum(p['nominal_pnl'] for p in positions if p['nominal_pnl'] > 0)
-    losing_pnl = abs(sum(p['nominal_pnl'] for p in positions if p['nominal_pnl'] < 0))
-    profit_factor = winning_pnl / losing_pnl if losing_pnl > 0 else float('inf')
+def calculate_pivot_points_mt5(window_df):
+    """Oblicza pivot points metodą MT5"""
+    avg_high = window_df['High'].mean()
+    avg_low = window_df['Low'].mean()
+    avg_close = window_df['Price'].mean()
+    range_hl = avg_high - avg_low
+    pivot = (avg_high + avg_low + avg_close) / 3
     
     return {
-        'total_trades': total_trades,
-        'win_rate': win_rate,
-        'total_return_pct': total_return_pct,
-        'total_pnl': total_pnl,
-        'sharpe_ratio': sharpe_ratio,
-        'max_drawdown': max_drawdown,
-        'profit_factor': profit_factor,
-        'avg_trade_pnl': avg_pnl,
-        'positions': positions
+        'pivot': pivot,
+        'r2': pivot + range_hl,
     }
 
-def run_strategy_optimization(df, fx_prices, yield_spreads, base_currency, quote_currency):
-    """Run optimization across different parameter combinations"""
+def backtest_window_forward(df, lookback_days, hold_days, stop_loss_pct, signal_direction='SELL'):
+    """
+    Backtest strategii window forward
+    """
+    df = df.copy()
+    df['DayOfWeek'] = df['Date'].dt.dayofweek
+    trades = []
     
-    # Define parameter ranges
-    r2_min, r2_max = r2_range
-    hold_min, hold_max = hold_range
-    reg_min, reg_max = regression_range
-    
-    # Create parameter combinations with proper step sizes
-    r2_step = 0.05
-    hold_step = 5
-    reg_step = 10
-    
-    # Calculate actual number of values
-    r2_count = int((r2_max - r2_min) / r2_step) + 1
-    hold_count = int((hold_max - hold_min) / hold_step) + 1
-    reg_count = int((reg_max - reg_min) / reg_step) + 1
-    
-    # Generate actual value arrays
-    r2_values = np.linspace(r2_min, r2_max, r2_count)
-    hold_values = np.arange(hold_min, hold_max + hold_step, hold_step)
-    reg_values = np.arange(reg_min, reg_max + reg_step, reg_step)
-    
-    # Calculate total combinations BEFORE any reduction
-    total_combinations_theoretical = len(r2_values) * len(hold_values) * len(reg_values)
-    
-    st.write(f"**Initial Parameter Space:**")
-    st.write(f"- R² values: {len(r2_values)} ({r2_min:.2f} to {r2_max:.2f}, step {r2_step})")
-    st.write(f"- Hold periods: {len(hold_values)} ({hold_min} to {hold_max}, step {hold_step})")
-    st.write(f"- Regression periods: {len(reg_values)} ({reg_min} to {reg_max}, step {reg_step})")
-    st.write(f"- **Total theoretical combinations: {total_combinations_theoretical:,}**")
-    
-    # Apply max combinations limit if needed
-    if total_combinations_theoretical > max_combinations:
-        st.warning(f"⚠️ Reducing from {total_combinations_theoretical:,} to {max_combinations} combinations to manage computation time.")
+    for idx in range(lookback_days, len(df)):
+        current_row = df.iloc[idx]
+        if current_row['DayOfWeek'] != 0:  # Tylko poniedziałki
+            continue
         
-        # Calculate reduction factor for each dimension
-        reduction_factor = (max_combinations / total_combinations_theoretical) ** (1/3)
+        lookback_window = df.iloc[idx-lookback_days:idx]
+        pivots = calculate_pivot_points_mt5(lookback_window)
+        entry_price = current_row['Open']
         
-        # Reduce each dimension proportionally
-        r2_reduced = max(3, int(len(r2_values) * reduction_factor))
-        hold_reduced = max(3, int(len(hold_values) * reduction_factor))
-        reg_reduced = max(3, int(len(reg_values) * reduction_factor))
+        # Tylko SELL sygnały na R2
+        if signal_direction == 'SELL':
+            if entry_price < pivots['r2']:
+                continue
+            signal = 'SELL'
+        else:  # BUY
+            # Dla BUY używamy S2
+            s2 = pivots['pivot'] - (lookback_window['High'].mean() - lookback_window['Low'].mean())
+            if entry_price > s2:
+                continue
+            signal = 'BUY'
         
-        # Create reduced arrays by selecting evenly spaced values
-        r2_indices = np.linspace(0, len(r2_values)-1, r2_reduced, dtype=int)
-        hold_indices = np.linspace(0, len(hold_values)-1, hold_reduced, dtype=int)
-        reg_indices = np.linspace(0, len(reg_values)-1, reg_reduced, dtype=int)
+        entry_date = current_row['Date']
+        exit_date = entry_date + timedelta(days=hold_days)
         
-        r2_values = r2_values[r2_indices]
-        hold_values = hold_values[hold_indices]
-        reg_values = reg_values[reg_indices]
+        future_dates = df[df['Date'] >= exit_date]
+        if len(future_dates) == 0:
+            continue
         
-        st.write(f"**Reduced Parameter Space:**")
-        st.write(f"- R² values: {len(r2_values)} (selected: {[f'{x:.2f}' for x in r2_values]})")
-        st.write(f"- Hold periods: {len(hold_values)} (selected: {[int(x) for x in hold_values]})")
-        st.write(f"- Regression periods: {len(reg_values)} (selected: {[int(x) for x in reg_values]})")
+        exit_row = future_dates.iloc[0]
+        exit_price = exit_row['Price']
+        
+        # Analiza window forward
+        trade_period = df[(df['Date'] > entry_date) & (df['Date'] <= exit_row['Date'])].copy()
+        
+        if len(trade_period) == 0:
+            continue
+        
+        days_below_entry = 0
+        max_favorable_move = 0
+        max_adverse_move = 0
+        best_exit_price = entry_price
+        worst_case_price = entry_price
+        
+        for _, day in trade_period.iterrows():
+            if signal == 'SELL':
+                if day['Price'] < entry_price:
+                    days_below_entry += 1
+                if day['Low'] < best_exit_price:
+                    best_exit_price = day['Low']
+                if day['High'] > worst_case_price:
+                    worst_case_price = day['High']
+                favorable = (entry_price - day['Low']) / entry_price * 100
+                adverse = (day['High'] - entry_price) / entry_price * 100
+            else:  # BUY
+                if day['Price'] > entry_price:
+                    days_below_entry += 1
+                if day['High'] > best_exit_price:
+                    best_exit_price = day['High']
+                if day['Low'] < worst_case_price:
+                    worst_case_price = day['Low']
+                favorable = (day['High'] - entry_price) / entry_price * 100
+                adverse = (entry_price - day['Low']) / entry_price * 100
+            
+            if favorable > max_favorable_move:
+                max_favorable_move = favorable
+            if adverse > max_adverse_move:
+                max_adverse_move = adverse
+        
+        total_days = len(trade_period)
+        
+        # Stop loss
+        stop_loss_hit = False
+        if signal == 'SELL':
+            max_loss_price = entry_price * (1 + stop_loss_pct)
+            for _, day in trade_period.iterrows():
+                if day['High'] >= max_loss_price:
+                    stop_loss_hit = True
+                    exit_price = max_loss_price
+                    exit_row = day
+                    break
+        else:  # BUY
+            max_loss_price = entry_price * (1 - stop_loss_pct)
+            for _, day in trade_period.iterrows():
+                if day['Low'] <= max_loss_price:
+                    stop_loss_hit = True
+                    exit_price = max_loss_price
+                    exit_row = day
+                    break
+        
+        # P/L
+        if signal == 'SELL':
+            actual_pnl_pct = ((entry_price - exit_price) / entry_price) * 100
+            best_possible_pnl = ((entry_price - best_exit_price) / entry_price) * 100
+            worst_possible_pnl = ((entry_price - worst_case_price) / entry_price) * 100
+        else:  # BUY
+            actual_pnl_pct = ((exit_price - entry_price) / entry_price) * 100
+            best_possible_pnl = ((best_exit_price - entry_price) / entry_price) * 100
+            worst_possible_pnl = ((worst_case_price - entry_price) / entry_price) * 100
+        
+        pct_days_below = (days_below_entry / total_days * 100) if total_days > 0 else 0
+        
+        trades.append({
+            'entry_date': entry_date,
+            'exit_date': exit_row['Date'],
+            'signal': signal,
+            'entry_price': entry_price,
+            'exit_price': exit_price,
+            'actual_pnl_pct': actual_pnl_pct,
+            'best_possible_pnl': best_possible_pnl,
+            'worst_possible_pnl': worst_possible_pnl,
+            'total_days': total_days,
+            'days_below_entry': days_below_entry,
+            'pct_days_below': pct_days_below,
+            'max_favorable_move': max_favorable_move,
+            'max_adverse_move': max_adverse_move,
+            'stop_loss_hit': stop_loss_hit,
+            'opportunity_missed': best_possible_pnl - actual_pnl_pct
+        })
     
-    actual_combinations = len(r2_values) * len(hold_values) * len(reg_values)
-    st.write(f"**Actually testing: {actual_combinations:,} combinations**")
+    return pd.DataFrame(trades) if trades else None
+
+def optimize_parameters(df, signal_direction='SELL'):
+    """Optymalizacja parametrów"""
     
-    optimization_results = []
+    lookback_range = [3, 5, 7, 10, 14, 21, 30]
+    hold_range = [7, 14, 21, 30, 45, 60, 90]
+    sl_range = [0.01, 0.02, 0.03, 0.04, 0.05]
+    
+    results = []
+    
     progress_bar = st.progress(0)
-    current_test = 0
-    successful_tests = 0
-    failed_tests = 0
+    status_text = st.empty()
     
-    for reg_period in reg_values:
-        # Calculate real rates for this regression period
-        real_rates_opt, r_squared_opt = rolling_regression(fx_prices, yield_spreads, int(reg_period))
-        
-        for min_r2_opt in r2_values:
-            for hold_days_opt in hold_values:
-                current_test += 1
-                progress_bar.progress(current_test / actual_combinations)
+    total_iterations = len(lookback_range) * len(hold_range) * len(sl_range)
+    current = 0
+    
+    for lookback in lookback_range:
+        for hold in hold_range:
+            for sl in sl_range:
+                current += 1
+                progress_bar.progress(current / total_iterations)
+                status_text.text(f"Testowanie: Lookback={lookback}, Hold={hold}, SL={sl*100:.0f}%")
                 
-                try:
-                    # Run strategy with these parameters - NOW PASSING ALL REQUIRED PARAMETERS
-                    result = run_single_strategy(df, real_rates_opt, r_squared_opt, 
-                                               int(hold_days_opt), min_r2_opt, int(reg_period),
-                                               strategy_type, entry_frequency, position_size, leverage)
+                trades_df = backtest_window_forward(df, lookback, hold, sl, signal_direction)
+                
+                if trades_df is not None and len(trades_df) > 0:
+                    total_return = trades_df['actual_pnl_pct'].sum()
+                    win_rate = len(trades_df[trades_df['actual_pnl_pct'] > 0]) / len(trades_df) * 100
+                    avg_pct_below = trades_df['pct_days_below'].mean()
+                    max_favorable = trades_df['max_favorable_move'].mean()
+                    sl_hit_rate = trades_df['stop_loss_hit'].sum() / len(trades_df) * 100
                     
-                    if result and len(result['positions']) > 0:
-                        optimization_results.append({
-                            'r2_threshold': min_r2_opt,
-                            'hold_period': int(hold_days_opt),
-                            'regression_period': int(reg_period),
-                            'total_trades': result['total_trades'],
-                            'win_rate': result['win_rate'],
-                            'total_return_pct': result['total_return_pct'],
-                            'total_pnl': result['total_pnl'],
-                            'sharpe_ratio': result['sharpe_ratio'],
-                            'max_drawdown': result['max_drawdown'],
-                            'profit_factor': result['profit_factor'],
-                            'avg_trade_pnl': result['avg_trade_pnl'],
-                            'positions': result['positions']
-                        })
-                        successful_tests += 1
-                    else:
-                        failed_tests += 1
-                except Exception as e:
-                    failed_tests += 1
-                    # Log specific errors for debugging
-                    if current_test <= 5:  # Only show first few errors
-                        st.write(f"Debug: Failed combination R²={min_r2_opt:.2f}, Hold={int(hold_days_opt)}, Reg={int(reg_period)} - {str(e)[:100]}")
+                    cumulative_return = trades_df['actual_pnl_pct'].cumsum()
+                    max_equity = cumulative_return.expanding().max()
+                    drawdown = cumulative_return - max_equity
+                    max_dd = drawdown.min()
+                    
+                    # Sharpe-like metric
+                    sharpe = total_return / abs(max_dd) if max_dd != 0 else 0
+                    
+                    results.append({
+                        'lookback': lookback,
+                        'hold_days': hold,
+                        'stop_loss': sl * 100,
+                        'total_trades': len(trades_df),
+                        'total_return': total_return,
+                        'win_rate': win_rate,
+                        'avg_pct_below': avg_pct_below,
+                        'max_favorable': max_favorable,
+                        'max_dd': max_dd,
+                        'sl_hit_rate': sl_hit_rate,
+                        'sharpe': sharpe
+                    })
     
     progress_bar.empty()
+    status_text.empty()
     
-    # Show optimization summary
-    st.write(f"**Optimization Summary:**")
-    st.write(f"- ✅ Successful combinations: {successful_tests}")
-    st.write(f"- ❌ Failed combinations: {failed_tests}")
-    st.write(f"- 📊 Success rate: {(successful_tests/actual_combinations)*100:.1f}%")
-    
-    if successful_tests == 0:
-        st.error("🚨 **No successful combinations found!** This usually means:")
-        st.write("1. **R² thresholds too high** - try lowering minimum R² to 0.05-0.15")
-        st.write("2. **Data quality issues** - check if your datasets have sufficient overlap")
-        st.write("3. **Hold periods too long** - try shorter holding periods (5-30 days)")
-        st.write("4. **Regression periods inappropriate** - try 20-100 day regression windows")
-    
-    return optimization_results
+    return pd.DataFrame(results)
 
-# Load all data
-if fx_file and domestic_file and foreign_file:
+# ============================================================================
+# GŁÓWNA APLIKACJA
+# ============================================================================
+
+st.title("📊 Window Forward Analyzer")
+st.markdown("### Analiza strategii pivot points z opcją window forward")
+
+# Sidebar - konfiguracja
+st.sidebar.header("⚙️ Konfiguracja")
+
+# Upload pliku
+uploaded_file = st.sidebar.file_uploader(
+    "Wczytaj plik CSV z danymi", 
+    type=['csv'],
+    help="Format: Date, Price, Open, High, Low"
+)
+
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.sidebar.success(f"✅ Wczytano {len(df)} wierszy")
     
-    fx_data = load_and_clean_data(fx_file, "FX")
-    domestic_data = load_and_clean_data(domestic_file, "Domestic Bond")
-    foreign_data = load_and_clean_data(foreign_file, "Foreign Bond")
-    
-    if fx_data is not None and domestic_data is not None and foreign_data is not None:
-        
-        # Rename columns for clarity
-        fx_data = fx_data.rename(columns={'price': 'fx_price'})
-        domestic_data = domestic_data.rename(columns={'price': 'domestic_yield'})
-        foreign_data = foreign_data.rename(columns={'price': 'foreign_yield'})
-        
-        # Merge all data on date
-        df = fx_data.join(domestic_data, how='inner').join(foreign_data, how='inner')
-        
-        # Show data info before merging
-        st.write("**Individual Dataset Info:**")
-        st.write(f"- FX data: {len(fx_data)} rows, from {fx_data.index[0].strftime('%Y-%m-%d')} to {fx_data.index[-1].strftime('%Y-%m-%d')}")
-        st.write(f"- Domestic bond: {len(domestic_data)} rows, from {domestic_data.index[0].strftime('%Y-%m-%d')} to {domestic_data.index[-1].strftime('%Y-%m-%d')}")
-        st.write(f"- Foreign bond: {len(foreign_data)} rows, from {foreign_data.index[0].strftime('%Y-%m-%d')} to {foreign_data.index[-1].strftime('%Y-%m-%d')}")
-        
-        # Try different merge strategies
-        st.write("**Trying different merge strategies:**")
-        
-        # Show overlap analysis
-        all_dates = set(fx_data.index) | set(domestic_data.index) | set(foreign_data.index)
-        fx_dates = set(fx_data.index)
-        domestic_dates = set(domestic_data.index)
-        foreign_dates = set(foreign_data.index)
-        
-        overlap_all = fx_dates & domestic_dates & foreign_dates
-        st.write(f"- Exact date overlap: {len(overlap_all)} days")
-        
-        # Try outer join first to see all data
-        df_outer = fx_data.join(domestic_data, how='outer').join(foreign_data, how='outer')
-        st.write(f"- Total unique dates: {len(df_outer)} days")
-        
-        # Use forward fill to handle missing data
-        df = df_outer.fillna(method='ffill').fillna(method='bfill')
-        
-        # Remove rows where we still have NaN (beginning/end of series)
-        df = df.dropna()
-        
-        if len(df) == 0:
-            st.error("No overlapping dates found between the three datasets")
+    # Próba automatycznej konwersji dat
+    try:
+        df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%Y')
+    except:
+        try:
+            df['Date'] = pd.to_datetime(df['Date'])
+        except:
+            st.sidebar.error("❌ Nie można przekonwertować dat!")
             st.stop()
+    
+    # Konwersja kolumn numerycznych
+    for col in ['Price', 'Open', 'High', 'Low']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    df = df.sort_values('Date').reset_index(drop=True)
+    
+    # Wyświetl przykładowe dane
+    with st.sidebar.expander("📋 Podgląd danych"):
+        st.dataframe(df.head())
+        st.write(f"Okres: {df['Date'].min().strftime('%Y-%m-%d')} do {df['Date'].max().strftime('%Y-%m-%d')}")
+else:
+    st.info("👈 Wczytaj plik CSV z danymi historycznymi w panelu po lewej")
+    st.markdown("""
+    **Format pliku CSV:**
+    ```
+    Date,Price,Open,High,Low
+    01/05/2015,4.2376,4.2369,4.2566,4.2322
+    01/06/2015,4.2450,4.2400,4.2500,4.2350
+    ...
+    ```
+    
+    **Wymagane kolumny:**
+    - `Date` - data w formacie MM/DD/YYYY lub DD/MM/YYYY
+    - `Price` - cena zamknięcia
+    - `Open` - cena otwarcia
+    - `High` - najwyższa cena dnia
+    - `Low` - najniższa cena dnia
+    """)
+    st.stop()
+
+# Tabs
+tab1, tab2, tab3 = st.tabs(["🎯 Analiza", "🔧 Optymalizacja", "📈 Szczegóły transakcji"])
+
+with tab1:
+    st.header("Analiza Window Forward")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("Parametry strategii")
         
-        # Calculate yield spread
-        df['yield_spread'] = df['domestic_yield'] - df['foreign_yield']
+        signal_direction = st.selectbox(
+            "Kierunek sygnału",
+            ['SELL', 'BUY'],
+            help="SELL = short na R2, BUY = long na S2"
+        )
         
-        st.write(f"**Final merged data: {len(df)} days**")
-        st.write(f"**Date range: {df.index[0].strftime('%Y-%m-%d')} to {df.index[-1].strftime('%Y-%m-%d')}**")
+        lookback_days = st.slider(
+            "Lookback period (dni)",
+            min_value=3,
+            max_value=30,
+            value=14,
+            step=1,
+            help="Liczba dni do obliczenia pivot points"
+        )
         
-        # Perform rolling regression: FX_Price = f(Yield_Spread)
-        fx_prices = df['fx_price'].values
-        yield_spreads = df['yield_spread'].values
+        hold_days = st.slider(
+            "Holding period (dni)",
+            min_value=7,
+            max_value=120,
+            value=60,
+            step=1,
+            help="Maksymalny czas trzymania pozycji"
+        )
         
-        st.write("Running rolling regression analysis...")
-        with st.spinner("Calculating real rates..."):
-            real_rates, r_squared_values = rolling_regression(fx_prices, yield_spreads, lookback_days)
+        stop_loss_pct = st.slider(
+            "Stop Loss (%)",
+            min_value=0.5,
+            max_value=10.0,
+            value=3.0,
+            step=0.5,
+            help="Maksymalna strata procentowa"
+        ) / 100
         
-        # Run optimization if requested
-        if run_optimization:
-            st.header("🚀 Strategy Optimization Results")
-            
-            with st.spinner(f"Running optimization across parameter combinations... This may take a few minutes."):
-                optimization_results = run_strategy_optimization(df, fx_prices, yield_spreads, base_currency, quote_currency)
-            
-            if optimization_results:
-                results_df = pd.DataFrame(optimization_results)
-                
-                # Sort by optimization metric
-                if optimization_metric == "Total Return %":
-                    best_results = results_df.nlargest(10, 'total_return_pct')
-                elif optimization_metric == "Sharpe Ratio":
-                    best_results = results_df.nlargest(10, 'sharpe_ratio')
-                elif optimization_metric == "Total PnL":
-                    best_results = results_df.nlargest(10, 'total_pnl')
-                elif optimization_metric == "Win Rate":
-                    best_results = results_df.nlargest(10, 'win_rate')
-                elif optimization_metric == "Profit Factor":
-                    # Filter out infinite values for profit factor
-                    finite_results = results_df[np.isfinite(results_df['profit_factor'])]
-                    best_results = finite_results.nlargest(10, 'profit_factor')
-                
-                # Display optimization summary
-                st.subheader(f"🏆 Top 10 Strategies (Optimized for {optimization_metric})")
-                
-                # Format the results for display
-                display_results = best_results.copy()
-                display_results['total_return_pct'] = display_results['total_return_pct'].round(2)
-                display_results['win_rate'] = display_results['win_rate'].round(1)
-                display_results['sharpe_ratio'] = display_results['sharpe_ratio'].round(3)
-                display_results['total_pnl'] = display_results['total_pnl'].round(0)
-                display_results['max_drawdown'] = display_results['max_drawdown'].round(0)
-                display_results['profit_factor'] = np.where(np.isfinite(display_results['profit_factor']), 
-                                                          display_results['profit_factor'].round(2), 
-                                                          '∞')
-                
-                # Select columns for display
-                columns_to_show = ['r2_threshold', 'hold_period', 'regression_period', 'total_trades', 
-                                 'win_rate', 'total_return_pct', 'sharpe_ratio', 'total_pnl', 'max_drawdown', 'profit_factor']
-                
-                st.dataframe(display_results[columns_to_show].round(2), use_container_width=True)
-                
-                # Show best strategy details
-                best_strategy = best_results.iloc[0]
-                
-                st.subheader("🥇 Optimal Strategy Parameters")
-                col1, col2, col3, col4, col5, col6 = st.columns(6)
-                
-                with col1:
-                    st.metric("Best R² Threshold", f"{best_strategy['r2_threshold']:.2f}")
-                with col2:
-                    st.metric("Best Hold Period", f"{int(best_strategy['hold_period'])} days")
-                with col3:
-                    st.metric("Best Regression Period", f"{int(best_strategy['regression_period'])} days")
-                with col4:
-                    # Fix metric name mapping
-                    metric_mapping = {
-                        "Total Return %": "total_return_pct",
-                        "Sharpe Ratio": "sharpe_ratio", 
-                        "Total PnL": "total_pnl",
-                        "Win Rate": "win_rate",
-                        "Profit Factor": "profit_factor"
-                    }
-                    
-                    metric_column = metric_mapping.get(optimization_metric, "total_return_pct")
-                    metric_value = best_strategy[metric_column]
-                    
-                    if optimization_metric == "Profit Factor" and np.isinf(metric_value):
-                        metric_display = "∞"
-                    else:
-                        metric_display = f"{metric_value:.2f}"
-                        if "%" in optimization_metric:
-                            metric_display += "%"
-                    st.metric(f"Best {optimization_metric}", metric_display)
-                with col5:
-                    st.metric("Total Trades", f"{int(best_strategy['total_trades'])}")
-                with col6:
-                    st.metric(f"Total PnL ({quote_currency})", f"{best_strategy['total_pnl']:,.0f}")
-                
-                # Performance comparison
-                st.subheader("📊 Current vs Optimal Strategy Comparison")
-                
-                # Run current strategy for comparison
-                current_result = run_single_strategy(df, real_rates, r_squared_values, hold_period_days, min_r2, lookback_days, strategy_type, entry_frequency, position_size, leverage)
-                
-                if current_result:
-                    comparison_data = {
-                        'Strategy': ['Current Settings', 'Optimal Settings', 'Improvement'],
-                        'R² Threshold': [f"{min_r2:.2f}", f"{best_strategy['r2_threshold']:.2f}", 
-                                       f"{((best_strategy['r2_threshold'] - min_r2)/min_r2)*100:+.1f}%"],
-                        'Hold Period': [f"{hold_period_days} days", f"{int(best_strategy['hold_period'])} days",
-                                      f"{int(best_strategy['hold_period']) - hold_period_days:+d} days"],
-                        'Regression Period': [f"{lookback_days} days", f"{int(best_strategy['regression_period'])} days",
-                                            f"{int(best_strategy['regression_period']) - lookback_days:+d} days"],
-                        'Total Return %': [f"{current_result['total_return_pct']:.2f}%", 
-                                         f"{best_strategy['total_return_pct']:.2f}%",
-                                         f"{best_strategy['total_return_pct'] - current_result['total_return_pct']:+.2f}%"],
-                        'Total Trades': [f"{current_result['total_trades']}", f"{int(best_strategy['total_trades'])}",
-                                       f"{int(best_strategy['total_trades']) - current_result['total_trades']:+d}"],
-                        'Win Rate %': [f"{current_result['win_rate']:.1f}%", f"{best_strategy['win_rate']:.1f}%",
-                                     f"{best_strategy['win_rate'] - current_result['win_rate']:+.1f}%"],
-                        f'Total PnL ({quote_currency})': [f"{current_result['total_pnl']:,.0f}", 
-                                                         f"{best_strategy['total_pnl']:,.0f}",
-                                                         f"{best_strategy['total_pnl'] - current_result['total_pnl']:+,.0f}"]
-                    }
-                    
-                    comparison_df = pd.DataFrame(comparison_data)
-                    st.dataframe(comparison_df, use_container_width=True, hide_index=True)
-                    
-                    # Highlight improvements
-                    improvement_pnl = best_strategy['total_pnl'] - current_result['total_pnl']
-                    improvement_pct = best_strategy['total_return_pct'] - current_result['total_return_pct']
-                    
-                    if improvement_pnl > 0:
-                        st.success(f"🎯 Optimization could improve your strategy by {improvement_pnl:,.0f} {quote_currency} ({improvement_pct:+.2f}% return)!")
-                    else:
-                        st.info("✅ Your current parameters are already quite good!")
-                    
-                    # Quick apply button
-                    if st.button("🔄 Apply Optimal Parameters"):
-                        st.success("Optimal parameters applied! The results below now use the optimized settings.")
-                        # Update the parameters for current run
-                        lookback_days = int(best_strategy['regression_period'])
-                        min_r2 = best_strategy['r2_threshold']
-                        hold_period_days = int(best_strategy['hold_period'])
-                        
-                        # Recalculate with optimal parameters
-                        real_rates, r_squared_values = rolling_regression(fx_prices, yield_spreads, lookback_days)
-                
-                # Download optimization results
-                csv_results = results_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Full Optimization Results",
-                    data=csv_results,
-                    file_name=f"optimization_results_{currency_pair.replace('/', '')}_{strategy_type.lower().replace(' ', '_')}.csv",
-                    mime="text/csv"
+        if st.button("🚀 Uruchom backtest", type="primary"):
+            with st.spinner("Obliczam..."):
+                trades_df = backtest_window_forward(
+                    df, 
+                    lookback_days, 
+                    hold_days, 
+                    stop_loss_pct,
+                    signal_direction
                 )
                 
-            else:
-                st.warning("No successful strategy combinations found. Try widening the parameter ranges.")
-        
-        # Add results to dataframe
-        df['real_rate'] = real_rates
-        df['r_squared'] = r_squared_values
-        
-        # Trading logic with exact holding period
-        df['tradeable'] = df['r_squared'] >= min_r2
-        df['weekday'] = df.index.weekday
-        df['is_monday'] = df['weekday'] == 0
-        
-        # Generate trading signals
-        df['buy_signal'] = ''
-        df['sell_signal'] = ''
-        df['long_position'] = 0
-        df['short_position'] = 0
-        
-        # Determine entry dates based on frequency setting
-        if entry_frequency == "Monday Only":
-            entry_dates = df[(df['is_monday']) & (df['tradeable']) & (~df['real_rate'].isna())].index
-            st.write(f"Tradeable Mondays (R² ≥ {min_r2}): {len(entry_dates)} out of {len(df[df['is_monday']])} total Mondays")
-        # Determine entry dates based on frequency setting
-        if entry_frequency == "Monday Only":
-            entry_dates = df[(df['is_monday']) & (df['tradeable']) & (~df['real_rate'].isna())].index
-            st.write(f"Tradeable Mondays (R² ≥ {min_r2}): {len(entry_dates)} out of {len(df[df['is_monday']])} total Mondays")
-        else:
-            entry_dates = df[(df['tradeable']) & (~df['real_rate'].isna())].index
-            st.write(f"Tradeable Days (R² ≥ {min_r2}): {len(entry_dates)} out of {len(df)} total days")
-        
-        # Execute strategy with EXACT holding periods
-        positions = []
-        active_positions = []  # Track all active positions with their exact exit dates
-        
-        # Create a dictionary for fast date lookups
-        date_to_index = {date: idx for idx, date in enumerate(df.index)}
-        
-        for entry_date in entry_dates:
-            real_rate = df.loc[entry_date, 'real_rate']
-            fx_price = df.loc[entry_date, 'fx_price']
-            r2 = df.loc[entry_date, 'r_squared']
-            
-            if pd.notna(real_rate) and r2 >= min_r2:
-                
-                # Calculate exact exit date (hold_period_days business days later)
-                # Find the index of current date
-                current_idx = date_to_index[entry_date]
-                
-                # Calculate target exit index
-                target_exit_idx = current_idx + hold_period_days
-                
-                # Make sure we don't go beyond the data
-                if target_exit_idx >= len(df):
-                    exit_date = df.index[-1]  # Use last available date
-                    actual_hold_days = len(df) - 1 - current_idx
+                if trades_df is None or len(trades_df) == 0:
+                    st.error("❌ Brak transakcji dla wybranych parametrów!")
                 else:
-                    exit_date = df.index[target_exit_idx]
-                    actual_hold_days = hold_period_days
-                
-                # Check for positions that should be closed on this date
-                positions_to_close = [pos for pos in active_positions if pos['exit_date'] <= entry_date]
-                
-                for pos in positions_to_close:
-                    # Close this position
-                    exit_price = df.loc[pos['exit_date'], 'fx_price']
-                    exit_real_rate = df.loc[pos['exit_date'], 'real_rate'] if pd.notna(df.loc[pos['exit_date'], 'real_rate']) else pos['entry_real_rate']
-                    
-                    if pos['position_type'] == 'Long':
-                        pnl = exit_price - pos['entry_price']
-                    else:  # Short
-                        pnl = pos['entry_price'] - exit_price
-                    
-                    actual_days_held = (pos['exit_date'] - pos['entry_date']).days
-                    
-                    positions.append({
-                        'entry_date': pos['entry_date'],
-                        'exit_date': pos['exit_date'],
-                        'entry_price': pos['entry_price'],
-                        'exit_price': exit_price,
-                        'entry_real_rate': pos['entry_real_rate'],
-                        'exit_real_rate': exit_real_rate,
-                        'position': pos['position_type'],
-                        'hold_days': actual_days_held,
-                        'target_hold_days': pos['target_hold_days'],
-                        'pnl': pnl,
-                        'pnl_pct': (pnl / pos['entry_price']) * 100,
-                        'position_size': position_size,
-                        'leverage': leverage,
-                        'nominal_pnl': pnl * position_size * leverage,
-                        'margin_used': position_size / leverage if leverage > 0 else position_size
-                    })
-                
-                # Remove closed positions
-                active_positions = [pos for pos in active_positions if pos['exit_date'] > entry_date]
-                
-                # Enter new long position if conditions are met
-                if fx_price < real_rate and strategy_type in ["Long and Short", "Long Only"]:
-                    active_positions.append({
-                        'entry_date': entry_date,
-                        'exit_date': exit_date,
-                        'entry_price': fx_price,
-                        'entry_real_rate': real_rate,
-                        'position_type': 'Long',
-                        'target_hold_days': hold_period_days
-                    })
-                    df.loc[entry_date, 'buy_signal'] = 'Buy'
-                    df.loc[entry_date, 'long_position'] = len([p for p in active_positions if p['position_type'] == 'Long'])
-                
-                # Enter new short position if conditions are met
-                if fx_price > real_rate and strategy_type in ["Long and Short", "Short Only"]:
-                    active_positions.append({
-                        'entry_date': entry_date,
-                        'exit_date': exit_date,
-                        'entry_price': fx_price,
-                        'entry_real_rate': real_rate,
-                        'position_type': 'Short',
-                        'target_hold_days': hold_period_days
-                    })
-                    df.loc[entry_date, 'sell_signal'] = 'Sell'
-                    df.loc[entry_date, 'short_position'] = -len([p for p in active_positions if p['position_type'] == 'Short'])
-        
-        # Close all remaining positions at their scheduled exit dates or end of data
-        for pos in active_positions:
-            # Use the scheduled exit date or last available date, whichever comes first
-            actual_exit_date = min(pos['exit_date'], df.index[-1])
-            exit_price = df.loc[actual_exit_date, 'fx_price']
-            exit_real_rate = df.loc[actual_exit_date, 'real_rate'] if pd.notna(df.loc[actual_exit_date, 'real_rate']) else pos['entry_real_rate']
+                    st.session_state['trades_df'] = trades_df
+                    st.session_state['params'] = {
+                        'lookback': lookback_days,
+                        'hold': hold_days,
+                        'sl': stop_loss_pct * 100,
+                        'direction': signal_direction
+                    }
+                    st.success(f"✅ Znaleziono {len(trades_df)} transakcji!")
+    
+    with col2:
+        if 'trades_df' in st.session_state:
+            trades_df = st.session_state['trades_df']
+            params = st.session_state['params']
             
-            if pos['position_type'] == 'Long':
-                pnl = exit_price - pos['entry_price']
-            else:  # Short
-                pnl = pos['entry_price'] - exit_price
+            st.subheader(f"Wyniki backtestingu")
+            st.caption(f"Lookback: {params['lookback']}d | Hold: {params['hold']}d | SL: {params['sl']:.1f}% | Direction: {params['direction']}")
             
-            actual_days_held = (actual_exit_date - pos['entry_date']).days
+            # Metryki
+            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
             
-            positions.append({
-                'entry_date': pos['entry_date'],
-                'exit_date': actual_exit_date,
-                'entry_price': pos['entry_price'],
-                'exit_price': exit_price,
-                'entry_real_rate': pos['entry_real_rate'],
-                'exit_real_rate': exit_real_rate,
-                'position': pos['position_type'],
-                'hold_days': actual_days_held,
-                'target_hold_days': pos['target_hold_days'],
-                'pnl': pnl,
-                'pnl_pct': (pnl / pos['entry_price']) * 100,
-                'position_size': position_size,
-                'leverage': leverage,
-                'nominal_pnl': pnl * position_size * leverage,
-                'margin_used': position_size / leverage if leverage > 0 else position_size
-            })
-        
-        # Show basic statistics
-        st.header("Strategy Performance")
-        
-        if positions:
-            # Calculate performance metrics
-            total_trades = len(positions)
-            long_trades = [p for p in positions if p['position'] == 'Long']
-            short_trades = [p for p in positions if p['position'] == 'Short']
-            winning_trades = sum(1 for p in positions if p['pnl'] > 0)
+            total_trades = len(trades_df)
+            winning_trades = len(trades_df[trades_df['actual_pnl_pct'] > 0])
+            win_rate = winning_trades / total_trades * 100
+            total_return = trades_df['actual_pnl_pct'].sum()
             
-            # Holding period analysis
-            actual_hold_days = [p['hold_days'] for p in positions]
-            target_hold_days = [p['target_hold_days'] for p in positions]
-            avg_actual_hold = np.mean(actual_hold_days)
-            avg_target_hold = np.mean(target_hold_days)
+            col_m1.metric("Transakcje", total_trades)
+            col_m2.metric("Win Rate", f"{win_rate:.1f}%")
+            col_m3.metric("Zwrot całkowity", f"{total_return:+.2f}%")
             
-            # Price-based PnL (original)
-            total_pnl = sum(p['pnl'] for p in positions)
-            avg_pnl = total_pnl / total_trades
-            avg_pnl_pct = sum(p['pnl_pct'] for p in positions) / total_trades
-            max_pnl = max(p['pnl'] for p in positions)
-            min_pnl = min(p['pnl'] for p in positions)
+            avg_pct_below = trades_df['pct_days_below'].mean()
+            col_m4.metric("% dni ITM", f"{avg_pct_below:.1f}%")
             
-            # Nominal PnL (with position size)
-            total_nominal_pnl = sum(p['nominal_pnl'] for p in positions)
-            avg_nominal_pnl = total_nominal_pnl / total_trades
-            max_nominal_pnl = max(p['nominal_pnl'] for p in positions)
-            min_nominal_pnl = min(p['nominal_pnl'] for p in positions)
+            # Dodatkowe metryki
+            col_m5, col_m6, col_m7, col_m8 = st.columns(4)
             
-            # Total capital deployed (now based on margin, not full position size)
-            total_margin_used = sum(p['margin_used'] for p in positions)
-            total_capital_deployed = total_margin_used  # This is the actual capital needed
-            total_return_pct = (total_nominal_pnl / total_capital_deployed) * 100 if total_capital_deployed > 0 else 0
+            avg_best = trades_df['best_possible_pnl'].mean()
+            avg_actual = trades_df['actual_pnl_pct'].mean()
+            efficiency = (avg_actual / avg_best * 100) if avg_best != 0 else 0
+            avg_missed = trades_df['opportunity_missed'].mean()
             
-            win_rate = (winning_trades / total_trades) * 100
+            col_m5.metric("Najlepszy P/L", f"{avg_best:+.2f}%")
+            col_m6.metric("Faktyczny P/L", f"{avg_actual:+.2f}%")
+            col_m7.metric("Efektywność", f"{efficiency:.1f}%")
+            col_m8.metric("Stracona okazja", f"{avg_missed:.2f}%")
             
-            # Display main metrics
-            st.subheader("Overall Performance")
-            col1, col2, col3, col4, col5, col6 = st.columns(6)
+            # Max ruchy
+            st.markdown("---")
+            col_r1, col_r2, col_r3 = st.columns(3)
             
-            with col1:
-                st.metric("Total Trades", total_trades)
-            with col2:
-                st.metric("Long/Short", f"{len(long_trades)}/{len(short_trades)}")
-            with col3:
-                st.metric("Win Rate", f"{win_rate:.1f}%")
-            with col4:
-                st.metric("Avg PnL %", f"{avg_pnl_pct:.2f}%")
-            with col5:
-                st.metric("Total Return %", f"{total_return_pct:.2f}%")
-            with col6:
-                st.metric("Leverage", f"{leverage}:1")
+            avg_max_fav = trades_df['max_favorable_move'].mean()
+            avg_max_adv = trades_df['max_adverse_move'].mean()
+            sl_hit_rate = trades_df['stop_loss_hit'].sum() / total_trades * 100
             
-            # Display holding period metrics
-            st.subheader("Holding Period Analysis")
-            col1, col2, col3, col4 = st.columns(4)
+            col_r1.metric("Max korzystny ruch", f"{avg_max_fav:.2f}%", help="Średni maksymalny zysk dostępny")
+            col_r2.metric("Max niekorzystny ruch", f"{avg_max_adv:.2f}%", help="Średni maksymalny drawdown")
+            col_r3.metric("Stop loss hit", f"{sl_hit_rate:.1f}%", help="% transakcji zamkniętych SL")
             
-            with col1:
-                st.metric("Target Hold Days", f"{hold_period_days}")
-            with col2:
-                st.metric("Avg Actual Hold", f"{avg_actual_hold:.1f} days")
-            with col3:
-                exact_hold_trades = sum(1 for p in positions if p['hold_days'] == p['target_hold_days'])
-                exact_hold_pct = (exact_hold_trades / total_trades) * 100
-                st.metric("Exact Hold %", f"{exact_hold_pct:.1f}%")
-            with col4:
-                st.metric("Entry Frequency", entry_frequency)
+            # Wykres equity curve
+            st.markdown("---")
+            st.subheader("📈 Equity Curve")
             
-            # Display nominal value metrics
-            st.subheader(f"Nominal Value Performance ({quote_currency})")
-            col1, col2, col3, col4, col5 = st.columns(5)
+            cumulative_return = trades_df['actual_pnl_pct'].cumsum()
+            equity = 100000 * (1 + cumulative_return / 100)
             
-            with col1:
-                st.metric(f"Total Nominal PnL ({quote_currency})", f"{total_nominal_pnl:,.0f}")
-            with col2:
-                st.metric(f"Avg Nominal PnL ({quote_currency})", f"{avg_nominal_pnl:,.0f}")
-            with col3:
-                st.metric(f"Best Trade ({quote_currency})", f"{max_nominal_pnl:,.0f}")
-            with col4:
-                st.metric(f"Worst Trade ({quote_currency})", f"{min_nominal_pnl:,.0f}")
-            with col5:
-                st.metric(f"Position Size ({base_currency})", f"{position_size:,}")
+            fig, ax = plt.subplots(figsize=(12, 5))
+            ax.plot(trades_df['exit_date'], equity, 'b-', linewidth=2, label='Equity')
+            ax.axhline(y=100000, color='gray', linestyle='--', alpha=0.5, label='Start')
+            ax.fill_between(trades_df['exit_date'], 100000, equity, 
+                           where=(equity >= 100000), alpha=0.3, color='green')
+            ax.fill_between(trades_df['exit_date'], 100000, equity, 
+                           where=(equity < 100000), alpha=0.3, color='red')
+            ax.set_title(f'Equity Curve - {params["direction"]} Only', fontsize=13, fontweight='bold')
+            ax.set_xlabel('Data')
+            ax.set_ylabel('Equity ($)')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x:,.0f}'))
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            st.pyplot(fig)
             
-            # Capital deployment info
-            st.subheader(f"Capital Deployment & Leverage ({quote_currency})")
-            col1, col2, col3, col4 = st.columns(4)
+            # Histogram % dni poniżej entry
+            st.markdown("---")
+            col_h1, col_h2 = st.columns(2)
             
-            with col1:
-                st.metric(f"Total Margin Used ({quote_currency})", f"{total_capital_deployed:,}")
-            with col2:
-                total_notional = sum(p['position_size'] for p in positions)
-                st.metric(f"Total Notional Value ({base_currency})", f"{total_notional:,}")
-            with col3:
-                leverage_ratio = total_notional / total_capital_deployed if total_capital_deployed > 0 else 1
-                st.metric("Effective Leverage", f"{leverage_ratio:.1f}:1")
-            with col4:
-                if total_capital_deployed > 0:
-                    roi_annualized = (total_return_pct / 100) * (365 / (len(df) if len(df) > 0 else 1))
-                    st.metric("Annualized ROI", f"{roi_annualized:.1f}%")
-                
-            # Separate performance for long and short
-            if long_trades:
-                long_nominal_pnl = sum(p['nominal_pnl'] for p in long_trades)
-                long_wins = sum(1 for p in long_trades if p['pnl'] > 0)
-                long_win_rate = (long_wins / len(long_trades)) * 100
-                long_avg_pnl_pct = sum(p['pnl_pct'] for p in long_trades) / len(long_trades)
-                long_leveraged_return = long_avg_pnl_pct * leverage
-                long_avg_hold = np.mean([p['hold_days'] for p in long_trades])
-                st.write(f"**Long Performance**: {len(long_trades)} trades, {long_win_rate:.1f}% win rate, {long_avg_pnl_pct:.2f}% avg return, {long_leveraged_return:.2f}% leveraged return, {long_nominal_pnl:,.0f} {quote_currency} nominal PnL, {long_avg_hold:.1f} avg hold days")
-            
-            if short_trades:
-                short_nominal_pnl = sum(p['nominal_pnl'] for p in short_trades)
-                short_wins = sum(1 for p in short_trades if p['pnl'] > 0)
-                short_win_rate = (short_wins / len(short_trades)) * 100
-                short_avg_pnl_pct = sum(p['pnl_pct'] for p in short_trades) / len(short_trades)
-                short_leveraged_return = short_avg_pnl_pct * leverage
-                short_avg_hold = np.mean([p['hold_days'] for p in short_trades])
-                st.write(f"**Short Performance**: {len(short_trades)} trades, {short_win_rate:.1f}% win rate, {short_avg_pnl_pct:.2f}% avg return, {short_leveraged_return:.2f}% leveraged return, {short_nominal_pnl:,.0f} {quote_currency} nominal PnL, {short_avg_hold:.1f} avg hold days")
-                
-        else:
-            st.warning(f"No trades generated with current parameters (R² ≥ {min_r2}, {hold_period_days} day hold)")
-        
-        # Model diagnostics
-        st.header("Model Diagnostics")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Average R²", f"{np.nanmean(r_squared_values):.3f}")
-        with col2:
-            st.metric(f"Current {currency_pair} Price", f"{df['fx_price'].iloc[-1]:.4f}")
-        with col3:
-            if not np.isnan(real_rates[-1]):
-                st.metric("Current Real Rate", f"{real_rates[-1]:.4f}")
-            else:
-                st.metric("Current Real Rate", "N/A")
-        with col4:
-            st.metric(f"Current Spread ({base_currency}-{quote_currency})", f"{df['yield_spread'].iloc[-1]:.2f}%")
-        
-        # Main Chart: Real Rate vs Historical Rate with Signals
-        st.header(f"Real Rate vs Historical {currency_pair} Rate with Trading Signals ({strategy_type})")
-        
-        fig, ax = plt.subplots(figsize=(15, 8))
-        
-        # Plot historical FX price
-        ax.plot(df.index, df['fx_price'], 
-                label=f'Historical {currency_pair} Rate', 
-                color='black', 
-                linewidth=2, 
-                alpha=0.8)
-        
-        # Plot real rate (predicted FX price from regression)
-        valid_mask = ~np.isnan(df['real_rate'])
-        valid_data = df[valid_mask]
-        
-        ax.plot(valid_data.index, valid_data['real_rate'], 
-                label='Real Rate (Regression Model)', 
-                color='red', 
-                linewidth=2, 
-                alpha=0.7)
-        
-        # Add buy/sell signals based on strategy type
-        buy_signals = df[df['buy_signal'] == 'Buy']
-        sell_signals = df[df['sell_signal'] == 'Sell']
-        
-        if strategy_type in ["Long and Short", "Long Only"] and len(buy_signals) > 0:
-            ax.scatter(buy_signals.index, buy_signals['fx_price'], 
-                      marker='^', color='green', s=150, 
-                      label=f'Buy Signals ({len(buy_signals)})', zorder=5)
-        
-        if strategy_type in ["Long and Short", "Short Only"] and len(sell_signals) > 0:
-            ax.scatter(sell_signals.index, sell_signals['fx_price'], 
-                      marker='v', color='red', s=150, 
-                      label=f'Sell Signals ({len(sell_signals)})', zorder=5)
-        
-        # Add title and labels
-        ax.set_title(f'Real Rate vs Historical {currency_pair} Rate ({strategy_type}, {hold_period_days} Day Hold, {entry_frequency})', 
-                    fontsize=16, fontweight='bold')
-        ax.set_xlabel('Date', fontsize=12)
-        ax.set_ylabel(f'{currency_pair} Rate', fontsize=12)
-        ax.legend(fontsize=12)
-        ax.grid(True, alpha=0.3)
-        
-        # Format x-axis
-        ax.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
-        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
-        
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        st.pyplot(fig)
-        
-        # PnL Over Time Chart
-        if positions:
-            st.header("Cumulative PnL Over Time")
-            
-            # Create detailed PnL timeline
-            pnl_timeline = []
-            
-            for pos in positions:
-                pnl_timeline.append({
-                    'date': pos['exit_date'],
-                    'pnl': pos['nominal_pnl'],
-                    'position_type': pos['position'],
-                    'hold_days': pos['hold_days'],
-                    'target_hold_days': pos['target_hold_days']
-                })
-            
-            if pnl_timeline:
-                pnl_df = pd.DataFrame(pnl_timeline)
-                pnl_df['date'] = pd.to_datetime(pnl_df['date'])
-                pnl_df = pnl_df.sort_values('date')
-                pnl_df['cumulative_pnl'] = pnl_df['pnl'].cumsum()
-                
-                # Create separate cumulative for long and short
-                long_pnl = pnl_df[pnl_df['position_type'] == 'Long'].copy()
-                short_pnl = pnl_df[pnl_df['position_type'] == 'Short'].copy()
-                
-                if len(long_pnl) > 0:
-                    long_pnl['cumulative_long'] = long_pnl['pnl'].cumsum()
-                if len(short_pnl) > 0:
-                    short_pnl['cumulative_short'] = short_pnl['pnl'].cumsum()
-                
-                fig2, ax2 = plt.subplots(figsize=(15, 8))
-                
-                # Plot cumulative PnL
-                ax2.plot(pnl_df['date'], pnl_df['cumulative_pnl'], 
-                         label=f'Total Cumulative PnL ({strategy_type})', 
-                         color='blue', linewidth=3, alpha=0.8)
-                
-                # Plot long cumulative PnL if strategy allows
-                if strategy_type in ["Long and Short", "Long Only"] and len(long_pnl) > 0:
-                    ax2.plot(long_pnl['date'], long_pnl['cumulative_long'], 
-                             label='Long Positions', color='green', 
-                             linewidth=2, alpha=0.7, linestyle='--')
-                
-                # Plot short cumulative PnL if strategy allows
-                if strategy_type in ["Long and Short", "Short Only"] and len(short_pnl) > 0:
-                    ax2.plot(short_pnl['date'], short_pnl['cumulative_short'], 
-                             label='Short Positions', color='red', 
-                             linewidth=2, alpha=0.7, linestyle='--')
-                
-                # Add zero line
-                ax2.axhline(0, color='gray', linestyle='-', alpha=0.5)
-                
-                # Mark individual trade exits with color coding for exact hold period
-                for i, row in pnl_df.iterrows():
-                    pnl_color = 'green' if row['pnl'] > 0 else 'red'
-                    marker = '^' if row['position_type'] == 'Long' else 'v'
-                    
-                    # Different marker size based on whether exact hold period was achieved
-                    marker_size = 40 if row['hold_days'] == row['target_hold_days'] else 20
-                    alpha = 0.8 if row['hold_days'] == row['target_hold_days'] else 0.4
-                    
-                    ax2.scatter(row['date'], row['cumulative_pnl'], 
-                               color=pnl_color, marker=marker, s=marker_size, 
-                               alpha=alpha, zorder=5)
-                
-                ax2.set_title(f'Cumulative PnL Over Time ({hold_period_days} Day Hold Period) - Results in {quote_currency}', 
-                              fontsize=14, fontweight='bold')
-                ax2.set_xlabel('Date', fontsize=12)
-                ax2.set_ylabel(f'Cumulative PnL ({quote_currency})', fontsize=12)
-                ax2.legend(fontsize=10)
-                ax2.grid(True, alpha=0.3)
-                ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:,.0f}'))
-                
-                # Format x-axis
-                ax2.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
-                ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
-                
-                plt.xticks(rotation=45)
+            with col_h1:
+                st.subheader("📊 Rozkład % dni ITM")
+                fig, ax = plt.subplots(figsize=(8, 5))
+                ax.hist(trades_df['pct_days_below'], bins=20, alpha=0.7, color='steelblue', edgecolor='black')
+                ax.axvline(x=avg_pct_below, color='red', linestyle='--', linewidth=2, 
+                          label=f'Średnia: {avg_pct_below:.1f}%')
+                ax.set_title('% Dni "In The Money"')
+                ax.set_xlabel('% dni ITM')
+                ax.set_ylabel('Liczba transakcji')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
                 plt.tight_layout()
-                st.pyplot(fig2)
+                st.pyplot(fig)
+            
+            with col_h2:
+                st.subheader("💹 P/L Distribution")
+                fig, ax = plt.subplots(figsize=(8, 5))
+                colors = ['green' if x > 0 else 'red' for x in trades_df['actual_pnl_pct']]
+                ax.scatter(trades_df['pct_days_below'], trades_df['actual_pnl_pct'], 
+                          c=colors, alpha=0.6, s=50)
+                ax.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
+                ax.axvline(x=50, color='gray', linestyle='--', linewidth=1, alpha=0.5)
                 
-                # Show legend explanation
-                st.write("**Chart Legend**: Large markers = exact hold period achieved, small markers = early/late exit")
-        
-        # Secondary Chart: Yield Spread
-        st.header(f"Yield Spread Over Time ({base_currency} vs {quote_currency} Bonds)")
-        
-        fig3, ax3 = plt.subplots(figsize=(15, 6))
-        
-        ax3.plot(df.index, df['yield_spread'], 
-                 label=f'Yield Spread ({base_currency} - {quote_currency})', 
-                 color='blue', 
-                 linewidth=2)
-        
-        ax3.axhline(0, color='gray', linestyle='--', alpha=0.5)
-        ax3.set_title(f'Yield Spread ({base_currency} - {quote_currency} Bond Yields)', fontsize=16, fontweight='bold')
-        ax3.set_xlabel('Date', fontsize=12)
-        ax3.set_ylabel('Yield Spread (%)', fontsize=12)
-        ax3.legend(fontsize=12)
-        ax3.grid(True, alpha=0.3)
-        
-        # Format x-axis
-        ax3.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
-        ax3.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
-        
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        st.pyplot(fig3)
-        
-        # Model Quality Chart: R² over time
-        st.header("Model Quality (R²) Over Time")
-        
-        fig4, ax4 = plt.subplots(figsize=(15, 6))
-        
-        valid_mask = ~np.isnan(df['real_rate'])
-        valid_data = df[valid_mask]
-        
-        ax4.plot(valid_data.index, valid_data['r_squared'], 
-                 label='R² (Model Fit Quality)', 
-                 color='green', 
-                 linewidth=2)
-        
-        ax4.axhline(0.5, color='orange', linestyle='--', alpha=0.7, label='50% R²')
-        ax4.axhline(min_r2, color='red', linestyle='--', alpha=0.7, label=f'{min_r2*100:.0f}% R² (Trading Threshold)')
-        
-        ax4.set_title('Regression Model Quality Over Time', fontsize=16, fontweight='bold')
-        ax4.set_xlabel('Date', fontsize=12)
-        ax4.set_ylabel('R² Value', fontsize=12)
-        ax4.set_ylim(0, 1)
-        ax4.legend(fontsize=12)
-        ax4.grid(True, alpha=0.3)
-        
-        # Format x-axis
-        ax4.xaxis.set_major_formatter(DateFormatter("%Y-%m"))
-        ax4.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
-        
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        st.pyplot(fig4)
-        
-        # Charts and detailed analysis would continue here
-        # Show detailed trades if requested
-        if show_detailed_trades and positions:
-            st.header(f"Detailed Trading Results ({strategy_type}, {hold_period_days} Day Hold)")
-            trades_df = pd.DataFrame(positions)
-            trades_df['entry_date'] = pd.to_datetime(trades_df['entry_date']).dt.strftime('%Y-%m-%d')
-            trades_df['exit_date'] = pd.to_datetime(trades_df['exit_date']).dt.strftime('%Y-%m-%d')
+                corr = trades_df['pct_days_below'].corr(trades_df['actual_pnl_pct'])
+                ax.set_title(f'% ITM vs P/L (corr: {corr:+.3f})')
+                ax.set_xlabel('% dni ITM')
+                ax.set_ylabel('Actual P/L (%)')
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                st.pyplot(fig)
             
-            # Format numeric columns
-            numeric_cols = ['entry_price', 'exit_price', 'entry_real_rate', 'exit_real_rate', 'pnl', 'pnl_pct', 'nominal_pnl', 'margin_used']
-            for col in numeric_cols:
-                if col in trades_df.columns:
-                    if col in ['nominal_pnl', 'margin_used']:
-                        trades_df[col] = trades_df[col].round(0).astype(int)
-                    else:
-                        trades_df[col] = trades_df[col].round(4)
+            # Statystyki wygrane vs przegrane
+            st.markdown("---")
+            st.subheader("🆚 Wygrane vs Przegrane")
             
-            # Add holding period comparison
-            trades_df['hold_vs_target'] = trades_df['hold_days'] - trades_df['target_hold_days']
+            winning = trades_df[trades_df['actual_pnl_pct'] > 0]
+            losing = trades_df[trades_df['actual_pnl_pct'] <= 0]
             
-            st.dataframe(trades_df, use_container_width=True)
+            col_w1, col_w2 = st.columns(2)
             
-            # Add download button for trades
-            csv = trades_df.to_csv(index=False)
-            st.download_button(
-                label="Download Trade Results as CSV",
-                data=csv,
-                file_name=f"trading_results_{currency_pair.replace('/', '')}_{strategy_type.lower().replace(' ', '_')}_{hold_period_days}d.csv",
-                mime="text/csv"
+            with col_w1:
+                st.markdown("**✅ Wygrane transakcje**")
+                st.write(f"Liczba: {len(winning)}")
+                st.write(f"Średni % dni ITM: {winning['pct_days_below'].mean():.1f}%")
+                st.write(f"Średni P/L: {winning['actual_pnl_pct'].mean():+.2f}%")
+                st.write(f"Max korzystny: {winning['max_favorable_move'].mean():.2f}%")
+                st.write(f"Max niekorzystny: {winning['max_adverse_move'].mean():.2f}%")
+            
+            with col_w2:
+                st.markdown("**❌ Przegrane transakcje**")
+                st.write(f"Liczba: {len(losing)}")
+                st.write(f"Średni % dni ITM: {losing['pct_days_below'].mean():.1f}%")
+                st.write(f"Średni P/L: {losing['actual_pnl_pct'].mean():+.2f}%")
+                st.write(f"Max korzystny: {losing['max_favorable_move'].mean():.2f}%")
+                st.write(f"Max niekorzystny: {losing['max_adverse_move'].mean():.2f}%")
+
+with tab2:
+    st.header("🔧 Optymalizacja Parametrów")
+    st.markdown("Znajdź optymalne parametry dla Twojej strategii")
+    
+    opt_direction = st.selectbox(
+        "Kierunek dla optymalizacji",
+        ['SELL', 'BUY'],
+        key='opt_direction'
+    )
+    
+    if st.button("🚀 Rozpocznij optymalizację", type="primary"):
+        st.info("⏳ Optymalizacja może potrwać kilka minut...")
+        
+        results_df = optimize_parameters(df, opt_direction)
+        
+        if len(results_df) > 0:
+            st.session_state['optimization_results'] = results_df
+            st.success(f"✅ Przetestowano {len(results_df)} kombinacji parametrów!")
+    
+    if 'optimization_results' in st.session_state:
+        results_df = st.session_state['optimization_results']
+        
+        st.subheader("📊 Wyniki optymalizacji")
+        
+        # Wybór metryki do sortowania
+        sort_metric = st.selectbox(
+            "Sortuj według",
+            ['total_return', 'sharpe', 'win_rate', 'avg_pct_below'],
+            format_func=lambda x: {
+                'total_return': 'Zwrot całkowity',
+                'sharpe': 'Sharpe Ratio',
+                'win_rate': 'Win Rate',
+                'avg_pct_below': '% dni ITM'
+            }[x]
+        )
+        
+        # TOP 10
+        top10 = results_df.nlargest(10, sort_metric)
+        
+        st.markdown("### 🏆 TOP 10 strategii")
+        st.dataframe(
+            top10[[' lookback', 'hold_days', 'stop_loss', 'total_trades', 'win_rate', 
+                   'total_return', 'avg_pct_below', 'max_dd', 'sharpe']].style.format({
+                'win_rate': '{:.1f}%',
+                'total_return': '{:+.2f}%',
+                'avg_pct_below': '{:.1f}%',
+                'stop_loss': '{:.1f}%',
+                'max_dd': '{:.2f}%',
+                'sharpe': '{:.2f}'
+            }),
+            use_container_width=True
+        )
+        
+        # Heatmapy
+        st.markdown("---")
+        st.subheader("🔥 Heatmapy")
+        
+        col_h1, col_h2 = st.columns(2)
+        
+        with col_h1:
+            # Heatmapa lookback vs hold
+            st.markdown("**Lookback vs Hold Days (Total Return)**")
+            pivot_table = results_df.pivot_table(
+                values='total_return',
+                index='lookback',
+                columns='hold_days',
+                aggfunc='mean'
+            )
+            
+            fig, ax = plt.subplots(figsize=(8, 6))
+            sns.heatmap(pivot_table, annot=True, fmt='.1f', cmap='RdYlGn', 
+                       center=0, ax=ax, cbar_kws={'label': 'Return (%)'})
+            ax.set_title('Total Return (%)')
+            plt.tight_layout()
+            st.pyplot(fig)
+        
+        with col_h2:
+            # Heatmapa lookback vs SL
+            st.markdown("**Lookback vs Stop Loss (Total Return)**")
+            pivot_table2 = results_df.pivot_table(
+                values='total_return',
+                index='lookback',
+                columns='stop_loss',
+                aggfunc='mean'
+            )
+            
+            fig, ax = plt.subplots(figsize=(8, 6))
+            sns.heatmap(pivot_table2, annot=True, fmt='.1f', cmap='RdYlGn', 
+                       center=0, ax=ax, cbar_kws={'label': 'Return (%)'})
+            ax.set_title('Total Return (%)')
+            plt.tight_layout()
+            st.pyplot(fig)
+        
+        # Download wyników
+        st.markdown("---")
+        csv = results_df.to_csv(index=False)
+        st.download_button(
+            label="📥 Pobierz wyniki optymalizacji (CSV)",
+            data=csv,
+            file_name=f"optimization_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+
+with tab3:
+    st.header("📈 Szczegóły Transakcji")
+    
+    if 'trades_df' in st.session_state:
+        trades_df = st.session_state['trades_df']
+        
+        # Filtry
+        col_f1, col_f2, col_f3 = st.columns(3)
+        
+        with col_f1:
+            show_type = st.selectbox(
+                "Pokaż",
+                ['Wszystkie', 'Tylko wygrane', 'Tylko przegrane', 'Tylko ze stop loss']
             )
         
-        # Show recent data
-        st.header("Recent Data Sample")
-        sample_data = df[['fx_price', 'domestic_yield', 'foreign_yield', 'yield_spread', 'real_rate', 'r_squared', 'buy_signal', 'sell_signal']].tail(10)
-        st.dataframe(sample_data.round(4))
+        with col_f2:
+            min_pct_itm = st.slider("Min % dni ITM", 0, 100, 0)
         
-else:
-    st.info("Please upload all three CSV files to see the analysis:")
-    st.write("**What this will show:**")
-    st.write("1. **Historical FX Rate**: Your actual currency pair price over time")
-    st.write("2. **Real Rate**: Predicted FX rate based on yield spread regression")
-    st.write("3. **Yield Spread**: Domestic bond yield minus foreign bond yield")
-    st.write("4. **Model Quality**: R² showing how well the regression fits")
-    st.write("")
-    st.write("**The Strategy Concept:**")
-    st.write("- When Real Rate > Historical Rate → FX may be undervalued (BUY)")
-    st.write("- When Real Rate < Historical Rate → FX may be overvalued (SELL)")
-    st.write("")
-    st.write("**Key Improvements:**")
-    st.write("- **Exact Holding Period**: Positions held for exactly the number of days specified")
-    st.write("- **Entry Frequency Options**: Choose Monday-only or any-day entry")
-    st.write("- **Precise Exit Timing**: Exits calculated to exact target dates")
-    st.write("- **Hold Period Tracking**: Monitor how often exact hold periods are achieved")
-    st.write("- **Strategy Optimization**: Find the best combination of R², holding period, and regression period")
-    st.write("- **Currency Labels**: Clear labeling of position sizes and PnL currencies")
+        with col_f3:
+            sort_by = st.selectbox(
+                "Sortuj według",
+                ['entry_date', 'actual_pnl_pct', 'pct_days_below', 'opportunity_missed']
+            )
+        
+        # Filtrowanie
+        filtered_df = trades_df.copy()
+        
+        if show_type == 'Tylko wygrane':
+            filtered_df = filtered_df[filtered_df['actual_pnl_pct'] > 0]
+        elif show_type == 'Tylko przegrane':
+            filtered_df = filtered_df[filtered_df['actual_pnl_pct'] <= 0]
+        elif show_type == 'Tylko ze stop loss':
+            filtered_df = filtered_df[filtered_df['stop_loss_hit'] == True]
+        
+        filtered_df = filtered_df[filtered_df['pct_days_below'] >= min_pct_itm]
+        filtered_df = filtered_df.sort_values(sort_by, ascending=False)
+        
+        st.write(f"**Znaleziono {len(filtered_df)} transakcji**")
+        
+        # Tabela
+        display_df = filtered_df[[
+            'entry_date', 'exit_date', 'signal', 'entry_price', 'exit_price',
+            'actual_pnl_pct', 'best_possible_pnl', 'opportunity_missed',
+            'pct_days_below', 'max_favorable_move', 'max_adverse_move',
+            'stop_loss_hit'
+        ]].copy()
+        
+        display_df['entry_date'] = display_df['entry_date'].dt.strftime('%Y-%m-%d')
+        display_df['exit_date'] = display_df['exit_date'].dt.strftime('%Y-%m-%d')
+        
+        st.dataframe(
+            display_df.style.format({
+                'entry_price': '{:.4f}',
+                'exit_price': '{:.4f}',
+                'actual_pnl_pct': '{:+.2f}%',
+                'best_possible_pnl': '{:+.2f}%',
+                'opportunity_missed': '{:.2f}%',
+                'pct_days_below': '{:.1f}%',
+                'max_favorable_move': '{:.2f}%',
+                'max_adverse_move': '{:.2f}%'
+            }).applymap(
+                lambda x: 'background-color: #90EE90' if isinstance(x, str) and '+' in x and '%' in x else '',
+                subset=['actual_pnl_pct']
+            ).applymap(
+                lambda x: 'background-color: #FFB6C6' if isinstance(x, str) and '-' in x and '%' in x else '',
+                subset=['actual_pnl_pct']
+            ),
+            use_container_width=True,
+            height=600
+        )
+        
+        # Download
+        csv = filtered_df.to_csv(index=False)
+        st.download_button(
+            label="📥 Pobierz transakcje (CSV)",
+            data=csv,
+            file_name=f"trades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+    else:
+        st.info("👈 Uruchom backtest w zakładce 'Analiza' aby zobaczyć szczegóły transakcji")
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center'>
+    <p>📊 Window Forward Analyzer | Wersja 1.0</p>
+    <p style='font-size: 12px; color: gray;'>
+        Strategia pivot points z analizą window forward dla produktów walutowych
+    </p>
+</div>
+""", unsafe_allow_html=True)
