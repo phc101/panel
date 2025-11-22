@@ -25,7 +25,7 @@ def calculate_pivot_points_mt5(window_df):
         's2': pivot - range_hl
     }
 
-def backtest_window_forward(df, lookback_days, hold_days, stop_loss_pct, signal_direction='SELL'):
+def backtest_window_forward(df, lookback_days, hold_days, stop_loss_pct, signal_direction='SELL', pair_name=''):
     """
     Backtest strategii window forward
     """
@@ -133,6 +133,7 @@ def backtest_window_forward(df, lookback_days, hold_days, stop_loss_pct, signal_
         pct_days_below = (days_below_entry / total_days * 100) if total_days > 0 else 0
         
         trades.append({
+            'pair': pair_name,
             'entry_date': entry_date,
             'exit_date': exit_row['Date'],
             'signal': signal,
@@ -152,10 +153,10 @@ def backtest_window_forward(df, lookback_days, hold_days, stop_loss_pct, signal_
     
     return pd.DataFrame(trades) if trades else None
 
-def optimize_parameters(df, signal_direction='SELL'):
+def optimize_parameters(df, signal_direction='SELL', pair_name=''):
     """Optymalizacja parametrów"""
     
-    lookback_range = [3, 5, 7, 10, 14, 21, 30]
+    lookback_range = [4, 5, 7, 10, 14, 21, 30]
     hold_range = [7, 14, 21, 30, 45, 60, 90]
     sl_range = [0.01, 0.02, 0.03, 0.04, 0.05]
     
@@ -174,7 +175,7 @@ def optimize_parameters(df, signal_direction='SELL'):
                 progress_bar.progress(current / total_iterations)
                 status_text.text(f"Testowanie: Lookback={lookback}, Hold={hold}, SL={sl*100:.0f}%")
                 
-                trades_df = backtest_window_forward(df, lookback, hold, sl, signal_direction)
+                trades_df = backtest_window_forward(df, lookback, hold, sl, signal_direction, pair_name)
                 
                 if trades_df is not None and len(trades_df) > 0:
                     total_return = trades_df['actual_pnl_pct'].sum()
@@ -268,68 +269,167 @@ st.markdown("### Analiza strategii pivot points z opcją window forward")
 # Sidebar - konfiguracja
 st.sidebar.header("⚙️ Konfiguracja")
 
-# Upload pliku
-uploaded_file = st.sidebar.file_uploader(
-    "Wczytaj plik CSV z danymi", 
-    type=['csv'],
-    help="Format: Date, Price, Open, High, Low"
+# Wybór trybu
+analysis_mode = st.sidebar.radio(
+    "Tryb analizy",
+    ["Pojedyncza para", "Multi-para (portfel)"],
+    help="Wybierz czy analizować jedną parę czy portfel par walutowych"
 )
 
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-    st.sidebar.success(f"✅ Wczytano {len(df)} wierszy")
+if analysis_mode == "Pojedyncza para":
+    # Upload pliku
+    uploaded_file = st.sidebar.file_uploader(
+        "Wczytaj plik CSV z danymi", 
+        type=['csv'],
+        help="Format: Date, Price, Open, High, Low"
+    )
     
-    # Próba automatycznej konwersji dat
-    try:
-        df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%Y')
-    except:
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+        pair_name = uploaded_file.name.replace('.csv', '')
+        st.sidebar.success(f"✅ Wczytano {len(df)} wierszy")
+        
+        # Próba automatycznej konwersji dat
         try:
-            df['Date'] = pd.to_datetime(df['Date'])
+            df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%Y')
         except:
-            st.sidebar.error("❌ Nie można przekonwertować dat!")
-            st.stop()
+            try:
+                df['Date'] = pd.to_datetime(df['Date'])
+            except:
+                st.sidebar.error("❌ Nie można przekonwertować dat!")
+                st.stop()
+        
+        # Konwersja kolumn numerycznych
+        for col in ['Price', 'Open', 'High', 'Low']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        df = df.sort_values('Date').reset_index(drop=True)
+        
+        # Wyświetl przykładowe dane
+        with st.sidebar.expander("📋 Podgląd danych"):
+            st.dataframe(df.head())
+            st.write(f"Okres: {df['Date'].min().strftime('%Y-%m-%d')} do {df['Date'].max().strftime('%Y-%m-%d')}")
+        
+        # Store in session state
+        st.session_state['pairs'] = {pair_name: df}
+        st.session_state['mode'] = 'single'
+    else:
+        st.info("👈 Wczytaj plik CSV z danymi historycznymi w panelu po lewej")
+        st.markdown("""
+        **Format pliku CSV:**
+        ```
+        Date,Price,Open,High,Low
+        01/05/2015,4.2376,4.2369,4.2566,4.2322
+        01/06/2015,4.2450,4.2400,4.2500,4.2350
+        ...
+        ```
+        
+        **Wymagane kolumny:**
+        - `Date` - data w formacie MM/DD/YYYY lub DD/MM/YYYY
+        - `Price` - cena zamknięcia
+        - `Open` - cena otwarcia
+        - `High` - najwyższa cena dnia
+        - `Low` - najniższa cena dnia
+        """)
+        st.stop()
+
+else:  # Multi-para
+    st.sidebar.markdown("### 📊 Wczytaj do 4 par walutowych")
     
-    # Konwersja kolumn numerycznych
-    for col in ['Price', 'Open', 'High', 'Low']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+    pairs = {}
     
-    df = df.sort_values('Date').reset_index(drop=True)
+    for i in range(1, 5):
+        uploaded_file = st.sidebar.file_uploader(
+            f"Para {i} (opcjonalnie)", 
+            type=['csv'],
+            key=f"pair_{i}",
+            help="Format: Date, Price, Open, High, Low"
+        )
+        
+        if uploaded_file is not None:
+            df = pd.read_csv(uploaded_file)
+            pair_name = uploaded_file.name.replace('.csv', '')
+            
+            # Próba automatycznej konwersji dat
+            try:
+                df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%Y')
+            except:
+                try:
+                    df['Date'] = pd.to_datetime(df['Date'])
+                except:
+                    st.sidebar.error(f"❌ Nie można przekonwertować dat dla {pair_name}!")
+                    continue
+            
+            # Konwersja kolumn numerycznych
+            for col in ['Price', 'Open', 'High', 'Low']:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            df = df.sort_values('Date').reset_index(drop=True)
+            pairs[pair_name] = df
     
-    # Wyświetl przykładowe dane
-    with st.sidebar.expander("📋 Podgląd danych"):
-        st.dataframe(df.head())
-        st.write(f"Okres: {df['Date'].min().strftime('%Y-%m-%d')} do {df['Date'].max().strftime('%Y-%m-%d')}")
-else:
-    st.info("👈 Wczytaj plik CSV z danymi historycznymi w panelu po lewej")
-    st.markdown("""
-    **Format pliku CSV:**
-    ```
-    Date,Price,Open,High,Low
-    01/05/2015,4.2376,4.2369,4.2566,4.2322
-    01/06/2015,4.2450,4.2400,4.2500,4.2350
-    ...
-    ```
+    if len(pairs) == 0:
+        st.info("👈 Wczytaj przynajmniej jedną parę walutową w panelu po lewej")
+        st.markdown("""
+        **Format pliku CSV:**
+        ```
+        Date,Price,Open,High,Low
+        01/05/2015,4.2376,4.2369,4.2566,4.2322
+        01/06/2015,4.2450,4.2400,4.2500,4.2350
+        ...
+        ```
+        
+        **Wymagane kolumny:**
+        - `Date` - data w formacie MM/DD/YYYY lub DD/MM/YYYY
+        - `Price` - cena zamknięcia
+        - `Open` - cena otwarcia
+        - `High` - najwyższa cena dnia
+        - `Low` - najniższa cena dnia
+        
+        **Możesz wczytać do 4 par walutowych jednocześnie!**
+        """)
+        st.stop()
     
-    **Wymagane kolumny:**
-    - `Date` - data w formacie MM/DD/YYYY lub DD/MM/YYYY
-    - `Price` - cena zamknięcia
-    - `Open` - cena otwarcia
-    - `High` - najwyższa cena dnia
-    - `Low` - najniższa cena dnia
-    """)
-    st.stop()
+    st.sidebar.success(f"✅ Wczytano {len(pairs)} par walutowych")
+    
+    with st.sidebar.expander("📋 Podgląd par"):
+        for name, data in pairs.items():
+            st.write(f"**{name}**: {len(data)} wierszy")
+            st.write(f"Okres: {data['Date'].min().strftime('%Y-%m-%d')} do {data['Date'].max().strftime('%Y-%m-%d')}")
+            st.write("---")
+    
+    # Store in session state
+    st.session_state['pairs'] = pairs
+    st.session_state['mode'] = 'multi'
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["🎯 Analiza", "🔧 Optymalizacja", "📈 Szczegóły transakcji"])
+tab1, tab2, tab3, tab4 = st.tabs(["🎯 Analiza", "🔧 Optymalizacja", "📈 Szczegóły transakcji", "📊 Porównanie par"])
 
 with tab1:
     st.header("Analiza Window Forward")
+    
+    if 'pairs' not in st.session_state:
+        st.warning("⚠️ Wczytaj dane w panelu bocznym")
+        st.stop()
+    
+    pairs = st.session_state['pairs']
+    mode = st.session_state['mode']
     
     col1, col2 = st.columns([1, 2])
     
     with col1:
         st.subheader("Parametry strategii")
+        
+        # Wybór pary do analizy (w trybie multi)
+        if mode == 'multi':
+            selected_pair = st.selectbox(
+                "Wybierz parę do analizy",
+                ['Portfel (wszystkie)'] + list(pairs.keys()),
+                help="Możesz analizować każdą parę osobno lub cały portfel"
+            )
+        else:
+            selected_pair = list(pairs.keys())[0]
         
         signal_direction = st.selectbox(
             "Kierunek sygnału",
@@ -339,11 +439,11 @@ with tab1:
         
         lookback_days = st.slider(
             "Lookback period (dni)",
-            min_value=3,
+            min_value=4,
             max_value=30,
             value=14,
             step=1,
-            help="Liczba dni do obliczenia pivot points"
+            help="Liczba dni do obliczenia pivot points (min 4 = piątek)"
         )
         
         hold_days = st.slider(
@@ -366,25 +466,61 @@ with tab1:
         
         if st.button("🚀 Uruchom backtest", type="primary"):
             with st.spinner("Obliczam..."):
-                trades_df = backtest_window_forward(
-                    df, 
-                    lookback_days, 
-                    hold_days, 
-                    stop_loss_pct,
-                    signal_direction
-                )
-                
-                if trades_df is None or len(trades_df) == 0:
-                    st.error("❌ Brak transakcji dla wybranych parametrów!")
+                if mode == 'multi' and selected_pair == 'Portfel (wszystkie)':
+                    # Analiza portfela - zbierz wszystkie transakcje
+                    all_trades = []
+                    for pair_name, df in pairs.items():
+                        trades_df = backtest_window_forward(
+                            df, 
+                            lookback_days, 
+                            hold_days, 
+                            stop_loss_pct,
+                            signal_direction,
+                            pair_name
+                        )
+                        if trades_df is not None and len(trades_df) > 0:
+                            all_trades.append(trades_df)
+                    
+                    if len(all_trades) == 0:
+                        st.error("❌ Brak transakcji dla wybranych parametrów!")
+                    else:
+                        trades_df = pd.concat(all_trades, ignore_index=True)
+                        trades_df = trades_df.sort_values('entry_date').reset_index(drop=True)
+                        st.session_state['trades_df'] = trades_df
+                        st.session_state['params'] = {
+                            'lookback': lookback_days,
+                            'hold': hold_days,
+                            'sl': stop_loss_pct * 100,
+                            'direction': signal_direction,
+                            'pair': 'Portfel'
+                        }
+                        st.success(f"✅ Znaleziono {len(trades_df)} transakcji w portfelu!")
                 else:
-                    st.session_state['trades_df'] = trades_df
-                    st.session_state['params'] = {
-                        'lookback': lookback_days,
-                        'hold': hold_days,
-                        'sl': stop_loss_pct * 100,
-                        'direction': signal_direction
-                    }
-                    st.success(f"✅ Znaleziono {len(trades_df)} transakcji!")
+                    # Analiza pojedynczej pary
+                    pair_name = selected_pair if mode == 'multi' else list(pairs.keys())[0]
+                    df = pairs[pair_name]
+                    
+                    trades_df = backtest_window_forward(
+                        df, 
+                        lookback_days, 
+                        hold_days, 
+                        stop_loss_pct,
+                        signal_direction,
+                        pair_name
+                    )
+                    
+                    if trades_df is None or len(trades_df) == 0:
+                        st.error("❌ Brak transakcji dla wybranych parametrów!")
+                    else:
+                        st.session_state['trades_df'] = trades_df
+                        st.session_state['params'] = {
+                            'lookback': lookback_days,
+                            'hold': hold_days,
+                            'sl': stop_loss_pct * 100,
+                            'direction': signal_direction,
+                            'pair': pair_name
+                        }
+                        st.success(f"✅ Znaleziono {len(trades_df)} transakcji!")
     
     with col2:
         if 'trades_df' in st.session_state:
@@ -392,7 +528,16 @@ with tab1:
             params = st.session_state['params']
             
             st.subheader(f"Wyniki backtestingu")
-            st.caption(f"Lookback: {params['lookback']}d | Hold: {params['hold']}d | SL: {params['sl']:.1f}% | Direction: {params['direction']}")
+            st.caption(f"Para: {params['pair']} | Lookback: {params['lookback']}d | Hold: {params['hold']}d | SL: {params['sl']:.1f}% | Direction: {params['direction']}")
+            
+            # W trybie portfela - pokaż rozkład par
+            if params['pair'] == 'Portfel':
+                st.markdown("**📊 Transakcje według par:**")
+                pair_counts = trades_df['pair'].value_counts()
+                cols = st.columns(len(pair_counts))
+                for i, (pair, count) in enumerate(pair_counts.items()):
+                    cols[i].metric(pair, count)
+                st.markdown("---")
             
             # Metryki
             col_m1, col_m2, col_m3, col_m4 = st.columns(4)
@@ -524,25 +669,48 @@ with tab2:
     st.header("🔧 Optymalizacja Parametrów")
     st.markdown("Znajdź optymalne parametry dla Twojej strategii")
     
-    opt_direction = st.selectbox(
-        "Kierunek dla optymalizacji",
-        ['SELL', 'BUY'],
-        key='opt_direction'
-    )
+    if 'pairs' not in st.session_state:
+        st.warning("⚠️ Wczytaj dane w panelu bocznym")
+        st.stop()
+    
+    pairs = st.session_state['pairs']
+    mode = st.session_state['mode']
+    
+    col_opt1, col_opt2 = st.columns(2)
+    
+    with col_opt1:
+        if mode == 'multi':
+            opt_pair = st.selectbox(
+                "Optymalizuj dla pary",
+                list(pairs.keys()),
+                key='opt_pair_select'
+            )
+        else:
+            opt_pair = list(pairs.keys())[0]
+    
+    with col_opt2:
+        opt_direction = st.selectbox(
+            "Kierunek dla optymalizacji",
+            ['SELL', 'BUY'],
+            key='opt_direction'
+        )
     
     if st.button("🚀 Rozpocznij optymalizację", type="primary"):
         st.info("⏳ Optymalizacja może potrwać kilka minut...")
         
-        results_df = optimize_parameters(df, opt_direction)
+        df = pairs[opt_pair]
+        results_df = optimize_parameters(df, opt_direction, opt_pair)
         
         if len(results_df) > 0:
             st.session_state['optimization_results'] = results_df
-            st.success(f"✅ Przetestowano {len(results_df)} kombinacji parametrów!")
+            st.session_state['optimization_pair'] = opt_pair
+            st.success(f"✅ Przetestowano {len(results_df)} kombinacji parametrów dla {opt_pair}!")
     
     if 'optimization_results' in st.session_state:
         results_df = st.session_state['optimization_results']
+        opt_pair = st.session_state.get('optimization_pair', 'Unknown')
         
-        st.subheader("📊 Wyniki optymalizacji")
+        st.subheader(f"📊 Wyniki optymalizacji dla {opt_pair}")
         
         # Wybór metryki do sortowania
         sort_metric = st.selectbox(
@@ -620,20 +788,32 @@ with tab3:
     
     if 'trades_df' in st.session_state:
         trades_df = st.session_state['trades_df']
+        params = st.session_state['params']
         
         # Filtry
-        col_f1, col_f2, col_f3 = st.columns(3)
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         
         with col_f1:
+            # Filtr par (tylko w trybie portfela)
+            if params['pair'] == 'Portfel':
+                pair_filter = st.multiselect(
+                    "Filtruj pary",
+                    options=['Wszystkie'] + sorted(trades_df['pair'].unique().tolist()),
+                    default=['Wszystkie']
+                )
+            else:
+                pair_filter = ['Wszystkie']
+        
+        with col_f2:
             show_type = st.selectbox(
                 "Pokaż",
                 ['Wszystkie', 'Tylko wygrane', 'Tylko przegrane', 'Tylko ze stop loss']
             )
         
-        with col_f2:
+        with col_f3:
             min_pct_itm = st.slider("Min % dni ITM", 0, 100, 0)
         
-        with col_f3:
+        with col_f4:
             sort_by = st.selectbox(
                 "Sortuj według",
                 ['entry_date', 'actual_pnl_pct', 'pct_days_below', 'opportunity_missed']
@@ -641,6 +821,10 @@ with tab3:
         
         # Filtrowanie
         filtered_df = trades_df.copy()
+        
+        # Filtr par
+        if params['pair'] == 'Portfel' and 'Wszystkie' not in pair_filter:
+            filtered_df = filtered_df[filtered_df['pair'].isin(pair_filter)]
         
         if show_type == 'Tylko wygrane':
             filtered_df = filtered_df[filtered_df['actual_pnl_pct'] > 0]
@@ -655,12 +839,18 @@ with tab3:
         st.write(f"**Znaleziono {len(filtered_df)} transakcji**")
         
         # Tabela
-        display_df = filtered_df[[
-            'entry_date', 'exit_date', 'signal', 'entry_price', 'exit_price',
-            'actual_pnl_pct', 'best_possible_pnl', 'opportunity_missed',
-            'pct_days_below', 'max_favorable_move', 'max_adverse_move',
-            'stop_loss_hit'
-        ]].copy()
+        if params['pair'] == 'Portfel':
+            display_columns = ['pair', 'entry_date', 'exit_date', 'signal', 'entry_price', 'exit_price',
+                             'actual_pnl_pct', 'best_possible_pnl', 'opportunity_missed',
+                             'pct_days_below', 'max_favorable_move', 'max_adverse_move',
+                             'stop_loss_hit']
+        else:
+            display_columns = ['entry_date', 'exit_date', 'signal', 'entry_price', 'exit_price',
+                             'actual_pnl_pct', 'best_possible_pnl', 'opportunity_missed',
+                             'pct_days_below', 'max_favorable_move', 'max_adverse_move',
+                             'stop_loss_hit']
+        
+        display_df = filtered_df[display_columns].copy()
         
         display_df['entry_date'] = display_df['entry_date'].dt.strftime('%Y-%m-%d')
         display_df['exit_date'] = display_df['exit_date'].dt.strftime('%Y-%m-%d')
@@ -700,13 +890,204 @@ with tab3:
     else:
         st.info("👈 Uruchom backtest w zakładce 'Analiza' aby zobaczyć szczegóły transakcji")
 
+with tab4:
+    st.header("📊 Porównanie Par Walutowych")
+    
+    if 'pairs' not in st.session_state:
+        st.warning("⚠️ Wczytaj dane w panelu bocznym")
+        st.stop()
+    
+    pairs = st.session_state['pairs']
+    mode = st.session_state['mode']
+    
+    if mode == 'single':
+        st.info("ℹ️ Porównanie dostępne tylko w trybie Multi-para")
+        st.stop()
+    
+    if len(pairs) < 2:
+        st.info("ℹ️ Wczytaj przynajmniej 2 pary walutowe do porównania")
+        st.stop()
+    
+    st.markdown("### Porównaj wyniki różnych par przy tych samych parametrach")
+    
+    col_comp1, col_comp2 = st.columns([1, 2])
+    
+    with col_comp1:
+        st.subheader("Parametry")
+        
+        comp_direction = st.selectbox(
+            "Kierunek",
+            ['SELL', 'BUY'],
+            key='comp_direction'
+        )
+        
+        comp_lookback = st.slider(
+            "Lookback (dni)",
+            min_value=4,
+            max_value=30,
+            value=14,
+            key='comp_lookback'
+        )
+        
+        comp_hold = st.slider(
+            "Hold (dni)",
+            min_value=7,
+            max_value=120,
+            value=60,
+            key='comp_hold'
+        )
+        
+        comp_sl = st.slider(
+            "Stop Loss (%)",
+            min_value=0.5,
+            max_value=10.0,
+            value=3.0,
+            step=0.5,
+            key='comp_sl'
+        ) / 100
+        
+        if st.button("🔍 Porównaj pary", type="primary"):
+            with st.spinner("Analizuję wszystkie pary..."):
+                comparison_results = []
+                
+                for pair_name, df in pairs.items():
+                    trades_df = backtest_window_forward(
+                        df, 
+                        comp_lookback, 
+                        comp_hold, 
+                        comp_sl,
+                        comp_direction,
+                        pair_name
+                    )
+                    
+                    if trades_df is not None and len(trades_df) > 0:
+                        total_return = trades_df['actual_pnl_pct'].sum()
+                        win_rate = len(trades_df[trades_df['actual_pnl_pct'] > 0]) / len(trades_df) * 100
+                        avg_pct_itm = trades_df['pct_days_below'].mean()
+                        total_trades = len(trades_df)
+                        avg_pnl = trades_df['actual_pnl_pct'].mean()
+                        
+                        cumulative_return = trades_df['actual_pnl_pct'].cumsum()
+                        max_equity = cumulative_return.expanding().max()
+                        drawdown = cumulative_return - max_equity
+                        max_dd = drawdown.min()
+                        
+                        sharpe = total_return / abs(max_dd) if max_dd != 0 else 0
+                        
+                        comparison_results.append({
+                            'Para': pair_name,
+                            'Transakcje': total_trades,
+                            'Win Rate (%)': win_rate,
+                            'Zwrot całkowity (%)': total_return,
+                            'Śr. P/L (%)': avg_pnl,
+                            'Śr. % ITM': avg_pct_itm,
+                            'Max DD (%)': max_dd,
+                            'Sharpe': sharpe
+                        })
+                
+                if len(comparison_results) > 0:
+                    st.session_state['comparison_results'] = pd.DataFrame(comparison_results)
+                    st.success(f"✅ Porównano {len(comparison_results)} par!")
+                else:
+                    st.error("❌ Brak wyników do porównania")
+    
+    with col_comp2:
+        if 'comparison_results' in st.session_state:
+            comp_df = st.session_state['comparison_results']
+            
+            st.subheader("Wyniki porównania")
+            
+            # Tabela porównawcza
+            st.dataframe(
+                comp_df.style.format({
+                    'Win Rate (%)': '{:.1f}',
+                    'Zwrot całkowity (%)': '{:+.2f}',
+                    'Śr. P/L (%)': '{:+.2f}',
+                    'Śr. % ITM': '{:.1f}',
+                    'Max DD (%)': '{:.2f}',
+                    'Sharpe': '{:.2f}'
+                }).background_gradient(subset=['Zwrot całkowity (%)'], cmap='RdYlGn', vmin=-10, vmax=10),
+                use_container_width=True,
+                height=250
+            )
+            
+            # Wykresy porównawcze
+            st.markdown("---")
+            col_chart1, col_chart2 = st.columns(2)
+            
+            with col_chart1:
+                st.markdown("**Zwrot całkowity według par**")
+                fig, ax = plt.subplots(figsize=(8, 5))
+                colors = ['green' if x > 0 else 'red' for x in comp_df['Zwrot całkowity (%)']]
+                bars = ax.bar(comp_df['Para'], comp_df['Zwrot całkowity (%)'], color=colors, alpha=0.7)
+                ax.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
+                ax.set_ylabel('Zwrot całkowity (%)')
+                ax.set_title('Porównanie zwrotów')
+                ax.grid(True, alpha=0.3, axis='y')
+                plt.xticks(rotation=45, ha='right')
+                plt.tight_layout()
+                st.pyplot(fig)
+            
+            with col_chart2:
+                st.markdown("**Win Rate vs Sharpe Ratio**")
+                fig, ax = plt.subplots(figsize=(8, 5))
+                scatter = ax.scatter(comp_df['Win Rate (%)'], comp_df['Sharpe'], 
+                                   s=comp_df['Transakcje']*5, alpha=0.6, c=comp_df['Zwrot całkowity (%)'],
+                                   cmap='RdYlGn', vmin=-10, vmax=10)
+                
+                for i, row in comp_df.iterrows():
+                    ax.annotate(row['Para'], (row['Win Rate (%)'], row['Sharpe']), 
+                              xytext=(5, 5), textcoords='offset points', fontsize=9)
+                
+                ax.set_xlabel('Win Rate (%)')
+                ax.set_ylabel('Sharpe Ratio')
+                ax.set_title('Efektywność strategii')
+                ax.grid(True, alpha=0.3)
+                plt.colorbar(scatter, ax=ax, label='Zwrot (%)')
+                plt.tight_layout()
+                st.pyplot(fig)
+            
+            # Ranking
+            st.markdown("---")
+            st.subheader("🏆 Ranking par")
+            
+            col_rank1, col_rank2, col_rank3 = st.columns(3)
+            
+            with col_rank1:
+                st.markdown("**Najlepszy zwrot**")
+                best_return = comp_df.nlargest(3, 'Zwrot całkowity (%)')
+                for i, row in best_return.iterrows():
+                    st.write(f"{i+1}. {row['Para']}: {row['Zwrot całkowity (%)']:+.2f}%")
+            
+            with col_rank2:
+                st.markdown("**Najlepszy Win Rate**")
+                best_wr = comp_df.nlargest(3, 'Win Rate (%)')
+                for i, row in best_wr.iterrows():
+                    st.write(f"{i+1}. {row['Para']}: {row['Win Rate (%)']:.1f}%")
+            
+            with col_rank3:
+                st.markdown("**Najlepszy Sharpe**")
+                best_sharpe = comp_df.nlargest(3, 'Sharpe')
+                for i, row in best_sharpe.iterrows():
+                    st.write(f"{i+1}. {row['Para']}: {row['Sharpe']:.2f}")
+            
+            # Download
+            st.markdown("---")
+            csv = comp_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Pobierz porównanie (CSV)",
+                data=csv,
+                file_name=f"comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center'>
-    <p>📊 Window Forward Analyzer | Wersja 1.0</p>
+    <p>📊 Window Forward Analyzer | Wersja 2.0</p>
     <p style='font-size: 12px; color: gray;'>
-        Strategia pivot points z analizą window forward dla produktów walutowych
+        Strategia pivot points z analizą window forward | Wsparcie dla wielu par walutowych i portfeli
     </p>
 </div>
 """, unsafe_allow_html=True)
