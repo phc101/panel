@@ -1,489 +1,479 @@
-// ============================================================================
-// R2 STRATEGY MODULE - 3 vs 6 FORWARDS
-// Dodaj ten kod do swojego kalendarz-fx.html
-// ============================================================================
+import streamlit as st
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import plotly.graph_objects as go
+import plotly.express as px
 
-// Rozszerzenie appState o strategię
-appState.strategyMode = 3; // 3 lub 6 forwardów
-appState.historicalData = [];
-appState.r2Signals = [];
-appState.activeForwardsData = [];
+# Page config
+st.set_page_config(
+    page_title="Strategia R2 - EUR/PLN Forward",
+    page_icon="🎯",
+    layout="wide"
+)
 
-// Funkcja do parsowania CSV
-function parseCSVDate(dateStr) {
-    // Parse MM/DD/YYYY format
-    const parts = dateStr.split('/');
-    if (parts.length === 3) {
-        return new Date(parts[2], parts[0] - 1, parts[1]);
-    }
-    return null;
-}
+# Title
+st.title("🎯 Strategia R2 - Pivot Points SELL")
+st.markdown("Automatyczne generowanie sygnałów SELL na podstawie pivot points (14-day lookback)")
 
-// Obliczanie Pivot Points (MT5 style)
-function calculatePivotPoints(data, index, lookback = 14) {
-    if (index < lookback) return null;
+# Sidebar - Strategy selection
+st.sidebar.header("⚙️ Konfiguracja Strategii")
+
+strategy_mode = st.sidebar.radio(
+    "Wybierz strategię:",
+    options=[3, 6],
+    format_func=lambda x: f"{x} Forwardy" + (" ✅ REKOMENDOWANE" if x == 3 else ""),
+    index=0
+)
+
+# Strategy comparison in sidebar
+if strategy_mode == 3:
+    st.sidebar.success("""
+    **3 Forwardy (REKOMENDOWANE)**
+    - Start: 0, 30, 60 dni
+    - Expected: +479k PLN/rok
+    - Win rate: 74.8%
+    - Exposure: EUR 3M per sygnał
+    """)
+else:
+    st.sidebar.warning("""
+    **6 Forwardów**
+    - Start: 0, 30, 60, 90, 120, 150 dni
+    - Expected: +471k PLN/rok
+    - Win rate: 70.8%
+    - Exposure: EUR 6M per sygnał
+    - ⚠️ Forwardy 4-6 słabe
+    """)
+
+# Upload CSV
+st.sidebar.header("📁 Wgraj Dane Historyczne")
+uploaded_file = st.sidebar.file_uploader(
+    "CSV z EUR/PLN (Date,Price,Open,High,Low)",
+    type=['csv'],
+    help="Format: Date,Price,Open,High,Low,Vol.,Change%"
+)
+
+spot_rate = st.sidebar.number_input("Kurs Spot EUR/PLN", value=4.2500, step=0.0001, format="%.4f")
+
+# Functions
+@st.cache_data
+def parse_csv(file):
+    """Parse uploaded CSV file"""
+    df = pd.read_csv(file)
     
-    const window = data.slice(index - lookback, index);
-    const avgHigh = window.reduce((sum, d) => sum + d.high, 0) / lookback;
-    const avgLow = window.reduce((sum, d) => sum + d.low, 0) / lookback;
-    const avgClose = window.reduce((sum, d) => sum + d.close, 0) / lookback;
-    const range = avgHigh - avgLow;
-    const pivot = (avgHigh + avgLow + avgClose) / 3;
+    # Try to parse Date column
+    df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%Y', errors='coerce')
+    
+    # Convert numeric columns
+    for col in ['Price', 'Open', 'High', 'Low']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Drop rows with NaN
+    df = df.dropna(subset=['Date', 'Open', 'High', 'Low', 'Price'])
+    
+    # Sort by date
+    df = df.sort_values('Date').reset_index(drop=True)
+    
+    return df
+
+def calculate_pivot_points(df, index, lookback=14):
+    """Calculate pivot points (MT5 style)"""
+    if index < lookback:
+        return None
+    
+    window = df.iloc[index-lookback:index]
+    
+    avg_high = window['High'].mean()
+    avg_low = window['Low'].mean()
+    avg_close = window['Price'].mean()
+    range_hl = avg_high - avg_low
+    pivot = (avg_high + avg_low + avg_close) / 3
     
     return {
-        pivot: pivot,
-        r1: pivot + (pivot - avgLow),
-        r2: pivot + range,
-        s1: pivot - (avgHigh - pivot),
-        s2: pivot - range
-    };
-}
+        'pivot': pivot,
+        'r1': pivot + (pivot - avg_low),
+        'r2': pivot + range_hl,
+        's1': pivot - (avg_high - pivot),
+        's2': pivot - range_hl
+    }
 
-// Upload CSV handler
-function handleCSVUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const statusDiv = document.getElementById('csvStatus');
-    statusDiv.innerHTML = '<span class="text-blue-600">📊 Wczytuję dane...</span>';
-
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const text = e.target.result;
-        const lines = text.trim().split('\n');
+def generate_r2_signals(df, mode=3):
+    """Generate R2 SELL signals"""
+    signals = []
+    
+    today = pd.Timestamp.now()
+    one_year_ago = today - pd.DateOffset(years=1)
+    
+    for idx, row in df.iterrows():
+        # Only Mondays
+        if row['Date'].dayofweek != 0:
+            continue
         
-        appState.historicalData = [];
-        let validRows = 0;
+        # Only last 12 months
+        if row['Date'] < one_year_ago:
+            continue
+        
+        pivots = calculate_pivot_points(df, idx, 14)
+        if pivots is None:
+            continue
+        
+        # R2 SELL signal: Open >= R2
+        if row['Open'] >= pivots['r2']:
+            forwards = []
+            
+            if mode == 3:
+                offsets = [0, 30, 60]
+            else:
+                offsets = [0, 30, 60, 90, 120, 150]
+            
+            for i, offset in enumerate(offsets):
+                forwards.append({
+                    'num': i + 1,
+                    'start_offset': offset,
+                    'start_date': row['Date'] + pd.DateOffset(days=offset),
+                    'end_date': row['Date'] + pd.DateOffset(days=offset+60)
+                })
+            
+            signals.append({
+                'date': row['Date'],
+                'open': row['Open'],
+                'r2': pivots['r2'],
+                'pivot': pivots['pivot'],
+                'forwards': forwards
+            })
+    
+    return signals
 
-        lines.forEach((line, idx) => {
-            const cols = line.split(',');
-            if (cols.length >= 5) {
-                const date = parseCSVDate(cols[0]);
-                if (date) {
-                    appState.historicalData.push({
-                        date: date,
-                        close: parseFloat(cols[1]),
-                        open: parseFloat(cols[2]),
-                        high: parseFloat(cols[3]),
-                        low: parseFloat(cols[4])
-                    });
-                    validRows++;
+def calculate_active_forwards(signals):
+    """Calculate currently active forwards"""
+    today = pd.Timestamp.now()
+    active_count = 0
+    total_exposure = 0
+    
+    for signal in signals:
+        for fwd in signal['forwards']:
+            if fwd['start_date'] <= today <= fwd['end_date']:
+                active_count += 1
+                total_exposure += 1  # EUR 1M per forward
+    
+    return active_count, total_exposure
+
+# Main app logic
+if uploaded_file is not None:
+    # Parse CSV
+    try:
+        df = parse_csv(uploaded_file)
+        st.success(f"✅ Wczytano {len(df)} wierszy danych")
+        
+        # Generate signals
+        signals = generate_r2_signals(df, strategy_mode)
+        
+        if len(signals) == 0:
+            st.warning("⚠️ Brak sygnałów R2 w ostatnich 12 miesiącach")
+        else:
+            # Calculate metrics
+            active_count, total_exposure = calculate_active_forwards(signals)
+            
+            # Backtest results
+            backtest_results = {
+                3: {'total': 5.00, 'per_year': 479, 'win_rate': 74.8, 'per_signal': 61},
+                6: {'total': 4.95, 'per_year': 471, 'win_rate': 70.8, 'per_signal': 60}
+            }
+            
+            results = backtest_results[strategy_mode]
+            
+            # Dashboard metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Sygnały R2", len(signals), help="W ostatnich 12 miesiącach")
+            
+            with col2:
+                st.metric("Aktywne Forwardy", active_count, help="Obecnie otwarte")
+            
+            with col3:
+                st.metric("Exposure", f"EUR {total_exposure}M", help="Łączna ekspozycja")
+            
+            with col4:
+                st.metric("Expected P/L", f"+{results['per_year']}k PLN/rok", 
+                         help="Z backtestów 2015-2025")
+            
+            # Tabs
+            tab1, tab2, tab3, tab4 = st.tabs([
+                "📈 Timeline Sygnałów", 
+                "📊 Tabela Sygnałów", 
+                "📉 Performance per Forward",
+                "💰 Backtest Results"
+            ])
+            
+            # TAB 1: Timeline
+            with tab1:
+                st.subheader("Timeline Sygnałów R2")
+                
+                # Expected P/L per forward
+                expected_pnl = {
+                    3: [0.79, 0.58, 0.26],
+                    6: [0.79, 0.58, 0.26, -0.05, 0.13, -0.16]
                 }
-            }
-        });
-
-        // Sort by date ascending
-        appState.historicalData.sort((a, b) => a.date - b.date);
-
-        if (validRows > 0) {
-            statusDiv.innerHTML = `<span class="text-green-600">✅ Wczytano ${validRows} wierszy danych</span>`;
-            calculateR2Signals();
-            renderStrategyTab();
-        } else {
-            statusDiv.innerHTML = '<span class="text-red-600">❌ Błąd: Nie udało się wczytać danych</span>';
-        }
-    };
-
-    reader.readAsText(file);
-}
-
-// Generowanie sygnałów R2
-function calculateR2Signals() {
-    appState.r2Signals = [];
-    
-    const today = new Date();
-    const oneYearAgo = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
-
-    appState.historicalData.forEach((row, index) => {
-        // Only Mondays
-        if (row.date.getDay() !== 1) return;
-        
-        // Only last 12 months
-        if (row.date < oneYearAgo) return;
-
-        const pivots = calculatePivotPoints(appState.historicalData, index, 14);
-        if (!pivots) return;
-
-        // R2 SELL signal: Open >= R2
-        if (row.open >= pivots.r2) {
-            const forwards = [];
+                
+                # Create timeline visualization
+                fig = go.Figure()
+                
+                colors = ['#3B82F6', '#10B981', '#8B5CF6', '#F97316', '#EC4899', '#6366F1']
+                
+                for sig_idx, signal in enumerate(signals):
+                    y_pos = len(signals) - sig_idx
+                    
+                    for fwd_idx, fwd in enumerate(signal['forwards']):
+                        pnl = expected_pnl[strategy_mode][fwd_idx]
+                        
+                        fig.add_trace(go.Scatter(
+                            x=[fwd['start_date'], fwd['end_date']],
+                            y=[y_pos, y_pos],
+                            mode='lines',
+                            line=dict(color=colors[fwd_idx], width=20),
+                            name=f"FWD {fwd['num']}" if sig_idx == 0 else "",
+                            legendgroup=f"fwd{fwd['num']}",
+                            showlegend=sig_idx == 0,
+                            hovertemplate=f"<b>FWD {fwd['num']}</b><br>" +
+                                         f"Start: {fwd['start_date'].strftime('%Y-%m-%d')}<br>" +
+                                         f"End: {fwd['end_date'].strftime('%Y-%m-%d')}<br>" +
+                                         f"Expected P/L: {pnl:+.2f}%<br>" +
+                                         f"<extra></extra>"
+                        ))
+                    
+                    # Add signal marker
+                    fig.add_trace(go.Scatter(
+                        x=[signal['date']],
+                        y=[y_pos],
+                        mode='markers',
+                        marker=dict(size=15, color='red', symbol='star'),
+                        name=f"Sygnał" if sig_idx == 0 else "",
+                        legendgroup="signal",
+                        showlegend=sig_idx == 0,
+                        hovertemplate=f"<b>Sygnał R2</b><br>" +
+                                     f"Data: {signal['date'].strftime('%Y-%m-%d')}<br>" +
+                                     f"Open: {signal['open']:.4f}<br>" +
+                                     f"R2: {signal['r2']:.4f}<br>" +
+                                     f"<extra></extra>"
+                    ))
+                
+                fig.update_layout(
+                    title=f"Timeline {strategy_mode} Forwardów (60-day windows)",
+                    xaxis_title="Data",
+                    yaxis_title="Sygnał",
+                    height=max(400, len(signals) * 40),
+                    hovermode='closest',
+                    yaxis=dict(showticklabels=False)
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Show signal details
+                st.subheader("Szczegóły Sygnałów")
+                for idx, signal in enumerate(signals):
+                    with st.expander(f"Sygnał {idx+1}: {signal['date'].strftime('%Y-%m-%d')} (Open: {signal['open']:.4f}, R2: {signal['r2']:.4f})"):
+                        cols = st.columns(strategy_mode)
+                        for i, fwd in enumerate(signal['forwards']):
+                            with cols[i]:
+                                pnl = expected_pnl[strategy_mode][i]
+                                pnl_pln = pnl / 100 * 1_000_000 * spot_rate
+                                st.metric(
+                                    f"FWD {fwd['num']} (+{fwd['start_offset']}d)",
+                                    f"{pnl:+.2f}%",
+                                    f"{pnl_pln:+,.0f} PLN"
+                                )
             
-            // Strategia 3 forwardy: 0, 30, 60 dni
-            if (appState.strategyMode === 3) {
-                forwards.push(
-                    { num: 1, startOffset: 0, startDate: new Date(row.date) },
-                    { num: 2, startOffset: 30, startDate: new Date(row.date.getTime() + 30*24*60*60*1000) },
-                    { num: 3, startOffset: 60, startDate: new Date(row.date.getTime() + 60*24*60*60*1000) }
-                );
-            }
-            // Strategia 6 forwardów: 0, 30, 60, 90, 120, 150 dni
-            else if (appState.strategyMode === 6) {
-                forwards.push(
-                    { num: 1, startOffset: 0, startDate: new Date(row.date) },
-                    { num: 2, startOffset: 30, startDate: new Date(row.date.getTime() + 30*24*60*60*1000) },
-                    { num: 3, startOffset: 60, startDate: new Date(row.date.getTime() + 60*24*60*60*1000) },
-                    { num: 4, startOffset: 90, startDate: new Date(row.date.getTime() + 90*24*60*60*1000) },
-                    { num: 5, startOffset: 120, startDate: new Date(row.date.getTime() + 120*24*60*60*1000) },
-                    { num: 6, startOffset: 150, startDate: new Date(row.date.getTime() + 150*24*60*60*1000) }
-                );
-            }
+            # TAB 2: Table
+            with tab2:
+                st.subheader("Szczegółowa Lista Sygnałów")
+                
+                table_data = []
+                for idx, signal in enumerate(signals):
+                    total_pnl = sum(expected_pnl[strategy_mode])
+                    total_pln = total_pnl / 100 * strategy_mode * 1_000_000 * spot_rate
+                    
+                    table_data.append({
+                        'Lp.': idx + 1,
+                        'Data Sygnału': signal['date'].strftime('%Y-%m-%d'),
+                        'Open': f"{signal['open']:.4f}",
+                        'R2': f"{signal['r2']:.4f}",
+                        'Pivot': f"{signal['pivot']:.4f}",
+                        'Forwardy': strategy_mode,
+                        'Exposure': f"EUR {strategy_mode}M",
+                        'Expected P/L': f"{total_pln:+,.0f} PLN"
+                    })
+                
+                df_table = pd.DataFrame(table_data)
+                st.dataframe(df_table, use_container_width=True)
             
-            appState.r2Signals.push({
-                date: row.date,
-                open: row.open,
-                r2: pivots.r2,
-                pivot: pivots.pivot,
-                forwards: forwards
-            });
-        }
-    });
-
-    // Update count
-    document.getElementById('totalR2Signals').textContent = appState.r2Signals.length;
-    document.getElementById('r2SignalsCount').textContent = appState.r2Signals.length;
-    
-    calculateActiveForwards();
-}
-
-// Obliczanie aktywnych forwardów
-function calculateActiveForwards() {
-    const today = new Date();
-    let activeCount = 0;
-    let totalExposure = 0;
-
-    appState.r2Signals.forEach(signal => {
-        signal.forwards.forEach(fwd => {
-            const endDate = new Date(fwd.startDate.getTime() + 60*24*60*60*1000);
-            if (fwd.startDate <= today && today <= endDate) {
-                activeCount++;
-                totalExposure += 1; // EUR 1M per forward
-            }
-        });
-    });
-
-    document.getElementById('activeForwards').textContent = activeCount;
-    document.getElementById('totalExposure').textContent = `EUR ${totalExposure}M`;
-    
-    // Expected P/L based on strategy mode
-    const expectedPerYear = appState.strategyMode === 3 ? 479000 : 471000;
-    document.getElementById('expectedPnL').textContent = `+${(expectedPerYear/1000).toFixed(0)}k PLN`;
-    
-    // Update comparison metrics
-    updateStrategyComparison();
-}
-
-// Zmiana strategii (3 vs 6)
-function changeStrategyMode(mode) {
-    appState.strategyMode = mode;
-    
-    // Update button states
-    document.getElementById('strategy3Btn').className = mode === 3
-        ? 'px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold shadow-lg'
-        : 'px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300';
-    
-    document.getElementById('strategy6Btn').className = mode === 6
-        ? 'px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold shadow-lg'
-        : 'px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300';
-    
-    // Recalculate signals
-    if (appState.historicalData.length > 0) {
-        calculateR2Signals();
-        renderStrategyTab();
-    }
-}
-
-// Update strategy comparison
-function updateStrategyComparison() {
-    const mode = appState.strategyMode;
-    
-    // Backtest results
-    const results = {
-        3: {
-            total: 5.00,      // +5.00M PLN
-            perYear: 479,     // +479k PLN/rok
-            winRate: 74.8,    // 74.8%
-            perSignal: 61,    // +61k PLN
-            signalsPerYear: 7.9
-        },
-        6: {
-            total: 4.95,      // +4.95M PLN
-            perYear: 471,     // +471k PLN/rok
-            winRate: 70.8,    // 70.8%
-            perSignal: 60,    // +60k PLN
-            signalsPerYear: 7.8
-        }
-    };
-    
-    const data = results[mode];
-    
-    document.getElementById('strategyTotal').textContent = `+${data.total.toFixed(2)}M PLN`;
-    document.getElementById('strategyPerYear').textContent = `+${data.perYear}k PLN`;
-    document.getElementById('strategyWinRate').textContent = `${data.winRate}%`;
-    document.getElementById('strategyPerSignal').textContent = `+${data.perSignal}k PLN`;
-    
-    // Update comparison text
-    const comparisonDiv = document.getElementById('strategyComparison');
-    if (mode === 3) {
-        comparisonDiv.innerHTML = `
-            <div class="bg-green-50 border border-green-200 rounded-lg p-4">
-                <h4 class="font-semibold text-green-800 mb-2">✅ Strategia 3 Forwardy (REKOMENDOWANA)</h4>
-                <ul class="text-sm text-green-900 space-y-1">
-                    <li>• <strong>Lepszy wynik:</strong> +5.00M vs +4.95M (6 fwd)</li>
-                    <li>• <strong>Wyższy win rate:</strong> 74.8% vs 70.8%</li>
-                    <li>• <strong>Prostsze zarządzanie:</strong> 3 pozycje vs 6</li>
-                    <li>• <strong>Mniejsze exposure:</strong> EUR 3M vs EUR 6M</li>
-                    <li>• <strong>Forwardy 4-6 są słabe:</strong> średnio -0.03%</li>
-                </ul>
-            </div>
-        `;
-    } else {
-        comparisonDiv.innerHTML = `
-            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <h4 class="font-semibold text-yellow-800 mb-2">⚠️ Strategia 6 Forwardów</h4>
-                <ul class="text-sm text-yellow-900 space-y-1">
-                    <li>• <strong>Podobny wynik:</strong> +4.95M vs +5.00M (3 fwd)</li>
-                    <li>• <strong>Niższy win rate:</strong> 70.8% vs 74.8%</li>
-                    <li>• <strong>2× więcej pracy:</strong> 6 pozycji vs 3</li>
-                    <li>• <strong>2× większe exposure:</strong> EUR 6M vs EUR 3M</li>
-                    <li>• <strong>Problem:</strong> Forwardy 4-6 prawie bezwartościowe</li>
-                </ul>
-            </div>
-        `;
-    }
-}
-
-// Render strategy tab
-function renderStrategyTab() {
-    renderR2SignalsTimeline();
-    renderR2SignalsTable();
-    renderForwardPerformanceChart();
-}
-
-// Render timeline with forwards
-function renderR2SignalsTimeline() {
-    const timeline = document.getElementById('r2SignalsTimeline');
-    if (!timeline || appState.r2Signals.length === 0) {
-        if (timeline) {
-            timeline.innerHTML = `
-                <div class="text-center text-gray-500 py-12">
-                    <p class="text-lg">Brak sygnałów R2 w ostatnich 12 miesiącach</p>
-                    <p class="text-sm mt-2">Wgraj dane historyczne aby zobaczyć sygnały</p>
-                </div>
-            `;
-        }
-        return;
-    }
-
-    const today = new Date();
-    const oneYearAgo = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
-    const oneYearFromNow = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
-    
-    let html = '<div class="space-y-4">';
-    
-    // Timeline scale (12 months)
-    const months = ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru'];
-    html += '<div class="flex justify-between text-xs text-gray-500 mb-4 border-b pb-2">';
-    for (let i = 0; i < 12; i++) {
-        const monthDate = new Date(oneYearAgo.getFullYear(), oneYearAgo.getMonth() + i + 1, 1);
-        html += `<div class="text-center flex-1">${months[monthDate.getMonth()]}</div>`;
-    }
-    html += '</div>';
-
-    // Render each signal with its forwards
-    appState.r2Signals.forEach((signal, idx) => {
-        html += `
-            <div class="relative bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors">
-                <div class="flex items-center justify-between mb-3">
-                    <div class="text-sm font-semibold text-gray-800">
-                        🎯 Sygnał ${idx + 1}: ${signal.date.toLocaleDateString('pl-PL')} (${signal.date.toLocaleDateString('en-US', {weekday: 'short'})})
-                    </div>
-                    <div class="text-xs text-gray-600">
-                        Open: <span class="font-bold text-blue-600">${signal.open.toFixed(4)}</span> | 
-                        R2: <span class="font-bold text-purple-600">${signal.r2.toFixed(4)}</span>
-                    </div>
-                </div>
-                <div class="space-y-2">
-        `;
-
-        // Colors for forwards
-        const colors = [
-            'bg-blue-500',
-            'bg-green-500', 
-            'bg-purple-500',
-            'bg-orange-500',
-            'bg-pink-500',
-            'bg-indigo-500'
-        ];
-
-        // Expected P/L per forward (from backtests)
-        const expectedPnL = {
-            3: [0.79, 0.58, 0.26],  // FWD 1, 2, 3 (ROLL strategy)
-            6: [0.79, 0.58, 0.26, -0.05, 0.13, -0.16]  // FWD 1-6
-        };
-
-        // Render each forward
-        signal.forwards.forEach((fwd, fwdIdx) => {
-            const endDate = new Date(fwd.startDate.getTime() + 60*24*60*60*1000);
-            const startPercent = Math.max(0, Math.min(100, ((fwd.startDate - oneYearAgo) / (oneYearFromNow - oneYearAgo)) * 100));
-            const endPercent = Math.max(0, Math.min(100, ((endDate - oneYearAgo) / (oneYearFromNow - oneYearAgo)) * 100));
-            const width = Math.max(2, endPercent - startPercent);
+            # TAB 3: Performance per Forward
+            with tab3:
+                st.subheader("Performance per Forward (Backtest 2015-2025)")
+                
+                fwd_names = [f"FWD {i+1} ({offset}d)" for i, offset in enumerate([0, 30, 60, 90, 120, 150][:strategy_mode])]
+                fwd_pnl = expected_pnl[strategy_mode]
+                
+                fig_perf = go.Figure()
+                
+                fig_perf.add_trace(go.Bar(
+                    x=fwd_names,
+                    y=fwd_pnl,
+                    marker_color=[colors[i] for i in range(strategy_mode)],
+                    text=[f"{pnl:+.2f}%" for pnl in fwd_pnl],
+                    textposition='outside'
+                ))
+                
+                fig_perf.update_layout(
+                    title="Expected P/L per Forward Type",
+                    xaxis_title="Forward",
+                    yaxis_title="Expected P/L (%)",
+                    height=400,
+                    showlegend=False
+                )
+                
+                fig_perf.add_hline(y=0, line_dash="dash", line_color="gray")
+                
+                st.plotly_chart(fig_perf, use_container_width=True)
+                
+                # Interpretation
+                if strategy_mode == 6:
+                    st.warning("""
+                    ⚠️ **Uwaga:** Forwardy 4-6 są słabe lub ujemne:
+                    - FWD 4 (90d): -0.05%
+                    - FWD 5 (120d): +0.13%
+                    - FWD 6 (150d): -0.16%
+                    
+                    **Dlatego rekomendujemy strategię 3 Forwardy!**
+                    """)
             
-            const pnl = expectedPnL[appState.strategyMode][fwdIdx];
-            const pnlColor = pnl > 0 ? 'text-green-600' : 'text-red-600';
-            
-            html += `
-                <div class="relative">
-                    <div class="flex items-center space-x-2">
-                        <span class="text-xs text-gray-600 w-16 font-medium">FWD ${fwd.num}</span>
-                        <div class="flex-1 relative h-8 bg-gray-200 rounded">
-                            <div class="${colors[fwdIdx]} absolute h-8 rounded timeline-bar flex items-center justify-center cursor-pointer"
-                                 style="left: ${startPercent}%; width: ${width}%;"
-                                 title="Start: ${fwd.startDate.toLocaleDateString('pl-PL')} | End: ${endDate.toLocaleDateString('pl-PL')} | Expected: ${pnl > 0 ? '+' : ''}${pnl}%">
-                                <span class="text-white text-xs font-medium">60d</span>
-                            </div>
-                        </div>
-                        <span class="text-xs ${pnlColor} w-20 font-bold">${pnl > 0 ? '+' : ''}${pnl}%</span>
-                        <span class="text-xs text-gray-600 w-24">EUR 1M</span>
-                    </div>
-                </div>
-            `;
-        });
+            # TAB 4: Backtest Results
+            with tab4:
+                st.subheader("💰 Podsumowanie Backtestów (2015-2025)")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("### 3 Forwardy ✅")
+                    st.metric("Total P/L (10 lat)", "+5.00M PLN")
+                    st.metric("Per Rok", "+479k PLN")
+                    st.metric("Win Rate", "74.8%")
+                    st.metric("Per Sygnał", "+61k PLN")
+                    st.success("**REKOMENDOWANE** - Lepszy wynik przy mniejszej pracy")
+                
+                with col2:
+                    st.markdown("### 6 Forwardów")
+                    st.metric("Total P/L (10 lat)", "+4.95M PLN")
+                    st.metric("Per Rok", "+471k PLN")
+                    st.metric("Win Rate", "70.8%")
+                    st.metric("Per Sygnał", "+60k PLN")
+                    st.warning("Praktycznie identyczny wynik przy 2× więcej pracy")
+                
+                st.divider()
+                
+                st.markdown("### Porównanie Strategii")
+                comparison_df = pd.DataFrame({
+                    'Metryka': ['Total (10 lat)', 'Per Rok', 'Win Rate', 'Per Sygnał', 'Exposure', 'Pracy'],
+                    '3 Forwardy': ['+5.00M PLN', '+479k PLN', '74.8%', '+61k PLN', 'EUR 3M', '3 pozycje'],
+                    '6 Forwardów': ['+4.95M PLN', '+471k PLN', '70.8%', '+60k PLN', 'EUR 6M', '6 pozycji']
+                })
+                st.dataframe(comparison_df, use_container_width=True)
+                
+                st.info("""
+                **Kluczowe Wnioski:**
+                - 3 forwardy dają **lepszy wynik** (+50k PLN więcej)
+                - **Wyższy win rate** (74.8% vs 70.8%)
+                - **Prostsze zarządzanie** (3 vs 6 pozycji)
+                - **Mniejsze exposure** (EUR 3M vs EUR 6M)
+                - Forwardy 4-6 prawie nie dodają wartości
+                """)
+                
+                # Strategy Rules
+                st.divider()
+                st.markdown("### 📋 Zasady Strategii ROLL")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.markdown("#### 🔴 ENTRY (Day 0)")
+                    st.markdown("""
+                    - Poniedziałek: Open ≥ R2
+                    - Otwórz 3 lub 6 forwardów
+                    - EUR 1M każdy (window 60d)
+                    - Start: 0, 30, 60d (+90, +120, +150d)
+                    """)
+                
+                with col2:
+                    st.markdown("#### 🟡 DAY 30 CHECK")
+                    st.markdown("""
+                    - Sprawdź: Close vs Entry
+                    - **ITM** (Close < Entry)?
+                      → ZAMKNIJ forward
+                    - **OTM** (Close ≥ Entry)?
+                      → ROLUJ +60 dni
+                    """)
+                
+                with col3:
+                    st.markdown("#### 🟢 DAY 60/90 EXIT")
+                    st.markdown("""
+                    - Zamknij wszystkie forwardy
+                    - Zapisz wyniki
+                    
+                    **3 FWD Expected:**
+                    - +61k PLN per sygnał
+                    - Win rate: 74.8%
+                    """)
+    
+    except Exception as e:
+        st.error(f"❌ Błąd wczytywania danych: {str(e)}")
+        st.info("Sprawdź format CSV. Powinien zawierać kolumny: Date,Price,Open,High,Low")
 
-        // Total per signal
-        const totalPnL = signal.forwards.reduce((sum, fwd, idx) => sum + expectedPnL[appState.strategyMode][idx], 0);
-        const totalPLN = totalPnL / 100 * appState.strategyMode * 1000000 * appState.spotRate;
+else:
+    # No file uploaded
+    st.info("👈 Wgraj plik CSV z danymi historycznymi EUR/PLN w lewym panelu")
+    
+    st.markdown("### 📁 Format CSV")
+    st.code("""Date,Price,Open,High,Low,Vol.,Change%
+11/22/2024,4.3350,4.3385,4.3433,4.3316,0,0.01%
+11/21/2024,4.3363,4.3415,4.3441,4.3346,0,-0.14%
+11/20/2024,4.3424,4.3381,4.3454,4.3369,0,0.09%
+""", language="csv")
+    
+    st.markdown("### 🎯 Jak Działa Strategia")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **3 Forwardy (REKOMENDOWANE):**
+        - Start: 0, 30, 60 dni
+        - Window: 60 dni każdy
+        - Expected: +479k PLN/rok
+        - Win rate: 74.8%
+        - Prostsze zarządzanie
+        """)
+    
+    with col2:
+        st.markdown("""
+        **6 Forwardów:**
+        - Start: 0, 30, 60, 90, 120, 150 dni
+        - Window: 60 dni każdy
+        - Expected: +471k PLN/rok
+        - Win rate: 70.8%
+        - ⚠️ Forwardy 4-6 słabe
+        """)
+    
+    st.markdown("""
+    ### 📋 Zasady ROLL
+    
+    1. **ENTRY:** Poniedziałek z sygnałem R2 (Open ≥ R2) → Otwórz forwardy
+    2. **DAY 30:** Sprawdź ITM/OTM → Zamknij ITM lub Roluj OTM +60d
+    3. **DAY 60/90:** Zamknij wszystkie forwardy
+    
+    **Expected Results:** +61k PLN per sygnał (3 forwardy × EUR 1M)
+    """)
 
-        html += `
-                    <div class="mt-3 pt-3 border-t border-gray-300">
-                        <div class="flex items-center justify-between text-sm">
-                            <span class="text-gray-600">Total per sygnał:</span>
-                            <span class="font-bold ${totalPnL > 0 ? 'text-green-600' : 'text-red-600'}">
-                                ${totalPnL > 0 ? '+' : ''}${totalPnL.toFixed(2)}% = ${totalPLN > 0 ? '+' : ''}${(totalPLN/1000).toFixed(0)}k PLN
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-
-    html += '</div>';
-    timeline.innerHTML = html;
-}
-
-// Render signals table
-function renderR2SignalsTable() {
-    const table = document.getElementById('r2SignalsTable');
-    if (!table || appState.r2Signals.length === 0) {
-        if (table) {
-            table.innerHTML = '<div class="text-center text-gray-500 py-8">Brak sygnałów do wyświetlenia</div>';
-        }
-        return;
-    }
-
-    let html = `
-        <table class="w-full text-sm">
-            <thead class="bg-gray-50 border-b border-gray-200">
-                <tr>
-                    <th class="px-4 py-3 text-left font-medium text-gray-600">Lp.</th>
-                    <th class="px-4 py-3 text-left font-medium text-gray-600">Data Sygnału</th>
-                    <th class="px-4 py-3 text-left font-medium text-gray-600">Open</th>
-                    <th class="px-4 py-3 text-left font-medium text-gray-600">R2</th>
-                    <th class="px-4 py-3 text-left font-medium text-gray-600">Pivot</th>
-                    <th class="px-4 py-3 text-center font-medium text-gray-600">Forwardy</th>
-                    <th class="px-4 py-3 text-right font-medium text-gray-600">Exposure</th>
-                    <th class="px-4 py-3 text-right font-medium text-gray-600">Expected P/L</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200">
-    `;
-
-    const expectedPnL = {
-        3: [0.79, 0.58, 0.26],
-        6: [0.79, 0.58, 0.26, -0.05, 0.13, -0.16]
-    };
-
-    appState.r2Signals.forEach((signal, idx) => {
-        const totalPnL = signal.forwards.reduce((sum, fwd, fIdx) => sum + expectedPnL[appState.strategyMode][fIdx], 0);
-        const totalPLN = totalPnL / 100 * appState.strategyMode * 1000000 * appState.spotRate;
-
-        html += `
-            <tr class="hover:bg-gray-50">
-                <td class="px-4 py-3 text-gray-800 font-medium">${idx + 1}</td>
-                <td class="px-4 py-3 text-gray-800">${signal.date.toLocaleDateString('pl-PL')}</td>
-                <td class="px-4 py-3 text-blue-600 font-bold">${signal.open.toFixed(4)}</td>
-                <td class="px-4 py-3 text-purple-600 font-bold">${signal.r2.toFixed(4)}</td>
-                <td class="px-4 py-3 text-gray-600">${signal.pivot.toFixed(4)}</td>
-                <td class="px-4 py-3 text-center">
-                    <span class="text-xs text-gray-600">${appState.strategyMode} forwardy</span>
-                </td>
-                <td class="px-4 py-3 text-right text-gray-800 font-medium">EUR ${appState.strategyMode}M</td>
-                <td class="px-4 py-3 text-right font-bold ${totalPnL > 0 ? 'text-green-600' : 'text-red-600'}">
-                    ${totalPnL > 0 ? '+' : ''}${(totalPLN/1000).toFixed(0)}k PLN
-                </td>
-            </tr>
-        `;
-    });
-
-    html += `
-            </tbody>
-        </table>
-    `;
-
-    table.innerHTML = html;
-}
-
-// Render forward performance chart
-function renderForwardPerformanceChart() {
-    const chart = document.getElementById('forwardPerformanceChart');
-    if (!chart) return;
-
-    const data = {
-        3: [
-            { name: 'FWD 1 (0d)', pnl: 0.79, color: 'bg-blue-500' },
-            { name: 'FWD 2 (30d)', pnl: 0.58, color: 'bg-green-500' },
-            { name: 'FWD 3 (60d)', pnl: 0.26, color: 'bg-purple-500' }
-        ],
-        6: [
-            { name: 'FWD 1 (0d)', pnl: 0.79, color: 'bg-blue-500' },
-            { name: 'FWD 2 (30d)', pnl: 0.58, color: 'bg-green-500' },
-            { name: 'FWD 3 (60d)', pnl: 0.26, color: 'bg-purple-500' },
-            { name: 'FWD 4 (90d)', pnl: -0.05, color: 'bg-orange-500' },
-            { name: 'FWD 5 (120d)', pnl: 0.13, color: 'bg-pink-500' },
-            { name: 'FWD 6 (150d)', pnl: -0.16, color: 'bg-indigo-500' }
-        ]
-    };
-
-    const forwards = data[appState.strategyMode];
-    const maxPnl = Math.max(...forwards.map(f => Math.abs(f.pnl)));
-
-    let html = '<div class="space-y-3">';
-
-    forwards.forEach(fwd => {
-        const barWidth = Math.abs(fwd.pnl) / maxPnl * 100;
-        const isPositive = fwd.pnl > 0;
-
-        html += `
-            <div>
-                <div class="flex items-center justify-between mb-1">
-                    <span class="text-sm font-medium text-gray-700">${fwd.name}</span>
-                    <span class="text-sm font-bold ${isPositive ? 'text-green-600' : 'text-red-600'}">
-                        ${isPositive ? '+' : ''}${fwd.pnl.toFixed(2)}%
-                    </span>
-                </div>
-                <div class="relative w-full h-6 bg-gray-200 rounded">
-                    <div class="${fwd.color} h-6 rounded ${isPositive ? '' : 'opacity-50'}"
-                         style="width: ${barWidth}%">
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-
-    html += '</div>';
-    chart.innerHTML = html;
-}
-
-// Expose functions globally
-window.handleCSVUpload = handleCSVUpload;
-window.changeStrategyMode = changeStrategyMode;
+# Footer
+st.divider()
+st.caption("Strategia R2 - Backtest 2015-2025 | Pivot Points MT5 (14-day lookback)")
