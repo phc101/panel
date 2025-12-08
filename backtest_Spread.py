@@ -1,523 +1,636 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
-import requests
-from bs4 import BeautifulSoup
+from datetime import datetime
+import base64
+from io import BytesIO
+from PIL import Image
 import json
+import requests
 
-st.set_page_config(page_title="CME FedWatch Z-Score Tracker", layout="wide", page_icon="📊")
+st.set_page_config(
+    page_title="AI Volatility Chart Analyzer",
+    layout="wide",
+    page_icon="🔮"
+)
 
 # Custom CSS
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.5rem;
+        font-size: 3rem;
         font-weight: bold;
-        color: #1f77b4;
+        background: linear-gradient(90deg, #1f77b4, #ff7f0e);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
         text-align: center;
         margin-bottom: 1rem;
     }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
+    .analysis-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        color: white;
+        margin: 1rem 0;
+    }
+    .insight-card {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
         border-radius: 10px;
         border-left: 5px solid #1f77b4;
+        margin: 1rem 0;
     }
-    .warning-box {
-        background-color: #fff3cd;
+    .signal-bullish {
+        background-color: #d4edda;
+        border-left: 5px solid #28a745;
         padding: 1rem;
         border-radius: 5px;
+        margin: 0.5rem 0;
+    }
+    .signal-bearish {
+        background-color: #f8d7da;
+        border-left: 5px solid #dc3545;
+        padding: 1rem;
+        border-radius: 5px;
+        margin: 0.5rem 0;
+    }
+    .signal-neutral {
+        background-color: #fff3cd;
         border-left: 5px solid #ffc107;
-        margin: 1rem 0;
+        padding: 1rem;
+        border-radius: 5px;
+        margin: 0.5rem 0;
+    }
+    .metric-extreme {
+        color: #dc3545;
+        font-weight: bold;
+    }
+    .metric-normal {
+        color: #28a745;
+        font-weight: bold;
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-header">📊 CME FedWatch Z-Score Tracker</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🔮 AI Volatility Chart Analyzer</div>', unsafe_allow_html=True)
+st.markdown("### Upload a volatility chart and get instant market intelligence")
 
 # Sidebar configuration
-st.sidebar.header("⚙️ Configuration")
+st.sidebar.header("⚙️ Analysis Settings")
 
-data_source = st.sidebar.radio(
-    "Data Source",
-    ["Manual Input", "CSV Upload", "API (Requires Key)"],
-    help="Choose how to input FedWatch data"
+analysis_depth = st.sidebar.select_slider(
+    "Analysis Depth",
+    options=["Quick", "Standard", "Comprehensive", "Deep Dive"],
+    value="Standard",
+    help="How detailed should the analysis be?"
 )
 
-# Initialize session state
-if 'fed_data' not in st.session_state:
-    st.session_state.fed_data = pd.DataFrame()
+include_sections = st.sidebar.multiselect(
+    "Include Analysis Sections",
+    [
+        "Market Sentiment",
+        "Risk Metrics",
+        "Trading Signals", 
+        "Price Expectations",
+        "Volatility Structure",
+        "Positioning Analysis",
+        "Historical Context",
+        "Risk Scenarios"
+    ],
+    default=["Market Sentiment", "Risk Metrics", "Trading Signals", "Price Expectations"]
+)
 
-# Function to calculate z-scores
-def calculate_zscore(data, column, window=20):
-    """Calculate rolling z-score for a given column"""
-    rolling_mean = data[column].rolling(window=window).mean()
-    rolling_std = data[column].rolling(window=window).std()
-    zscore = (data[column] - rolling_mean) / rolling_std
-    return zscore
+trading_horizon = st.sidebar.radio(
+    "Trading Horizon",
+    ["Intraday", "Short-term (1-5 days)", "Medium-term (1-4 weeks)", "Long-term (1-3 months)"],
+    index=1
+)
 
-# Function to scrape FedWatch data (placeholder - actual implementation would need API)
-def fetch_fedwatch_data():
+# Main upload area
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    uploaded_file = st.file_uploader(
+        "📊 Upload Volatility Chart (PNG, JPG, JPEG)",
+        type=['png', 'jpg', 'jpeg'],
+        help="Upload a screenshot of volatility metrics (CVOL, Skew, Up/Down Var, etc.)"
+    )
+
+with col2:
+    st.info("""
+    **Supported Charts:**
+    - CVOL Index
+    - Skew / Skew Ratio
+    - Up/Down Variance
+    - ATM Volatility
+    - Volatility Surfaces
+    - Options Flow
+    """)
+
+# Analysis function using Claude API
+def analyze_chart_with_ai(image_bytes, analysis_settings):
     """
-    Placeholder function for FedWatch data fetching
-    Note: Real implementation requires CME API subscription
+    Analyze volatility chart using Claude's vision API
     """
-    st.info("📌 Note: Direct scraping of FedWatch is complex. Using API or manual input is recommended.")
-    return None
+    
+    # Convert image to base64
+    image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+    
+    # Determine image type
+    img = Image.open(BytesIO(image_bytes))
+    img_format = img.format.lower()
+    if img_format == 'jpg':
+        img_format = 'jpeg'
+    
+    media_type = f"image/{img_format}"
+    
+    # Build comprehensive prompt based on settings
+    prompt = f"""You are an expert FX options trader and volatility analyst. Analyze this volatility chart and provide detailed market intelligence.
 
-# Manual Input Section
-if data_source == "Manual Input":
-    st.sidebar.subheader("📝 Enter FedWatch Data")
+ANALYSIS DEPTH: {analysis_settings['depth']}
+TRADING HORIZON: {analysis_settings['horizon']}
+
+Please analyze the chart and provide insights in the following structure:
+
+1. CHART IDENTIFICATION
+   - What metrics are shown (CVOL, Skew, Up/Down Var, etc.)
+   - Time period covered
+   - Currency pair or asset
+   - Current values vs historical levels
+
+2. CURRENT MARKET STRUCTURE
+   - Are metrics elevated, suppressed, or normal?
+   - Calculate approximate z-scores from visual (high/low/normal)
+   - Identify any divergences between metrics
+   - Trend direction and strength
+
+3. WHAT THE MARKET IS PRICING
+   - Directional bias (bullish/bearish/neutral)
+   - Tail risk expectations
+   - Volatility regime (low/medium/high)
+   - Time decay characteristics
+
+4. KEY INSIGHTS
+   - Most important patterns or anomalies
+   - Historical context and comparisons
+   - Correlation or divergence analysis
+   - Hidden risks or opportunities
+
+"""
+
+    # Add requested sections
+    if "Market Sentiment" in analysis_settings['sections']:
+        prompt += """
+5. MARKET SENTIMENT ANALYSIS
+   - Overall positioning (long/short bias)
+   - Risk appetite indicators
+   - Fear vs greed signals
+   - Institutional vs retail behavior
+"""
+
+    if "Risk Metrics" in analysis_settings['sections']:
+        prompt += """
+6. RISK METRICS ASSESSMENT
+   - Downside vs upside risk asymmetry
+   - Tail risk pricing
+   - Volatility of volatility
+   - Term structure implications
+"""
+
+    if "Trading Signals" in analysis_settings['sections']:
+        prompt += """
+7. TRADING SIGNALS
+   - Entry/exit levels
+   - Stop loss recommendations
+   - Position sizing guidance
+   - Options strategies to consider
+"""
+
+    if "Price Expectations" in analysis_settings['sections']:
+        prompt += """
+8. PRICE EXPECTATIONS
+   - Expected price ranges
+   - Breakout/breakdown levels
+   - Probability of moves (based on IV)
+   - Support/resistance from vol structure
+"""
+
+    if "Volatility Structure" in analysis_settings['sections']:
+        prompt += """
+9. VOLATILITY STRUCTURE ANALYSIS
+   - Shape of volatility curve
+   - Strike skew analysis
+   - Term structure (if visible)
+   - Calendar spread opportunities
+"""
+
+    if "Positioning Analysis" in analysis_settings['sections']:
+        prompt += """
+10. POSITIONING ANALYSIS
+    - Where is the market positioned?
+    - Overcrowded trades
+    - Contrarian opportunities
+    - Hedge fund vs commercial positioning
+"""
+
+    if "Historical Context" in analysis_settings['sections']:
+        prompt += """
+11. HISTORICAL CONTEXT
+    - How extreme are current readings?
+    - Similar historical patterns
+    - What happened after similar setups?
+    - Regime change indicators
+"""
+
+    if "Risk Scenarios" in analysis_settings['sections']:
+        prompt += """
+12. RISK SCENARIOS
+    - Bull case: What would drive this?
+    - Bear case: What would drive this?
+    - Base case: Most likely outcome
+    - Black swan risks
+"""
+
+    prompt += """
+
+IMPORTANT INSTRUCTIONS:
+- Be specific with numbers when visible on the chart
+- Use clear directional language (bullish/bearish/neutral)
+- Highlight any extreme or anomalous readings
+- Compare current levels to visible historical ranges
+- Provide actionable insights, not just descriptions
+- Use trader-friendly terminology
+- Flag any divergences or structural breaks
+- Estimate z-scores as HIGH/EXTREME/NORMAL/LOW based on visual range
+
+Format your response in clear sections with headers using **bold markdown**.
+Use bullet points for lists.
+Highlight key insights with emojis: 🔴 for bearish, 🟢 for bullish, 🟡 for neutral, 🚨 for extreme readings.
+"""
+
+    # Make API call to Claude
+    try:
+        api_url = "https://api.anthropic.com/v1/messages"
+        
+        payload = {
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 4000,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_b64
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01"
+        }
+        
+        response = requests.post(api_url, headers=headers, json=payload)
+        
+        if response.status_code == 200:
+            result = response.json()
+            analysis_text = result['content'][0]['text']
+            return {
+                'success': True,
+                'analysis': analysis_text,
+                'metadata': {
+                    'timestamp': datetime.now().isoformat(),
+                    'model': 'claude-sonnet-4',
+                    'depth': analysis_settings['depth'],
+                    'horizon': analysis_settings['horizon']
+                }
+            }
+        else:
+            return {
+                'success': False,
+                'error': f"API Error: {response.status_code}",
+                'details': response.text
+            }
+            
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+def extract_signals_from_analysis(analysis_text):
+    """
+    Extract key signals and metrics from the analysis
+    """
+    signals = {
+        'sentiment': 'Neutral',
+        'confidence': 'Medium',
+        'key_metrics': [],
+        'action': 'Hold'
+    }
+    
+    # Simple parsing logic
+    lower_text = analysis_text.lower()
+    
+    # Sentiment detection
+    if 'bearish' in lower_text and 'bullish' not in lower_text:
+        signals['sentiment'] = 'Bearish'
+        signals['action'] = 'Sell/Hedge'
+    elif 'bullish' in lower_text and 'bearish' not in lower_text:
+        signals['sentiment'] = 'Bullish'
+        signals['action'] = 'Buy'
+    elif 'extreme' in lower_text or '🚨' in analysis_text:
+        signals['confidence'] = 'High'
+    
+    # Extract metrics mentioned
+    metrics = ['cvol', 'skew', 'variance', 'volatility', 'iv']
+    for metric in metrics:
+        if metric in lower_text:
+            signals['key_metrics'].append(metric.upper())
+    
+    return signals
+
+# Main analysis area
+if uploaded_file is not None:
+    # Display uploaded image
+    image_bytes = uploaded_file.read()
+    image = Image.open(BytesIO(image_bytes))
+    
+    col1, col2 = st.columns([3, 2])
+    
+    with col1:
+        st.image(image, caption="Uploaded Chart", use_container_width=True)
+    
+    with col2:
+        st.markdown("### 📊 Chart Info")
+        st.write(f"**Filename:** {uploaded_file.name}")
+        st.write(f"**Size:** {len(image_bytes) / 1024:.1f} KB")
+        st.write(f"**Dimensions:** {image.size[0]} x {image.size[1]}")
+        st.write(f"**Format:** {image.format}")
+    
+    # Analysis button
+    if st.button("🔮 Analyze Chart with AI", type="primary", use_container_width=True):
+        
+        with st.spinner("🤖 AI is analyzing your chart... This may take 10-30 seconds..."):
+            
+            analysis_settings = {
+                'depth': analysis_depth,
+                'horizon': trading_horizon,
+                'sections': include_sections
+            }
+            
+            result = analyze_chart_with_ai(image_bytes, analysis_settings)
+            
+            if result['success']:
+                analysis = result['analysis']
+                
+                # Store in session state
+                st.session_state['last_analysis'] = result
+                st.session_state['analysis_text'] = analysis
+                
+                st.success("✅ Analysis Complete!")
+                
+                # Extract signals
+                signals = extract_signals_from_analysis(analysis)
+                
+                # Display quick signals at top
+                st.markdown("---")
+                st.markdown("## 🎯 Quick Signals")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    sentiment_color = "🟢" if signals['sentiment'] == 'Bullish' else "🔴" if signals['sentiment'] == 'Bearish' else "🟡"
+                    st.metric("Market Sentiment", f"{sentiment_color} {signals['sentiment']}")
+                
+                with col2:
+                    st.metric("Confidence Level", signals['confidence'])
+                
+                with col3:
+                    st.metric("Suggested Action", signals['action'])
+                
+                with col4:
+                    st.metric("Key Metrics", len(signals['key_metrics']))
+                
+                # Display full analysis
+                st.markdown("---")
+                st.markdown("## 📊 Detailed Analysis")
+                
+                # Render the analysis in a nice format
+                analysis_html = f"""
+                <div class="analysis-box">
+                    <h3 style="color: white; margin-top: 0;">🤖 AI Market Intelligence</h3>
+                    <p style="color: white; opacity: 0.9; font-size: 0.9em;">
+                        Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 
+                        Model: Claude Sonnet 4 | 
+                        Horizon: {trading_horizon}
+                    </p>
+                </div>
+                """
+                st.markdown(analysis_html, unsafe_allow_html=True)
+                
+                # Display analysis with markdown formatting
+                st.markdown(analysis)
+                
+                # Download options
+                st.markdown("---")
+                st.markdown("### 💾 Export Analysis")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Text download
+                    analysis_full = f"""
+VOLATILITY CHART ANALYSIS REPORT
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Analysis Depth: {analysis_depth}
+Trading Horizon: {trading_horizon}
+
+{'=' * 60}
+
+{analysis}
+
+{'=' * 60}
+
+QUICK SIGNALS:
+- Market Sentiment: {signals['sentiment']}
+- Confidence Level: {signals['confidence']}
+- Suggested Action: {signals['action']}
+- Key Metrics: {', '.join(signals['key_metrics'])}
+
+{'=' * 60}
+Disclaimer: This analysis is for informational purposes only. 
+Not financial advice. Always conduct your own research.
+"""
+                    st.download_button(
+                        label="📄 Download as Text",
+                        data=analysis_full,
+                        file_name=f"volatility_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                        mime="text/plain"
+                    )
+                
+                with col2:
+                    # JSON download
+                    json_data = {
+                        'timestamp': datetime.now().isoformat(),
+                        'filename': uploaded_file.name,
+                        'analysis_settings': analysis_settings,
+                        'signals': signals,
+                        'full_analysis': analysis,
+                        'metadata': result['metadata']
+                    }
+                    
+                    st.download_button(
+                        label="📊 Download as JSON",
+                        data=json.dumps(json_data, indent=2),
+                        file_name=f"volatility_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json"
+                    )
+                
+            else:
+                st.error(f"❌ Analysis failed: {result['error']}")
+                if 'details' in result:
+                    with st.expander("Error Details"):
+                        st.code(result['details'])
+
+# Display previous analysis if available
+elif 'last_analysis' in st.session_state:
+    st.info("👆 Upload a new chart to analyze, or view your previous analysis below")
+    
+    with st.expander("📜 View Previous Analysis", expanded=True):
+        st.markdown(st.session_state['analysis_text'])
+
+# Help and examples section
+else:
+    st.markdown("---")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        meeting_date = st.date_input("FOMC Meeting Date", datetime.now() + timedelta(days=30))
-        reporting_date = st.date_input("Reporting Date", datetime.now())
+        st.markdown("""
+        ### 🎯 How It Works
+        
+        1. **Upload** a volatility chart screenshot
+        2. **Configure** analysis settings in sidebar
+        3. **Click** "Analyze Chart with AI"
+        4. **Get** instant market intelligence
+        
+        ### 📊 Supported Charts
+        
+        - **CVOL Index** - Overall volatility level
+        - **Skew/Skew Ratio** - Put/Call asymmetry
+        - **Up/Down Variance** - Directional risk
+        - **ATM Volatility** - At-the-money IV
+        - **Volatility Surface** - Strike/time structure
+        - **Multi-metric** - Combined views
+        
+        ### 🔍 What You'll Get
+        
+        - Market sentiment (bullish/bearish/neutral)
+        - Risk metrics assessment
+        - Trading signals and levels
+        - Price expectations
+        - Volatility structure analysis
+        - Positioning insights
+        - Historical context
+        - Scenario analysis
+        """)
     
     with col2:
-        rate_range = st.text_input("Rate Range (e.g., 4.25-4.50)", "4.25-4.50")
-        probability = st.number_input("Probability (%)", 0.0, 100.0, 50.0, 0.1)
+        st.markdown("""
+        ### 💡 Tips for Best Results
+        
+        **Chart Quality:**
+        - Clear, high-resolution images
+        - Visible axis labels and legends
+        - Full chart view (not cropped)
+        - Recent data preferred
+        
+        **Analysis Settings:**
+        - Match horizon to your trading style
+        - Select relevant sections
+        - Use "Deep Dive" for complex charts
+        - "Quick" for fast insights
+        
+        **Interpretation:**
+        - Look for 🚨 extreme readings
+        - Check for divergences
+        - Compare to historical context
+        - Consider multiple timeframes
+        
+        ### 🎓 Use Cases
+        
+        **For Traders:**
+        - Pre-trade analysis
+        - Position sizing
+        - Risk management
+        - Timing entries/exits
+        
+        **For Risk Managers:**
+        - Portfolio risk assessment
+        - Hedge effectiveness
+        - Tail risk monitoring
+        - Exposure management
+        
+        **For Analysts:**
+        - Market structure analysis
+        - Research and reports
+        - Pattern recognition
+        - Strategy development
+        """)
     
-    if st.sidebar.button("➕ Add Data Point"):
-        new_data = pd.DataFrame({
-            'meeting_date': [meeting_date],
-            'reporting_date': [reporting_date],
-            'rate_range': [rate_range],
-            'probability': [probability],
-            'timestamp': [datetime.now()]
-        })
-        
-        if st.session_state.fed_data.empty:
-            st.session_state.fed_data = new_data
-        else:
-            st.session_state.fed_data = pd.concat([st.session_state.fed_data, new_data], ignore_index=True)
-        
-        st.success("✅ Data point added!")
-
-# CSV Upload Section
-elif data_source == "CSV Upload":
-    st.sidebar.subheader("📁 Upload CSV File")
-    st.sidebar.markdown("""
-    **Expected CSV format:**
-    - meeting_date (YYYY-MM-DD)
-    - reporting_date (YYYY-MM-DD)
-    - rate_range (e.g., 4.25-4.50)
-    - probability (0-100)
-    """)
-    
-    uploaded_file = st.sidebar.file_uploader("Choose CSV file", type=['csv'])
-    
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-            df['meeting_date'] = pd.to_datetime(df['meeting_date'])
-            df['reporting_date'] = pd.to_datetime(df['reporting_date'])
-            st.session_state.fed_data = df
-            st.success(f"✅ Loaded {len(df)} data points!")
-        except Exception as e:
-            st.error(f"❌ Error loading CSV: {e}")
-
-# API Section
-elif data_source == "API (Requires Key)":
-    st.sidebar.subheader("🔑 API Configuration")
-    
-    api_key = st.sidebar.text_input("CME API Key", type="password", help="Enter your CME Group API key")
-    api_endpoint = st.sidebar.text_input(
-        "API Endpoint",
-        "https://api.cmegroup.com/fedwatch/v1/forecasts",
-        help="CME FedWatch API endpoint"
-    )
-    
-    if st.sidebar.button("🔄 Fetch Data"):
-        if not api_key:
-            st.error("❌ Please enter your API key")
-        else:
-            try:
-                headers = {
-                    'Authorization': f'Bearer {api_key}',
-                    'Content-Type': 'application/json'
-                }
-                
-                response = requests.get(api_endpoint, headers=headers)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    # Process API response (structure depends on actual API)
-                    st.success("✅ Data fetched successfully!")
-                    st.json(data)  # Display raw data for inspection
-                else:
-                    st.error(f"❌ API Error: {response.status_code}")
-                    st.error(f"Response: {response.text}")
-            except Exception as e:
-                st.error(f"❌ Error fetching data: {e}")
-
-# Main dashboard area
-if not st.session_state.fed_data.empty:
-    df = st.session_state.fed_data.copy()
-    
-    # Convert dates if needed
-    if 'meeting_date' in df.columns:
-        df['meeting_date'] = pd.to_datetime(df['meeting_date'])
-        df['reporting_date'] = pd.to_datetime(df['reporting_date'])
-    
-    # Sort by reporting date
-    df = df.sort_values('reporting_date')
-    
-    # Analysis parameters
-    st.sidebar.header("📈 Analysis Parameters")
-    zscore_window = st.sidebar.slider("Z-Score Window", 5, 50, 20, help="Rolling window for z-score calculation")
-    zscore_threshold = st.sidebar.slider("Z-Score Threshold", 1.0, 3.0, 2.0, 0.1, help="Threshold for extreme readings")
-    
-    # Calculate z-scores
-    df['zscore'] = calculate_zscore(df, 'probability', window=zscore_window)
-    df['zscore_abs'] = df['zscore'].abs()
-    
-    # Calculate moving averages
-    df['prob_ma_5'] = df['probability'].rolling(window=5).mean()
-    df['prob_ma_20'] = df['probability'].rolling(window=20).mean()
-    
-    # Tabs for different views
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "📈 Z-Score Analysis", "📉 Probability Trends", "📋 Data Table"])
-    
-    with tab1:
-        st.subheader("Current Market Snapshot")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        latest_prob = df['probability'].iloc[-1]
-        latest_zscore = df['zscore'].iloc[-1] if not pd.isna(df['zscore'].iloc[-1]) else 0
-        avg_prob = df['probability'].mean()
-        
-        with col1:
-            st.metric(
-                "Latest Probability",
-                f"{latest_prob:.1f}%",
-                delta=f"{latest_prob - df['probability'].iloc[-2]:.1f}%" if len(df) > 1 else None
-            )
-        
-        with col2:
-            st.metric(
-                "Current Z-Score",
-                f"{latest_zscore:.2f}",
-                delta="Extreme" if abs(latest_zscore) > zscore_threshold else "Normal",
-                delta_color="inverse" if abs(latest_zscore) > zscore_threshold else "normal"
-            )
-        
-        with col3:
-            st.metric(
-                "Average Probability",
-                f"{avg_prob:.1f}%"
-            )
-        
-        with col4:
-            extreme_readings = len(df[df['zscore_abs'] > zscore_threshold])
-            st.metric(
-                "Extreme Readings",
-                f"{extreme_readings}",
-                delta=f"{(extreme_readings/len(df)*100):.1f}% of data"
-            )
-        
-        # Quick chart
-        st.subheader("Probability Over Time")
-        fig = go.Figure()
-        
-        fig.add_trace(go.Scatter(
-            x=df['reporting_date'],
-            y=df['probability'],
-            mode='lines+markers',
-            name='Probability',
-            line=dict(color='#1f77b4', width=2),
-            marker=dict(size=6)
-        ))
-        
-        fig.update_layout(
-            title="Rate Probability Timeline",
-            xaxis_title="Reporting Date",
-            yaxis_title="Probability (%)",
-            hovermode='x unified',
-            height=400
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with tab2:
-        st.subheader("Z-Score Analysis")
-        
-        # Create subplot figure
-        fig = make_subplots(
-            rows=2, cols=1,
-            subplot_titles=('Probability with Moving Averages', 'Z-Score'),
-            vertical_spacing=0.12,
-            row_heights=[0.5, 0.5]
-        )
-        
-        # Top plot - Probability
-        fig.add_trace(
-            go.Scatter(
-                x=df['reporting_date'],
-                y=df['probability'],
-                mode='lines+markers',
-                name='Probability',
-                line=dict(color='#1f77b4', width=2),
-                marker=dict(size=6)
-            ),
-            row=1, col=1
-        )
-        
-        fig.add_trace(
-            go.Scatter(
-                x=df['reporting_date'],
-                y=df['prob_ma_5'],
-                mode='lines',
-                name='MA(5)',
-                line=dict(color='orange', width=1, dash='dash')
-            ),
-            row=1, col=1
-        )
-        
-        fig.add_trace(
-            go.Scatter(
-                x=df['reporting_date'],
-                y=df['prob_ma_20'],
-                mode='lines',
-                name='MA(20)',
-                line=dict(color='red', width=1, dash='dot')
-            ),
-            row=1, col=1
-        )
-        
-        # Bottom plot - Z-Score
-        colors = ['red' if abs(z) > zscore_threshold else 'gray' for z in df['zscore']]
-        
-        fig.add_trace(
-            go.Bar(
-                x=df['reporting_date'],
-                y=df['zscore'],
-                name='Z-Score',
-                marker=dict(color=colors)
-            ),
-            row=2, col=1
-        )
-        
-        # Add threshold lines
-        fig.add_hline(y=zscore_threshold, line_dash="dash", line_color="red", row=2, col=1)
-        fig.add_hline(y=-zscore_threshold, line_dash="dash", line_color="red", row=2, col=1)
-        fig.add_hline(y=0, line_dash="solid", line_color="black", row=2, col=1)
-        
-        fig.update_xaxes(title_text="Reporting Date", row=2, col=1)
-        fig.update_yaxes(title_text="Probability (%)", row=1, col=1)
-        fig.update_yaxes(title_text="Z-Score", row=2, col=1)
-        
-        fig.update_layout(
-            height=700,
-            showlegend=True,
-            hovermode='x unified'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Z-Score distribution
-        st.subheader("Z-Score Distribution")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            fig_hist = go.Figure()
-            fig_hist.add_trace(go.Histogram(
-                x=df['zscore'].dropna(),
-                nbinsx=30,
-                name='Z-Score',
-                marker=dict(color='#1f77b4', line=dict(color='white', width=1))
-            ))
-            
-            fig_hist.add_vline(x=zscore_threshold, line_dash="dash", line_color="red", annotation_text="Threshold")
-            fig_hist.add_vline(x=-zscore_threshold, line_dash="dash", line_color="red")
-            
-            fig_hist.update_layout(
-                title="Z-Score Distribution",
-                xaxis_title="Z-Score",
-                yaxis_title="Frequency",
-                height=350
-            )
-            
-            st.plotly_chart(fig_hist, use_container_width=True)
-        
-        with col2:
-            # Extreme readings table
-            extreme_df = df[df['zscore_abs'] > zscore_threshold][['reporting_date', 'probability', 'zscore', 'rate_range']]
-            
-            st.markdown("**🚨 Extreme Z-Score Readings**")
-            if not extreme_df.empty:
-                st.dataframe(
-                    extreme_df.sort_values('zscore_abs', ascending=False),
-                    use_container_width=True,
-                    height=300
-                )
-            else:
-                st.info("No extreme readings found with current threshold")
-    
-    with tab3:
-        st.subheader("Probability Trends by Rate Range")
-        
-        # Group by rate range
-        if 'rate_range' in df.columns:
-            fig_range = go.Figure()
-            
-            for rate_range in df['rate_range'].unique():
-                mask = df['rate_range'] == rate_range
-                fig_range.add_trace(go.Scatter(
-                    x=df[mask]['reporting_date'],
-                    y=df[mask]['probability'],
-                    mode='lines+markers',
-                    name=rate_range,
-                    line=dict(width=2),
-                    marker=dict(size=6)
-                ))
-            
-            fig_range.update_layout(
-                title="Probability by Rate Range Over Time",
-                xaxis_title="Reporting Date",
-                yaxis_title="Probability (%)",
-                hovermode='x unified',
-                height=500
-            )
-            
-            st.plotly_chart(fig_range, use_container_width=True)
-        
-        # Change analysis
-        st.subheader("Period-over-Period Changes")
-        
-        df['prob_change'] = df['probability'].diff()
-        df['prob_pct_change'] = df['probability'].pct_change() * 100
-        
-        fig_change = go.Figure()
-        
-        fig_change.add_trace(go.Bar(
-            x=df['reporting_date'],
-            y=df['prob_change'],
-            name='Absolute Change',
-            marker=dict(
-                color=df['prob_change'],
-                colorscale='RdYlGn',
-                showscale=True,
-                colorbar=dict(title="Change")
-            )
-        ))
-        
-        fig_change.update_layout(
-            title="Probability Changes",
-            xaxis_title="Reporting Date",
-            yaxis_title="Change in Probability (%)",
-            height=400
-        )
-        
-        st.plotly_chart(fig_change, use_container_width=True)
-    
-    with tab4:
-        st.subheader("📋 Complete Data Table")
-        
-        # Display options
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            show_columns = st.multiselect(
-                "Select columns to display",
-                df.columns.tolist(),
-                default=['reporting_date', 'meeting_date', 'rate_range', 'probability', 'zscore']
-            )
-        
-        with col2:
-            download_format = st.selectbox("Download format", ["CSV", "Excel"])
-        
-        # Display filtered dataframe
-        display_df = df[show_columns].copy()
-        
-        st.dataframe(
-            display_df.sort_values('reporting_date', ascending=False),
-            use_container_width=True,
-            height=400
-        )
-        
-        # Download button
-        if download_format == "CSV":
-            csv = display_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download CSV",
-                data=csv,
-                file_name=f"fedwatch_data_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
-        else:
-            # For Excel, need to use BytesIO
-            from io import BytesIO
-            buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                display_df.to_excel(writer, index=False, sheet_name='FedWatch Data')
-            
-            st.download_button(
-                label="📥 Download Excel",
-                data=buffer.getvalue(),
-                file_name=f"fedwatch_data_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-    
-    # Sidebar statistics
-    st.sidebar.header("📊 Statistics")
-    st.sidebar.metric("Total Data Points", len(df))
-    st.sidebar.metric("Date Range", f"{df['reporting_date'].min().strftime('%Y-%m-%d')} to {df['reporting_date'].max().strftime('%Y-%m-%d')}")
-    st.sidebar.metric("Avg Z-Score", f"{df['zscore'].mean():.2f}" if not df['zscore'].isna().all() else "N/A")
-    st.sidebar.metric("Max Z-Score", f"{df['zscore'].max():.2f}" if not df['zscore'].isna().all() else "N/A")
-    st.sidebar.metric("Min Z-Score", f"{df['zscore'].min():.2f}" if not df['zscore'].isna().all() else "N/A")
-
-else:
-    st.info("👆 Please add data using the sidebar options to begin analysis")
-    
-    # Show example data format
-    st.markdown("### 📝 Example Data Format")
-    
-    example_df = pd.DataFrame({
-        'meeting_date': [datetime.now() + timedelta(days=30)]*5,
-        'reporting_date': [datetime.now() - timedelta(days=i) for i in range(5)],
-        'rate_range': ['4.25-4.50']*5,
-        'probability': [45.2, 47.8, 51.3, 48.9, 50.1]
-    })
-    
-    st.dataframe(example_df)
-    
+    st.markdown("---")
     st.markdown("""
-    ### 🔍 How to Use This Dashboard
+    ### 📝 Example Analysis Output
     
-    1. **Data Input**: Choose your preferred method in the sidebar:
-       - **Manual Input**: Enter data points one by one
-       - **CSV Upload**: Upload a prepared CSV file
-       - **API**: Connect with your CME API key (requires subscription)
-    
-    2. **Analysis**: Once data is loaded, explore:
-       - **Overview**: Current snapshot and timeline
-       - **Z-Score Analysis**: Statistical deviation from mean
-       - **Probability Trends**: Track changes over time
-       - **Data Table**: View and download complete dataset
-    
-    3. **Interpretation**:
-       - **Z-Score > 2**: Unusually high probability (potential overpricing)
-       - **Z-Score < -2**: Unusually low probability (potential underpricing)
-       - **Z-Score ≈ 0**: Probability near historical average
-    
-    ### 📌 Note on CME FedWatch API
-    
-    Direct API access requires a CME Group subscription ($25/month minimum). 
-    Visit [CME Market Data APIs](https://www.cmegroup.com/market-data/market-data-api.html) to subscribe.
+    After uploading your chart, you'll receive:
     """)
+    
+    example_output = """
+    **CHART IDENTIFICATION**
+    - EUR/USD CVOL History (6-month view)
+    - Current CVOL: 0.96 🟢 (Below average)
+    - Skew Ratio: 7.3 🚨 (EXTREME HIGH)
+    
+    **MARKET STRUCTURE**
+    - Down Var & Up Var declining in tandem
+    - Z-Score Divergence: Skew rising while volatility falls
+    - **KEY INSIGHT**: Calm surface, hidden bearish positioning
+    
+    **WHAT MARKET IS PRICING**
+    - 🔴 Bearish bias despite low volatility
+    - Tail risk premium: Elevated
+    - Expected range: Compressed near-term, wider 1-month
+    
+    **TRADING SIGNALS**
+    - Signal: Mean reversion opportunity OR early warning
+    - Strategy: Sell downside vol if confident, OR buy protection if cautious
+    - Risk/Reward: Asymmetric to downside
+    """
+    
+    st.markdown(f"""
+    <div class="insight-card">
+    {example_output}
+    </div>
+    """, unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: gray;'>
-    <p>📊 CME FedWatch Z-Score Tracker | Data visualization for FOMC rate probability analysis</p>
-    <p><small>Disclaimer: This tool is for informational purposes only. Not investment advice.</small></p>
+    <p>🔮 AI Volatility Chart Analyzer | Powered by Claude Sonnet 4</p>
+    <p><small>Upload chart → Get instant market intelligence → Make informed decisions</small></p>
+    <p><small>⚠️ Disclaimer: For informational purposes only. Not financial advice.</small></p>
 </div>
 """, unsafe_allow_html=True)
