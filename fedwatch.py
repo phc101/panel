@@ -407,6 +407,7 @@ with tab1:
     ))
     
     st.plotly_chart(fig, use_container_width=True)
+    })
     
     # Key insights
     col1, col2 = st.columns(2)
