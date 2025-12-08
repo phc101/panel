@@ -1,570 +1,523 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 import plotly.graph_objects as go
-import plotly.express as px
+from plotly.subplots import make_subplots
+from datetime import datetime, timedelta
+import requests
+from bs4 import BeautifulSoup
+import json
 
-# Page config
-st.set_page_config(
-    page_title="Strategia R2 - EUR/PLN Forward",
-    page_icon="🎯",
-    layout="wide"
-)
+st.set_page_config(page_title="CME FedWatch Z-Score Tracker", layout="wide", page_icon="📊")
 
-# Title
-st.title("🎯 Strategia R2 - Pivot Points SELL")
-st.markdown("Automatyczne generowanie sygnałów SELL na podstawie pivot points (14-day lookback)")
-
-# Sidebar - Strategy selection
-st.sidebar.header("⚙️ Konfiguracja Strategii")
-
-strategy_mode = st.sidebar.radio(
-    "Wybierz strategię:",
-    options=[3, 6],
-    format_func=lambda x: f"{x} Forwardy" + (" ✅ REKOMENDOWANE" if x == 3 else ""),
-    index=0
-)
-
-# Strategy comparison in sidebar
-if strategy_mode == 3:
-    st.sidebar.success("""
-    **3 Forwardy (REKOMENDOWANE)**
-    - Start: 0, 30, 60 dni
-    - Expected: +479k PLN/rok
-    - Win rate: 74.8%
-    - Exposure: EUR 3M per sygnał
-    """)
-else:
-    st.sidebar.warning("""
-    **6 Forwardów**
-    - Start: 0, 30, 60, 90, 120, 150 dni
-    - Expected: +471k PLN/rok
-    - Win rate: 70.8%
-    - Exposure: EUR 6M per sygnał
-    - ⚠️ Forwardy 4-6 słabe
-    """)
-
-# Upload CSV
-st.sidebar.header("📁 Wgraj Dane Historyczne")
-uploaded_file = st.sidebar.file_uploader(
-    "CSV z EUR/PLN (Date,Price,Open,High,Low)",
-    type=['csv'],
-    help="Format: Date,Price,Open,High,Low,Vol.,Change%"
-)
-
-spot_rate = st.sidebar.number_input("Kurs Spot EUR/PLN", value=4.2500, step=0.0001, format="%.4f")
-
-# Functions
-@st.cache_data
-def parse_csv(file):
-    """Parse uploaded CSV file"""
-    df = pd.read_csv(file, encoding='utf-8-sig')
-    
-    # Try to parse Date column
-    df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%Y', errors='coerce')
-    
-    # Convert numeric columns
-    for col in ['Price', 'Open', 'High', 'Low']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    
-    # Drop rows with NaN
-    df = df.dropna(subset=['Date', 'Open', 'High', 'Low', 'Price'])
-    
-    # Sort by date
-    df = df.sort_values('Date').reset_index(drop=True)
-    
-    return df
-
-def calculate_pivot_points(df, index, lookback=14):
-    """Calculate pivot points (MT5 style)"""
-    if index < lookback:
-        return None
-    
-    window = df.iloc[index-lookback:index]
-    
-    avg_high = window['High'].mean()
-    avg_low = window['Low'].mean()
-    avg_close = window['Price'].mean()
-    range_hl = avg_high - avg_low
-    pivot = (avg_high + avg_low + avg_close) / 3
-    
-    return {
-        'pivot': pivot,
-        'r1': pivot + (pivot - avg_low),
-        'r2': pivot + range_hl,
-        's1': pivot - (avg_high - pivot),
-        's2': pivot - range_hl
+# Custom CSS
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 1rem;
     }
+    .metric-card {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 5px solid #1f77b4;
+    }
+    .warning-box {
+        background-color: #fff3cd;
+        padding: 1rem;
+        border-radius: 5px;
+        border-left: 5px solid #ffc107;
+        margin: 1rem 0;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-def get_price_at_date(df, target_date):
-    """Get close price at or nearest to target date"""
-    # Find exact match or nearest date
-    if target_date in df['Date'].values:
-        return df[df['Date'] == target_date]['Price'].iloc[0]
-    
-    # Find nearest date
-    df_sorted = df.sort_values('Date')
-    nearest_idx = (df_sorted['Date'] - target_date).abs().idxmin()
-    return df_sorted.loc[nearest_idx, 'Price']
+st.markdown('<div class="main-header">📊 CME FedWatch Z-Score Tracker</div>', unsafe_allow_html=True)
 
-def calculate_actual_pnl(df, entry_date, entry_price, days_offset):
-    """Calculate actual P/L based on historical data"""
-    exit_date = entry_date + pd.DateOffset(days=days_offset)
-    
-    # Check if we have data for exit date
-    if exit_date > df['Date'].max():
-        return None, 'FUTURE'
-    
-    exit_price = get_price_at_date(df, exit_date)
-    
-    # SELL forward: profit when price goes down
-    pnl_pct = (entry_price - exit_price) / entry_price * 100
-    
-    return pnl_pct, 'CLOSED'
+# Sidebar configuration
+st.sidebar.header("⚙️ Configuration")
 
-def generate_r2_signals(df, mode=3):
-    """Generate R2 SELL signals with actual P/L calculation"""
-    signals = []
-    
-    today = pd.Timestamp.now()
-    one_year_ago = today - pd.DateOffset(years=1)
-    
-    for idx, row in df.iterrows():
-        # Only Mondays
-        if row['Date'].dayofweek != 0:
-            continue
-        
-        # Only last 12 months
-        if row['Date'] < one_year_ago:
-            continue
-        
-        pivots = calculate_pivot_points(df, idx, 14)
-        if pivots is None:
-            continue
-        
-        # R2 SELL signal: Open >= R2
-        if row['Open'] >= pivots['r2']:
-            forwards = []
-            
-            if mode == 3:
-                offsets = [0, 30, 60]
-            else:
-                offsets = [0, 30, 60, 90, 120, 150]
-            
-            for i, offset in enumerate(offsets):
-                start_date = row['Date'] + pd.DateOffset(days=offset)
-                end_date = start_date + pd.DateOffset(days=60)
-                
-                # Calculate actual P/L if data available
-                actual_pnl, status = calculate_actual_pnl(df, start_date, row['Open'], 60)
-                
-                forwards.append({
-                    'num': i + 1,
-                    'start_offset': offset,
-                    'start_date': start_date,
-                    'end_date': end_date,
-                    'entry_price': row['Open'],
-                    'actual_pnl': actual_pnl,
-                    'status': status
-                })
-            
-            signals.append({
-                'date': row['Date'],
-                'open': row['Open'],
-                'r2': pivots['r2'],
-                'pivot': pivots['pivot'],
-                'forwards': forwards
-            })
-    
-    return signals
+data_source = st.sidebar.radio(
+    "Data Source",
+    ["Manual Input", "CSV Upload", "API (Requires Key)"],
+    help="Choose how to input FedWatch data"
+)
 
-def calculate_active_forwards(signals):
-    """Calculate currently active forwards"""
-    today = pd.Timestamp.now()
-    active_count = 0
-    total_exposure = 0
-    
-    for signal in signals:
-        for fwd in signal['forwards']:
-            if fwd['start_date'] <= today <= fwd['end_date']:
-                active_count += 1
-                total_exposure += 1
-    
-    return active_count, total_exposure
+# Initialize session state
+if 'fed_data' not in st.session_state:
+    st.session_state.fed_data = pd.DataFrame()
 
-# Main app logic
-if uploaded_file is not None:
-    # Parse CSV
-    try:
-        df = parse_csv(uploaded_file)
-        st.success(f"✅ Wczytano {len(df)} wierszy danych (zakres: {df['Date'].min().strftime('%Y-%m-%d')} - {df['Date'].max().strftime('%Y-%m-%d')})")
-        
-        # Generate signals
-        signals = generate_r2_signals(df, strategy_mode)
-        
-        if len(signals) == 0:
-            st.warning("⚠️ Brak sygnałów R2 w ostatnich 12 miesiącach")
-        else:
-            # Calculate metrics
-            active_count, total_exposure = calculate_active_forwards(signals)
-            
-            # Expected P/L per forward (from backtests)
-            expected_pnl = {
-                3: [0.79, 0.58, 0.26],
-                6: [0.79, 0.58, 0.26, -0.05, 0.13, -0.16]
-            }
-            
-            # Backtest results
-            backtest_results = {
-                3: {'total': 5.00, 'per_year': 479, 'win_rate': 74.8, 'per_signal': 61},
-                6: {'total': 4.95, 'per_year': 471, 'win_rate': 70.8, 'per_signal': 60}
-            }
-            
-            results = backtest_results[strategy_mode]
-            
-            # Dashboard metrics
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Sygnały R2", len(signals), help="W ostatnich 12 miesiącach")
-            
-            with col2:
-                st.metric("Aktywne Forwardy", active_count, help="Obecnie otwarte")
-            
-            with col3:
-                st.metric("Exposure", f"EUR {total_exposure}M", help="Łączna ekspozycja")
-            
-            with col4:
-                st.metric("Expected P/L", f"+{results['per_year']}k PLN/rok", 
-                         help="Z backtestów 2015-2025")
-            
-            # Important disclaimer
-            st.info("""
-            💡 **Jak czytać wyniki:**
-            - **Expected P/L** = Średnia ze wszystkich podobnych transakcji w historii (backtests 2015-2025)
-            - **Actual P/L** = Rzeczywisty wynik obliczony z faktycznych cen historycznych
-            - Actual P/L pokazuje PRAWDZIWY wynik dla tego konkretnego sygnału
-            - Jeśli forward jeszcze się nie zakończył → pokazujemy Expected
-            """)
-            
-            # Tabs
-            tab1, tab2, tab3, tab4 = st.tabs([
-                "📈 Timeline Sygnałów", 
-                "📊 Tabela Sygnałów", 
-                "📉 Performance per Forward",
-                "💰 Backtest Results"
-            ])
-            
-            # TAB 1: Timeline
-            with tab1:
-                st.subheader("Timeline Sygnałów R2")
-                
-                # Create timeline visualization
-                fig = go.Figure()
-                
-                colors = ['#3B82F6', '#10B981', '#8B5CF6', '#F97316', '#EC4899', '#6366F1']
-                
-                for sig_idx, signal in enumerate(signals):
-                    y_pos = len(signals) - sig_idx
-                    
-                    for fwd_idx, fwd in enumerate(signal['forwards']):
-                        # Use actual P/L if available, otherwise expected
-                        if fwd['actual_pnl'] is not None:
-                            pnl = fwd['actual_pnl']
-                            pnl_label = f"Actual: {pnl:+.2f}%"
-                            pnl_color = colors[fwd_idx]
-                        else:
-                            pnl = expected_pnl[strategy_mode][fwd_idx]
-                            pnl_label = f"Expected: {pnl:+.2f}%"
-                            pnl_color = colors[fwd_idx]
-                        
-                        fig.add_trace(go.Scatter(
-                            x=[fwd['start_date'], fwd['end_date']],
-                            y=[y_pos, y_pos],
-                            mode='lines',
-                            line=dict(color=pnl_color, width=20),
-                            name=f"FWD {fwd['num']}" if sig_idx == 0 else "",
-                            legendgroup=f"fwd{fwd['num']}",
-                            showlegend=sig_idx == 0,
-                            hovertemplate=f"<b>FWD {fwd['num']}</b><br>" +
-                                         f"Start: {fwd['start_date'].strftime('%Y-%m-%d')}<br>" +
-                                         f"End: {fwd['end_date'].strftime('%Y-%m-%d')}<br>" +
-                                         f"{pnl_label}<br>" +
-                                         f"Status: {fwd['status']}<br>" +
-                                         f"<extra></extra>"
-                        ))
-                    
-                    # Add signal marker
-                    fig.add_trace(go.Scatter(
-                        x=[signal['date']],
-                        y=[y_pos],
-                        mode='markers',
-                        marker=dict(size=15, color='red', symbol='star'),
-                        name=f"Sygnał" if sig_idx == 0 else "",
-                        legendgroup="signal",
-                        showlegend=sig_idx == 0,
-                        hovertemplate=f"<b>Sygnał R2</b><br>" +
-                                     f"Data: {signal['date'].strftime('%Y-%m-%d')}<br>" +
-                                     f"Open: {signal['open']:.4f}<br>" +
-                                     f"R2: {signal['r2']:.4f}<br>" +
-                                     f"<extra></extra>"
-                    ))
-                
-                fig.update_layout(
-                    title=f"Timeline {strategy_mode} Forwardów (60-day windows)",
-                    xaxis_title="Data",
-                    yaxis_title="Sygnał",
-                    height=max(400, len(signals) * 40),
-                    hovermode='closest',
-                    yaxis=dict(showticklabels=False)
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Show signal details
-                st.subheader("Szczegóły Sygnałów")
-                for idx, signal in enumerate(signals):
-                    total_actual = sum([f['actual_pnl'] for f in signal['forwards'] if f['actual_pnl'] is not None])
-                    total_expected = sum([expected_pnl[strategy_mode][i] for i in range(len(signal['forwards']))])
-                    
-                    with st.expander(f"Sygnał {idx+1}: {signal['date'].strftime('%Y-%m-%d')} (Open: {signal['open']:.4f}, R2: {signal['r2']:.4f})"):
-                        cols = st.columns(strategy_mode)
-                        for i, fwd in enumerate(signal['forwards']):
-                            with cols[i]:
-                                exp_pnl = expected_pnl[strategy_mode][i]
-                                
-                                if fwd['actual_pnl'] is not None:
-                                    # Show actual result
-                                    pnl_pln = fwd['actual_pnl'] / 100 * 1_000_000 * spot_rate
-                                    delta = fwd['actual_pnl'] - exp_pnl
-                                    
-                                    st.metric(
-                                        f"FWD {fwd['num']} (+{fwd['start_offset']}d)",
-                                        f"{fwd['actual_pnl']:+.2f}% ✅ ACTUAL",
-                                        f"{delta:+.2f}% vs expected",
-                                        delta_color="normal"
-                                    )
-                                    st.caption(f"💰 {pnl_pln:+,.0f} PLN")
-                                    st.caption(f"Expected był: {exp_pnl:+.2f}%")
-                                else:
-                                    # Show expected (future)
-                                    pnl_pln = exp_pnl / 100 * 1_000_000 * spot_rate
-                                    st.metric(
-                                        f"FWD {fwd['num']} (+{fwd['start_offset']}d)",
-                                        f"{exp_pnl:+.2f}% 🔮 EXPECTED",
-                                        "Brak danych historycznych"
-                                    )
-                                    st.caption(f"💰 ~{pnl_pln:+,.0f} PLN (estimate)")
-            
-            # TAB 2: Table
-            with tab2:
-                st.subheader("Szczegółowa Lista Sygnałów")
-                
-                table_data = []
-                for idx, signal in enumerate(signals):
-                    # Calculate totals
-                    actual_total = 0
-                    expected_total = 0
-                    closed_count = 0
-                    
-                    for i, fwd in enumerate(signal['forwards']):
-                        if fwd['actual_pnl'] is not None:
-                            actual_total += fwd['actual_pnl']
-                            closed_count += 1
-                        expected_total += expected_pnl[strategy_mode][i]
-                    
-                    if closed_count > 0:
-                        total_pnl_str = f"{actual_total:+.2f}% (actual, {closed_count}/{len(signal['forwards'])} closed)"
-                    else:
-                        total_pnl_str = f"{expected_total:+.2f}% (expected)"
-                    
-                    table_data.append({
-                        'Lp.': idx + 1,
-                        'Data Sygnału': signal['date'].strftime('%Y-%m-%d'),
-                        'Open': f"{signal['open']:.4f}",
-                        'R2': f"{signal['r2']:.4f}",
-                        'Forwardy': f"{strategy_mode} fwd",
-                        'Total P/L': total_pnl_str,
-                        'Status': f"{closed_count} closed, {len(signal['forwards'])-closed_count} future"
-                    })
-                
-                df_table = pd.DataFrame(table_data)
-                st.dataframe(df_table, use_container_width=True)
-            
-            # TAB 3: Performance per Forward
-            with tab3:
-                st.subheader("Performance per Forward (Expected vs Actual)")
-                
-                # Calculate actual average per forward type
-                actual_avgs = [[] for _ in range(strategy_mode)]
-                
-                for signal in signals:
-                    for i, fwd in enumerate(signal['forwards']):
-                        if fwd['actual_pnl'] is not None:
-                            actual_avgs[i].append(fwd['actual_pnl'])
-                
-                # Create comparison chart
-                fwd_names = [f"FWD {i+1} ({offset}d)" for i, offset in enumerate([0, 30, 60, 90, 120, 150][:strategy_mode])]
-                
-                fig_perf = go.Figure()
-                
-                # Expected bars
-                fig_perf.add_trace(go.Bar(
-                    x=fwd_names,
-                    y=expected_pnl[strategy_mode],
-                    name='Expected (backtest)',
-                    marker_color='lightblue',
-                    text=[f"{pnl:+.2f}%" for pnl in expected_pnl[strategy_mode]],
-                    textposition='outside'
-                ))
-                
-                # Actual bars (if data available)
-                actual_means = [np.mean(avgs) if len(avgs) > 0 else None for avgs in actual_avgs]
-                
-                if any(x is not None for x in actual_means):
-                    # Replace None with 0 for plotting
-                    actual_plot = [x if x is not None else 0 for x in actual_means]
-                    
-                    fig_perf.add_trace(go.Bar(
-                        x=fwd_names,
-                        y=actual_plot,
-                        name='Actual (z danych)',
-                        marker_color=[colors[i] for i in range(strategy_mode)],
-                        text=[f"{x:+.2f}%" if x != 0 else "N/A" for x in actual_plot],
-                        textposition='outside'
-                    ))
-                
-                fig_perf.update_layout(
-                    title="Expected P/L vs Actual P/L per Forward Type",
-                    xaxis_title="Forward",
-                    yaxis_title="P/L (%)",
-                    height=400,
-                    barmode='group'
-                )
-                
-                fig_perf.add_hline(y=0, line_dash="dash", line_color="gray")
-                
-                st.plotly_chart(fig_perf, use_container_width=True)
-                
-                # Show statistics
-                st.markdown("### Statystyki per Forward:")
-                for i in range(strategy_mode):
-                    if len(actual_avgs[i]) > 0:
-                        st.markdown(f"""
-                        **FWD {i+1} (+{i*30}d):**
-                        - Expected: {expected_pnl[strategy_mode][i]:+.2f}%
-                        - Actual Avg: {np.mean(actual_avgs[i]):+.2f}%
-                        - Actual Min: {np.min(actual_avgs[i]):+.2f}%
-                        - Actual Max: {np.max(actual_avgs[i]):+.2f}%
-                        - Sample size: {len(actual_avgs[i])} transakcji
-                        """)
-                    else:
-                        st.markdown(f"""
-                        **FWD {i+1} (+{i*30}d):**
-                        - Expected: {expected_pnl[strategy_mode][i]:+.2f}%
-                        - Actual: Brak danych (futures)
-                        """)
-            
-            # TAB 4: Backtest Results
-            with tab4:
-                st.subheader("💰 Podsumowanie Backtestów (2015-2025)")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("### 3 Forwardy ✅")
-                    st.metric("Total P/L (10 lat)", "+5.00M PLN")
-                    st.metric("Per Rok", "+479k PLN")
-                    st.metric("Win Rate", "74.8%")
-                    st.metric("Per Sygnał", "+61k PLN")
-                    st.success("**REKOMENDOWANE** - Lepszy wynik przy mniejszej pracy")
-                
-                with col2:
-                    st.markdown("### 6 Forwardów")
-                    st.metric("Total P/L (10 lat)", "+4.95M PLN")
-                    st.metric("Per Rok", "+471k PLN")
-                    st.metric("Win Rate", "70.8%")
-                    st.metric("Per Sygnał", "+60k PLN")
-                    st.warning("Praktycznie identyczny wynik przy 2× więcej pracy")
-                
-                st.divider()
-                
-                st.markdown("### 📋 Zasady Strategii ROLL")
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.markdown("#### 🔴 ENTRY (Day 0)")
-                    st.markdown("""
-                    - Poniedziałek: Open ≥ R2
-                    - Otwórz 3 lub 6 forwardów
-                    - EUR 1M każdy (window 60d)
-                    - Start: 0, 30, 60d (+90, +120, +150d)
-                    """)
-                
-                with col2:
-                    st.markdown("#### 🟡 DAY 30 CHECK")
-                    st.markdown("""
-                    - Sprawdź: Close vs Entry
-                    - **ITM** (Close < Entry)?
-                      → ZAMKNIJ forward
-                    - **OTM** (Close ≥ Entry)?
-                      → ROLUJ +60 dni
-                    """)
-                
-                with col3:
-                    st.markdown("#### 🟢 DAY 60/90 EXIT")
-                    st.markdown("""
-                    - Zamknij wszystkie forwardy
-                    - Zapisz wyniki
-                    
-                    **3 FWD Expected:**
-                    - +61k PLN per sygnał
-                    - Win rate: 74.8%
-                    """)
-    
-    except Exception as e:
-        st.error(f"❌ Błąd wczytywania danych: {str(e)}")
-        st.info("Sprawdź format CSV. Powinien zawierać kolumny: Date,Price,Open,High,Low")
+# Function to calculate z-scores
+def calculate_zscore(data, column, window=20):
+    """Calculate rolling z-score for a given column"""
+    rolling_mean = data[column].rolling(window=window).mean()
+    rolling_std = data[column].rolling(window=window).std()
+    zscore = (data[column] - rolling_mean) / rolling_std
+    return zscore
 
-else:
-    # No file uploaded
-    st.info("👈 Wgraj plik CSV z danymi historycznymi EUR/PLN w lewym panelu")
-    
-    st.markdown("### 📁 Format CSV")
-    st.code("""Date,Price,Open,High,Low,Vol.,Change%
-11/22/2024,4.3350,4.3385,4.3433,4.3316,0,0.01%
-11/21/2024,4.3363,4.3415,4.3441,4.3346,0,-0.14%
-11/20/2024,4.3424,4.3381,4.3454,4.3369,0,0.09%
-""", language="csv")
-    
-    st.markdown("### 🎯 Jak Działa Strategia")
+# Function to scrape FedWatch data (placeholder - actual implementation would need API)
+def fetch_fedwatch_data():
+    """
+    Placeholder function for FedWatch data fetching
+    Note: Real implementation requires CME API subscription
+    """
+    st.info("📌 Note: Direct scraping of FedWatch is complex. Using API or manual input is recommended.")
+    return None
+
+# Manual Input Section
+if data_source == "Manual Input":
+    st.sidebar.subheader("📝 Enter FedWatch Data")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("""
-        **3 Forwardy (REKOMENDOWANE):**
-        - Start: 0, 30, 60 dni
-        - Window: 60 dni każdy
-        - Expected: +479k PLN/rok
-        - Win rate: 74.8%
-        - Prostsze zarządzanie
-        """)
+        meeting_date = st.date_input("FOMC Meeting Date", datetime.now() + timedelta(days=30))
+        reporting_date = st.date_input("Reporting Date", datetime.now())
     
     with col2:
-        st.markdown("""
-        **6 Forwardów:**
-        - Start: 0, 30, 60, 90, 120, 150 dni
-        - Window: 60 dni każdy
-        - Expected: +471k PLN/rok
-        - Win rate: 70.8%
-        - ⚠️ Forwardy 4-6 słabe
-        """)
+        rate_range = st.text_input("Rate Range (e.g., 4.25-4.50)", "4.25-4.50")
+        probability = st.number_input("Probability (%)", 0.0, 100.0, 50.0, 0.1)
+    
+    if st.sidebar.button("➕ Add Data Point"):
+        new_data = pd.DataFrame({
+            'meeting_date': [meeting_date],
+            'reporting_date': [reporting_date],
+            'rate_range': [rate_range],
+            'probability': [probability],
+            'timestamp': [datetime.now()]
+        })
+        
+        if st.session_state.fed_data.empty:
+            st.session_state.fed_data = new_data
+        else:
+            st.session_state.fed_data = pd.concat([st.session_state.fed_data, new_data], ignore_index=True)
+        
+        st.success("✅ Data point added!")
+
+# CSV Upload Section
+elif data_source == "CSV Upload":
+    st.sidebar.subheader("📁 Upload CSV File")
+    st.sidebar.markdown("""
+    **Expected CSV format:**
+    - meeting_date (YYYY-MM-DD)
+    - reporting_date (YYYY-MM-DD)
+    - rate_range (e.g., 4.25-4.50)
+    - probability (0-100)
+    """)
+    
+    uploaded_file = st.sidebar.file_uploader("Choose CSV file", type=['csv'])
+    
+    if uploaded_file is not None:
+        try:
+            df = pd.read_csv(uploaded_file)
+            df['meeting_date'] = pd.to_datetime(df['meeting_date'])
+            df['reporting_date'] = pd.to_datetime(df['reporting_date'])
+            st.session_state.fed_data = df
+            st.success(f"✅ Loaded {len(df)} data points!")
+        except Exception as e:
+            st.error(f"❌ Error loading CSV: {e}")
+
+# API Section
+elif data_source == "API (Requires Key)":
+    st.sidebar.subheader("🔑 API Configuration")
+    
+    api_key = st.sidebar.text_input("CME API Key", type="password", help="Enter your CME Group API key")
+    api_endpoint = st.sidebar.text_input(
+        "API Endpoint",
+        "https://api.cmegroup.com/fedwatch/v1/forecasts",
+        help="CME FedWatch API endpoint"
+    )
+    
+    if st.sidebar.button("🔄 Fetch Data"):
+        if not api_key:
+            st.error("❌ Please enter your API key")
+        else:
+            try:
+                headers = {
+                    'Authorization': f'Bearer {api_key}',
+                    'Content-Type': 'application/json'
+                }
+                
+                response = requests.get(api_endpoint, headers=headers)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    # Process API response (structure depends on actual API)
+                    st.success("✅ Data fetched successfully!")
+                    st.json(data)  # Display raw data for inspection
+                else:
+                    st.error(f"❌ API Error: {response.status_code}")
+                    st.error(f"Response: {response.text}")
+            except Exception as e:
+                st.error(f"❌ Error fetching data: {e}")
+
+# Main dashboard area
+if not st.session_state.fed_data.empty:
+    df = st.session_state.fed_data.copy()
+    
+    # Convert dates if needed
+    if 'meeting_date' in df.columns:
+        df['meeting_date'] = pd.to_datetime(df['meeting_date'])
+        df['reporting_date'] = pd.to_datetime(df['reporting_date'])
+    
+    # Sort by reporting date
+    df = df.sort_values('reporting_date')
+    
+    # Analysis parameters
+    st.sidebar.header("📈 Analysis Parameters")
+    zscore_window = st.sidebar.slider("Z-Score Window", 5, 50, 20, help="Rolling window for z-score calculation")
+    zscore_threshold = st.sidebar.slider("Z-Score Threshold", 1.0, 3.0, 2.0, 0.1, help="Threshold for extreme readings")
+    
+    # Calculate z-scores
+    df['zscore'] = calculate_zscore(df, 'probability', window=zscore_window)
+    df['zscore_abs'] = df['zscore'].abs()
+    
+    # Calculate moving averages
+    df['prob_ma_5'] = df['probability'].rolling(window=5).mean()
+    df['prob_ma_20'] = df['probability'].rolling(window=20).mean()
+    
+    # Tabs for different views
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "📈 Z-Score Analysis", "📉 Probability Trends", "📋 Data Table"])
+    
+    with tab1:
+        st.subheader("Current Market Snapshot")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        latest_prob = df['probability'].iloc[-1]
+        latest_zscore = df['zscore'].iloc[-1] if not pd.isna(df['zscore'].iloc[-1]) else 0
+        avg_prob = df['probability'].mean()
+        
+        with col1:
+            st.metric(
+                "Latest Probability",
+                f"{latest_prob:.1f}%",
+                delta=f"{latest_prob - df['probability'].iloc[-2]:.1f}%" if len(df) > 1 else None
+            )
+        
+        with col2:
+            st.metric(
+                "Current Z-Score",
+                f"{latest_zscore:.2f}",
+                delta="Extreme" if abs(latest_zscore) > zscore_threshold else "Normal",
+                delta_color="inverse" if abs(latest_zscore) > zscore_threshold else "normal"
+            )
+        
+        with col3:
+            st.metric(
+                "Average Probability",
+                f"{avg_prob:.1f}%"
+            )
+        
+        with col4:
+            extreme_readings = len(df[df['zscore_abs'] > zscore_threshold])
+            st.metric(
+                "Extreme Readings",
+                f"{extreme_readings}",
+                delta=f"{(extreme_readings/len(df)*100):.1f}% of data"
+            )
+        
+        # Quick chart
+        st.subheader("Probability Over Time")
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=df['reporting_date'],
+            y=df['probability'],
+            mode='lines+markers',
+            name='Probability',
+            line=dict(color='#1f77b4', width=2),
+            marker=dict(size=6)
+        ))
+        
+        fig.update_layout(
+            title="Rate Probability Timeline",
+            xaxis_title="Reporting Date",
+            yaxis_title="Probability (%)",
+            hovermode='x unified',
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with tab2:
+        st.subheader("Z-Score Analysis")
+        
+        # Create subplot figure
+        fig = make_subplots(
+            rows=2, cols=1,
+            subplot_titles=('Probability with Moving Averages', 'Z-Score'),
+            vertical_spacing=0.12,
+            row_heights=[0.5, 0.5]
+        )
+        
+        # Top plot - Probability
+        fig.add_trace(
+            go.Scatter(
+                x=df['reporting_date'],
+                y=df['probability'],
+                mode='lines+markers',
+                name='Probability',
+                line=dict(color='#1f77b4', width=2),
+                marker=dict(size=6)
+            ),
+            row=1, col=1
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=df['reporting_date'],
+                y=df['prob_ma_5'],
+                mode='lines',
+                name='MA(5)',
+                line=dict(color='orange', width=1, dash='dash')
+            ),
+            row=1, col=1
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=df['reporting_date'],
+                y=df['prob_ma_20'],
+                mode='lines',
+                name='MA(20)',
+                line=dict(color='red', width=1, dash='dot')
+            ),
+            row=1, col=1
+        )
+        
+        # Bottom plot - Z-Score
+        colors = ['red' if abs(z) > zscore_threshold else 'gray' for z in df['zscore']]
+        
+        fig.add_trace(
+            go.Bar(
+                x=df['reporting_date'],
+                y=df['zscore'],
+                name='Z-Score',
+                marker=dict(color=colors)
+            ),
+            row=2, col=1
+        )
+        
+        # Add threshold lines
+        fig.add_hline(y=zscore_threshold, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=-zscore_threshold, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=0, line_dash="solid", line_color="black", row=2, col=1)
+        
+        fig.update_xaxes(title_text="Reporting Date", row=2, col=1)
+        fig.update_yaxes(title_text="Probability (%)", row=1, col=1)
+        fig.update_yaxes(title_text="Z-Score", row=2, col=1)
+        
+        fig.update_layout(
+            height=700,
+            showlegend=True,
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Z-Score distribution
+        st.subheader("Z-Score Distribution")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig_hist = go.Figure()
+            fig_hist.add_trace(go.Histogram(
+                x=df['zscore'].dropna(),
+                nbinsx=30,
+                name='Z-Score',
+                marker=dict(color='#1f77b4', line=dict(color='white', width=1))
+            ))
+            
+            fig_hist.add_vline(x=zscore_threshold, line_dash="dash", line_color="red", annotation_text="Threshold")
+            fig_hist.add_vline(x=-zscore_threshold, line_dash="dash", line_color="red")
+            
+            fig_hist.update_layout(
+                title="Z-Score Distribution",
+                xaxis_title="Z-Score",
+                yaxis_title="Frequency",
+                height=350
+            )
+            
+            st.plotly_chart(fig_hist, use_container_width=True)
+        
+        with col2:
+            # Extreme readings table
+            extreme_df = df[df['zscore_abs'] > zscore_threshold][['reporting_date', 'probability', 'zscore', 'rate_range']]
+            
+            st.markdown("**🚨 Extreme Z-Score Readings**")
+            if not extreme_df.empty:
+                st.dataframe(
+                    extreme_df.sort_values('zscore_abs', ascending=False),
+                    use_container_width=True,
+                    height=300
+                )
+            else:
+                st.info("No extreme readings found with current threshold")
+    
+    with tab3:
+        st.subheader("Probability Trends by Rate Range")
+        
+        # Group by rate range
+        if 'rate_range' in df.columns:
+            fig_range = go.Figure()
+            
+            for rate_range in df['rate_range'].unique():
+                mask = df['rate_range'] == rate_range
+                fig_range.add_trace(go.Scatter(
+                    x=df[mask]['reporting_date'],
+                    y=df[mask]['probability'],
+                    mode='lines+markers',
+                    name=rate_range,
+                    line=dict(width=2),
+                    marker=dict(size=6)
+                ))
+            
+            fig_range.update_layout(
+                title="Probability by Rate Range Over Time",
+                xaxis_title="Reporting Date",
+                yaxis_title="Probability (%)",
+                hovermode='x unified',
+                height=500
+            )
+            
+            st.plotly_chart(fig_range, use_container_width=True)
+        
+        # Change analysis
+        st.subheader("Period-over-Period Changes")
+        
+        df['prob_change'] = df['probability'].diff()
+        df['prob_pct_change'] = df['probability'].pct_change() * 100
+        
+        fig_change = go.Figure()
+        
+        fig_change.add_trace(go.Bar(
+            x=df['reporting_date'],
+            y=df['prob_change'],
+            name='Absolute Change',
+            marker=dict(
+                color=df['prob_change'],
+                colorscale='RdYlGn',
+                showscale=True,
+                colorbar=dict(title="Change")
+            )
+        ))
+        
+        fig_change.update_layout(
+            title="Probability Changes",
+            xaxis_title="Reporting Date",
+            yaxis_title="Change in Probability (%)",
+            height=400
+        )
+        
+        st.plotly_chart(fig_change, use_container_width=True)
+    
+    with tab4:
+        st.subheader("📋 Complete Data Table")
+        
+        # Display options
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            show_columns = st.multiselect(
+                "Select columns to display",
+                df.columns.tolist(),
+                default=['reporting_date', 'meeting_date', 'rate_range', 'probability', 'zscore']
+            )
+        
+        with col2:
+            download_format = st.selectbox("Download format", ["CSV", "Excel"])
+        
+        # Display filtered dataframe
+        display_df = df[show_columns].copy()
+        
+        st.dataframe(
+            display_df.sort_values('reporting_date', ascending=False),
+            use_container_width=True,
+            height=400
+        )
+        
+        # Download button
+        if download_format == "CSV":
+            csv = display_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download CSV",
+                data=csv,
+                file_name=f"fedwatch_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+        else:
+            # For Excel, need to use BytesIO
+            from io import BytesIO
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                display_df.to_excel(writer, index=False, sheet_name='FedWatch Data')
+            
+            st.download_button(
+                label="📥 Download Excel",
+                data=buffer.getvalue(),
+                file_name=f"fedwatch_data_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    
+    # Sidebar statistics
+    st.sidebar.header("📊 Statistics")
+    st.sidebar.metric("Total Data Points", len(df))
+    st.sidebar.metric("Date Range", f"{df['reporting_date'].min().strftime('%Y-%m-%d')} to {df['reporting_date'].max().strftime('%Y-%m-%d')}")
+    st.sidebar.metric("Avg Z-Score", f"{df['zscore'].mean():.2f}" if not df['zscore'].isna().all() else "N/A")
+    st.sidebar.metric("Max Z-Score", f"{df['zscore'].max():.2f}" if not df['zscore'].isna().all() else "N/A")
+    st.sidebar.metric("Min Z-Score", f"{df['zscore'].min():.2f}" if not df['zscore'].isna().all() else "N/A")
+
+else:
+    st.info("👆 Please add data using the sidebar options to begin analysis")
+    
+    # Show example data format
+    st.markdown("### 📝 Example Data Format")
+    
+    example_df = pd.DataFrame({
+        'meeting_date': [datetime.now() + timedelta(days=30)]*5,
+        'reporting_date': [datetime.now() - timedelta(days=i) for i in range(5)],
+        'rate_range': ['4.25-4.50']*5,
+        'probability': [45.2, 47.8, 51.3, 48.9, 50.1]
+    })
+    
+    st.dataframe(example_df)
+    
+    st.markdown("""
+    ### 🔍 How to Use This Dashboard
+    
+    1. **Data Input**: Choose your preferred method in the sidebar:
+       - **Manual Input**: Enter data points one by one
+       - **CSV Upload**: Upload a prepared CSV file
+       - **API**: Connect with your CME API key (requires subscription)
+    
+    2. **Analysis**: Once data is loaded, explore:
+       - **Overview**: Current snapshot and timeline
+       - **Z-Score Analysis**: Statistical deviation from mean
+       - **Probability Trends**: Track changes over time
+       - **Data Table**: View and download complete dataset
+    
+    3. **Interpretation**:
+       - **Z-Score > 2**: Unusually high probability (potential overpricing)
+       - **Z-Score < -2**: Unusually low probability (potential underpricing)
+       - **Z-Score ≈ 0**: Probability near historical average
+    
+    ### 📌 Note on CME FedWatch API
+    
+    Direct API access requires a CME Group subscription ($25/month minimum). 
+    Visit [CME Market Data APIs](https://www.cmegroup.com/market-data/market-data-api.html) to subscribe.
+    """)
 
 # Footer
-st.divider()
-st.caption("Strategia R2 - Backtest 2015-2025 | Pivot Points MT5 (14-day lookback)")
-st.caption("💡 Expected P/L = średnie historyczne | Actual P/L = rzeczywiste wyniki z danych")
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: gray;'>
+    <p>📊 CME FedWatch Z-Score Tracker | Data visualization for FOMC rate probability analysis</p>
+    <p><small>Disclaimer: This tool is for informational purposes only. Not investment advice.</small></p>
+</div>
+""", unsafe_allow_html=True)
