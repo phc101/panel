@@ -404,10 +404,9 @@ with tab1:
     fig.update_layout(
         title=f"EUR/USD Forecast - Differential: {differential:+.2f}%",
         xaxis_title="Months", yaxis_title="EUR/USD", height=500
-    ))
+    )
     
     st.plotly_chart(fig, use_container_width=True)
-    })
     
     # Key insights
     col1, col2 = st.columns(2)
