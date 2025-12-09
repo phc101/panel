@@ -294,7 +294,8 @@ with col1:
     st.markdown(f"""
     **50% Range:** {pred_eurusd['p25']:.4f} - {pred_eurusd['p75']:.4f}  
     **Model:** US-Euro Rate Differential  
-    **R²:** 30.2% | **Corr:** -0.550
+    **R²:** 30.2% | **Corr:** -0.550  
+    **Uncertainty:** ±5.0%
     """)
 
 # EUR/PLN Card
@@ -317,6 +318,7 @@ with col2:
     st.markdown(f"""
     **50% Range:** {pred_eur['p25']:.4f} - {pred_eur['p75']:.4f}  
     **Model:** PLN Real Interest Rate  
+    **Sensitivity:** -0.12  
     **Uncertainty:** ±{pred_eur['uncertainty']:.1f}%
     """)
 
@@ -340,6 +342,7 @@ with col3:
     st.markdown(f"""
     **50% Range:** {pred_usd['p25']:.4f} - {pred_usd['p75']:.4f}  
     **Model:** PLN Real Interest Rate  
+    **Sensitivity:** -0.18  
     **Uncertainty:** ±{pred_usd['uncertainty']:.1f}%
     """)
 
@@ -565,6 +568,12 @@ with col1:
         - Markets trade on expectations (R²=30%)
         - Core PCE (actual) only R²=3%
         - Forward-looking > backward-looking
+        
+        **What is 50% Range?**
+        - 50% probability the actual rate falls within this range
+        - 25% chance it's below, 25% chance it's above
+        - Based on model uncertainty (±5%)
+        - Used for central forecasting scenarios
         """)
 
 with col2:
@@ -580,7 +589,54 @@ with col2:
         ```
         Real = (1 + Nominal) / (1 + Inflation) - 1
         ```
+        
+        **What is 50% Range?**
+        - 50% confidence interval for forecast
+        - Calculated using P25 and P75 percentiles
+        - Narrower range = higher model confidence
+        - EUR/PLN: ±3% (more confident)
+        - USD/PLN: ±5% (less confident)
         """)
+
+# Add new expander for understanding ranges
+st.markdown("---")
+with st.expander("📊 Understanding Forecast Ranges"):
+    st.markdown("""
+    ### What does "50% Range" mean?
+    
+    **Definition:**
+    - There is a **50% probability** that the actual exchange rate will fall within this range
+    - It represents the **most likely outcome zone**
+    
+    **Breakdown:**
+    - 25% chance the rate is **below** the range
+    - 50% chance the rate is **within** the range
+    - 25% chance the rate is **above** the range
+    
+    **Example: EUR/USD 50% Range 1.1040 - 1.1805**
+    ```
+    Below 1.1040:  25% probability (unlikely)
+    1.1040-1.1805: 50% probability (most likely)
+    Above 1.1805:  25% probability (unlikely)
+    ```
+    
+    **How to use it:**
+    - **Conservative hedging:** Use lower bound (P25) - protects 75% of scenarios
+    - **Balanced approach:** Use central forecast - median outcome
+    - **Aggressive strategy:** Use upper bound (P75) - captures 75% of upside
+    
+    **Confidence Levels:**
+    - 50% Range: Most likely (shown in cards)
+    - 80% Range: Very likely (P10-P90)
+    - 95% Range: Almost certain (P2.5-P97.5)
+    
+    **Model Uncertainty:**
+    - EUR/USD: ±5.0% (differential model)
+    - EUR/PLN: ±3.0% (higher confidence)
+    - USD/PLN: ±5.0% (lower confidence)
+    
+    Lower uncertainty = tighter 50% range = more confident forecast
+    """)
 
 # Footer
 st.markdown("---")
