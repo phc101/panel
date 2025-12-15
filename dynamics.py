@@ -8,7 +8,7 @@ import io
 
 # Page config
 st.set_page_config(
-    page_title="FX Spread Prognosis Tool - Universal",
+    page_title="FX Spread Prognosis - PLN Enhanced",
     page_icon="💹",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -69,170 +69,101 @@ st.markdown("""
         border-left: 4px solid #0288d1;
         margin: 1rem 0;
     }
+    .pln-box {
+        background-color: #fff3e0;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        border: 2px solid #ff9800;
+        margin: 1rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # Title
-st.markdown('<div class="main-header">Universal FX Spread Prognosis Tool 🌍</div>', unsafe_allow_html=True)
-st.markdown("**Forecast any currency pair based on yield curve spread correlation**")
+st.markdown('<div class="main-header">FX Spread Prognosis - PLN Enhanced 🇵🇱</div>', unsafe_allow_html=True)
+st.markdown("**Forecast EUR/USD → derive USD/PLN & EUR/PLN using cross-rate relationships**")
 
 # Sidebar
 with st.sidebar:
-    st.header("📁 Data Configuration")
+    st.header("📁 Required Data Files")
     
-    # Currency pair selection
-    st.subheader("🔹 Currency Pair")
+    st.subheader("🔹 Primary Pair")
+    eurusd_file = st.file_uploader("EUR/USD Historical Data", type=['csv'],
+                                   help="From Investing.com")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        base_currency = st.text_input("Base Currency", value="EUR", max_chars=3).upper()
-    with col2:
-        quote_currency = st.text_input("Quote Currency", value="USD", max_chars=3).upper()
+    st.subheader("🔹 US Treasury Yields")
+    dgs10_file = st.file_uploader("US 10Y Treasury", type=['csv'],
+                                  help="From FRED (DGS10)")
+    dgs30_file = st.file_uploader("US 30Y Treasury", type=['csv'],
+                                  help="From FRED (DGS30)")
     
-    currency_pair = f"{base_currency}/{quote_currency}"
-    st.info(f"📊 Analyzing: **{currency_pair}**")
-    
-    # Treasury data
-    st.subheader("🔹 Quote Currency Yields")
-    st.caption(f"({quote_currency} government bonds)")
-    
-    short_term_label = st.text_input("Short-term Label", value="10Y", 
-                                     help="e.g., 2Y, 5Y, 10Y")
-    long_term_label = st.text_input("Long-term Label", value="30Y",
-                                    help="e.g., 10Y, 20Y, 30Y")
-    
-    st.markdown("---")
-    st.header("📂 File Upload")
-    
-    fx_file = st.file_uploader(f"{currency_pair} Historical Data", type=['csv'],
-                               help="CSV format: Date, Close price")
-    short_file = st.file_uploader(f"{quote_currency} {short_term_label} Yield", type=['csv'],
-                                  help="CSV format: Date, Yield")
-    long_file = st.file_uploader(f"{quote_currency} {long_term_label} Yield", type=['csv'],
-                                 help="CSV format: Date, Yield")
+    st.subheader("🔹 PLN Pairs (for cross-rate)")
+    usdpln_file = st.file_uploader("USD/PLN Historical Data", type=['csv'],
+                                   help="From Investing.com")
+    eurpln_file = st.file_uploader("EUR/PLN Historical Data", type=['csv'],
+                                   help="From Investing.com")
     
     st.markdown("---")
     st.header("⚙️ Model Settings")
     
-    auto_calculate_corr = st.checkbox("Auto-calculate Correlation", value=True,
-                                      help="Calculate from data or use manual value")
-    
-    if not auto_calculate_corr:
-        correlation = st.slider("Manual Correlation", 
-                               min_value=-1.0, max_value=1.0, value=0.878, step=0.001)
-    
-    use_recent_corr = st.checkbox("Use Recent Period Only", 
+    use_recent_corr = st.checkbox("Use Recent 52w Correlation", value=False,
                                   help="Use last 52 weeks instead of full period")
     
-    if use_recent_corr:
-        recent_period = st.slider("Recent Period (weeks)", 
-                                 min_value=20, max_value=104, value=52, step=4)
-    
     st.markdown("---")
-    st.header("🎯 Data Format")
+    st.header("📊 Cross-Rate Method")
     
-    data_format = st.selectbox(
-        "FX Data Format",
-        ["Investing.com (Polish)", "Investing.com (English)", "Yahoo Finance", "FRED", "Custom CSV"]
+    method = st.radio(
+        "PLN Prognosis Method",
+        ["Direct Correlation", "Cross-Rate Calculation", "Hybrid (Best of Both)"],
+        help="""
+        Direct: Use spread correlation for each pair
+        Cross-Rate: EUR/USD → USD/PLN → EUR/PLN
+        Hybrid: Combine both methods
+        """
     )
     
-    if data_format == "Custom CSV":
-        st.info("Expected columns: Date, Close")
-        date_format_fx = st.text_input("Date Format", value="%Y-%m-%d",
-                                       help="e.g., %d.%m.%Y or %Y-%m-%d")
-        decimal_sep_fx = st.selectbox("Decimal Separator", [",", "."])
+    if method == "Hybrid (Best of Both)":
+        weight_direct = st.slider("Direct Model Weight", 0.0, 1.0, 0.5, 0.1)
+        weight_cross = 1.0 - weight_direct
 
-# Helper functions for parsing different formats
-def parse_fx_data(file, data_format):
-    """Parse FX data based on format"""
+# Helper functions
+def parse_fx_investing_polish(file):
+    """Parse Investing.com Polish format"""
     try:
-        if data_format == "Investing.com (Polish)":
-            df = pd.read_csv(file, encoding='utf-8-sig')
-            # Handle different possible column counts
-            if len(df.columns) >= 2:
-                df = df.iloc[:, [0, 1]]  # Take first two columns
-                df.columns = ['Date', 'Close']
-            df['Date'] = pd.to_datetime(df['Date'], format='%d.%m.%Y', errors='coerce')
-            df['Close'] = df['Close'].astype(str).str.replace(',', '.').astype(float)
-        elif data_format == "Investing.com (English)":
-            df = pd.read_csv(file)
-            if len(df.columns) >= 2:
-                df = df.iloc[:, [0, 1]]
-                df.columns = ['Date', 'Close']
-            df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%Y', errors='coerce')
-            df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
-        elif data_format == "Yahoo Finance":
-            df = pd.read_csv(file)
-            df = df[['Date', 'Close']]
-            df['Date'] = pd.to_datetime(df['Date'])
-            df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
-        elif data_format == "FRED":
-            df = pd.read_csv(file)
-            if len(df.columns) >= 2:
-                df = df.iloc[:, [0, 1]]
-                df.columns = ['Date', 'Close']
-            df['Date'] = pd.to_datetime(df['Date'])
-            df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
-        else:  # Custom
-            df = pd.read_csv(file)
-            if len(df.columns) >= 2:
-                df = df.iloc[:, [0, 1]]
-                df.columns = ['Date', 'Close']
-            if decimal_sep_fx == ',':
-                df['Close'] = df['Close'].astype(str).str.replace(',', '.').astype(float)
-            df['Date'] = pd.to_datetime(df['Date'], format=date_format_fx)
-        
+        df = pd.read_csv(file, encoding='utf-8-sig')
+        if len(df.columns) >= 2:
+            df = df.iloc[:, [0, 1]]
+            df.columns = ['Date', 'Close']
+        df['Date'] = pd.to_datetime(df['Date'], format='%d.%m.%Y', errors='coerce')
+        df['Close'] = df['Close'].astype(str).str.replace(',', '.').astype(float)
         return df.sort_values('Date')[['Date', 'Close']].dropna()
     except Exception as e:
         st.error(f"Error parsing FX data: {str(e)}")
         st.stop()
 
-def parse_yield_data(file):
-    """Parse yield data - flexible format handling"""
+def parse_yield_fred(file):
+    """Parse FRED yield data"""
     try:
         df = pd.read_csv(file)
-        
-        # Take only first 2 columns regardless of what they are
         if len(df.columns) >= 2:
             df = df.iloc[:, [0, 1]]
             df.columns = ['Date', 'Yield']
-        else:
-            raise ValueError(f"File must have at least 2 columns, found {len(df.columns)}")
-        
-        # Parse date
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        
-        # Parse yield (handle commas as decimal separator)
         if df['Yield'].dtype == 'object':
             df['Yield'] = df['Yield'].astype(str).str.replace(',', '.').astype(float, errors='ignore')
         df['Yield'] = pd.to_numeric(df['Yield'], errors='coerce')
-        
-        # Drop NaN
-        df = df.dropna()
-        
-        if len(df) == 0:
-            raise ValueError("No valid data after cleaning")
-        
-        return df
+        return df.dropna()
     except Exception as e:
         st.error(f"Error parsing yield data: {str(e)}")
-        st.error("Expected format: First column = Date, Second column = Yield value")
         st.stop()
 
 def process_data(fx_df, short_df, long_df):
     """Merge FX and yield data"""
-    # Merge yields
-    yields = short_df.merge(long_df, on='Date', how='inner', suffixes=('_Short', '_Long'))
+    yields = short_df.merge(long_df, on='Date', how='inner', suffixes=('_10Y', '_30Y'))
     
-    if len(yields) == 0:
-        raise ValueError("No overlapping dates between short and long yield data")
-    
-    # For each FX date, find closest yield
     merged_data = []
     for idx, row in fx_df.iterrows():
         fx_date = row['Date']
-        
-        # Find closest yields (within 7 days)
         yield_window = yields[abs(yields['Date'] - fx_date) <= timedelta(days=7)]
         if len(yield_window) > 0:
             closest_idx = (yield_window['Date'] - fx_date).abs().idxmin()
@@ -241,330 +172,371 @@ def process_data(fx_df, short_df, long_df):
             merged_data.append({
                 'Date': fx_date,
                 'FX_Rate': row['Close'],
-                'Short_Yield': closest_yields['Yield_Short'],
-                'Long_Yield': closest_yields['Yield_Long']
+                '10Y': closest_yields['Yield_10Y'],
+                '30Y': closest_yields['Yield_30Y']
             })
     
-    if len(merged_data) == 0:
-        raise ValueError("No overlapping dates between FX and yield data")
-    
     df = pd.DataFrame(merged_data)
-    
-    # Calculate spread
-    df['Spread'] = df['Long_Yield'] - df['Short_Yield']
-    
+    df['Spread'] = df['30Y'] - df['10Y']
     return df
 
-def calculate_prognosis(df, target_spread, correlation_val, use_recent=False, recent_weeks=52):
-    """Calculate fair value and prognosis"""
+def calculate_fair_value_model(df, use_recent=False):
+    """Calculate fair value model with regression"""
     if use_recent:
-        recent_df = df.tail(recent_weeks)
+        recent_df = df.tail(52)
         corr = recent_df['FX_Rate'].corr(recent_df['Spread'])
         base_data = recent_df
     else:
-        if correlation_val is None:
-            corr = df['FX_Rate'].corr(df['Spread'])
-        else:
-            corr = correlation_val
+        corr = df['FX_Rate'].corr(df['Spread'])
         base_data = df
     
-    # Linear regression
     z = np.polyfit(base_data['Spread'], base_data['FX_Rate'], 1)
     slope, intercept = z[0], z[1]
     
-    # Calculate fair value for all historical data
     df['Fair_Value'] = slope * df['Spread'] + intercept
     df['Deviation'] = df['FX_Rate'] - df['Fair_Value']
     df['Deviation_Pct'] = (df['Deviation'] / df['Fair_Value']) * 100
     
-    # Predict FX for target spread
-    predicted_fx = slope * target_spread + intercept
+    return df, corr, slope, intercept
+
+def calculate_cross_rate_correlation(eurusd_df, usdpln_df):
+    """Calculate correlation between EUR/USD and USD/PLN"""
+    merged = eurusd_df.merge(usdpln_df, on='Date', suffixes=('_EURUSD', '_USDPLN'))
+    corr = merged['FX_Rate_EURUSD'].corr(merged['FX_Rate_USDPLN'])
+    return corr, merged
+
+def predict_pln_pairs(eurusd_current, eurusd_target, usdpln_current, eurpln_current, 
+                     eurusd_usdpln_corr, method='Cross-Rate'):
+    """Predict USD/PLN and EUR/PLN based on EUR/USD prognosis"""
     
-    # Current values
-    current_spread = df['Spread'].iloc[-1]
-    current_fx = df['FX_Rate'].iloc[-1]
-    current_fair_value = df['Fair_Value'].iloc[-1]
-    current_deviation = df['Deviation_Pct'].iloc[-1]
+    eurusd_change_pct = ((eurusd_target - eurusd_current) / eurusd_current) * 100
     
-    # Change
-    spread_change = target_spread - current_spread
-    fx_change = predicted_fx - current_fx
-    fx_change_pct = (fx_change / current_fx) * 100
+    if method == "Cross-Rate Calculation":
+        # Pure mathematical cross-rate
+        # EUR/USD ↑ 1% → USD weaker → USD/PLN ↓ ~1%
+        usdpln_change_pct = -eurusd_change_pct  # Inverse relationship
+        usdpln_target = usdpln_current * (1 + usdpln_change_pct / 100)
+        
+        # EUR/PLN = EUR/USD × USD/PLN
+        eurpln_target = eurusd_target * usdpln_target
+        eurpln_change_pct = ((eurpln_target - eurpln_current) / eurpln_current) * 100
+        
+    elif method == "Direct Correlation":
+        # Use historical correlation with dampening
+        dampening_factor = 0.8  # Correlation isn't perfect
+        usdpln_change_pct = -eurusd_change_pct * dampening_factor
+        usdpln_target = usdpln_current * (1 + usdpln_change_pct / 100)
+        
+        # EUR/PLN typically moves with EUR/USD but less volatile
+        eurpln_change_pct = eurusd_change_pct * 0.6  # EUR/PLN less volatile
+        eurpln_target = eurpln_current * (1 + eurpln_change_pct / 100)
+        
+    else:  # Hybrid
+        # Average of both methods
+        # Method 1: Cross-rate
+        usdpln_cross = usdpln_current * (1 - eurusd_change_pct / 100)
+        eurpln_cross = eurusd_target * usdpln_cross
+        
+        # Method 2: Correlation
+        usdpln_corr = usdpln_current * (1 - eurusd_change_pct * 0.8 / 100)
+        eurpln_corr = eurpln_current * (1 + eurusd_change_pct * 0.6 / 100)
+        
+        # Weighted average (default 50/50)
+        usdpln_target = (usdpln_cross * 0.5 + usdpln_corr * 0.5)
+        eurpln_target = (eurpln_cross * 0.5 + eurpln_corr * 0.5)
+        
+        usdpln_change_pct = ((usdpln_target - usdpln_current) / usdpln_current) * 100
+        eurpln_change_pct = ((eurpln_target - eurpln_current) / eurpln_current) * 100
     
     return {
-        'predicted_fx': predicted_fx,
-        'current_fx': current_fx,
-        'current_fair_value': current_fair_value,
-        'current_deviation': current_deviation,
-        'current_spread': current_spread,
-        'target_spread': target_spread,
-        'spread_change': spread_change,
-        'fx_change': fx_change,
-        'fx_change_pct': fx_change_pct,
-        'correlation': corr,
-        'slope': slope,
-        'intercept': intercept,
-        'df_with_fv': df
+        'usdpln_target': usdpln_target,
+        'usdpln_change_pct': usdpln_change_pct,
+        'eurpln_target': eurpln_target,
+        'eurpln_change_pct': eurpln_change_pct
     }
 
 # Main app logic
-if all([fx_file, short_file, long_file]):
+if all([eurusd_file, dgs10_file, dgs30_file]):
     try:
-        # Parse all files
-        with st.spinner("Processing data..."):
-            fx_df = parse_fx_data(fx_file, data_format)
-            short_df = parse_yield_data(short_file)
-            long_df = parse_yield_data(long_file)
+        # Parse primary data
+        with st.spinner("Loading primary data (EUR/USD + US yields)..."):
+            eurusd_df = parse_fx_investing_polish(eurusd_file)
+            dgs10_df = parse_yield_fred(dgs10_file)
+            dgs30_df = parse_yield_fred(dgs30_file)
             
-            # Show data info
-            with st.expander("📊 Data Summary"):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.write(f"**{currency_pair} Data:**")
-                    st.write(f"- Records: {len(fx_df)}")
-                    st.write(f"- From: {fx_df['Date'].min().date()}")
-                    st.write(f"- To: {fx_df['Date'].max().date()}")
-                with col2:
-                    st.write(f"**{short_term_label} Yield:**")
-                    st.write(f"- Records: {len(short_df)}")
-                    st.write(f"- From: {short_df['Date'].min().date()}")
-                    st.write(f"- To: {short_df['Date'].max().date()}")
-                with col3:
-                    st.write(f"**{long_term_label} Yield:**")
-                    st.write(f"- Records: {len(long_df)}")
-                    st.write(f"- From: {long_df['Date'].min().date()}")
-                    st.write(f"- To: {long_df['Date'].max().date()}")
+            df_eurusd = process_data(eurusd_df, dgs10_df, dgs30_df)
+        
+        # Parse PLN pairs if available
+        has_pln_data = usdpln_file is not None and eurpln_file is not None
+        
+        if has_pln_data:
+            with st.spinner("Loading PLN pairs data..."):
+                usdpln_df = parse_fx_investing_polish(usdpln_file)
+                eurpln_df = parse_fx_investing_polish(eurpln_file)
+                
+                # Process PLN pairs with same yield data
+                df_usdpln = process_data(usdpln_df, dgs10_df, dgs30_df)
+                df_eurpln = process_data(eurpln_df, dgs10_df, dgs30_df)
+        
+        st.success(f"✅ Loaded {len(df_eurusd)} EUR/USD observations" + 
+                  (f" + {len(df_usdpln)} USD/PLN + {len(df_eurpln)} EUR/PLN" if has_pln_data else ""))
+        
+        # Calculate models
+        df_eurusd, corr_eurusd, slope_eurusd, intercept_eurusd = calculate_fair_value_model(
+            df_eurusd, use_recent_corr)
+        
+        if has_pln_data:
+            df_usdpln, corr_usdpln, slope_usdpln, intercept_usdpln = calculate_fair_value_model(
+                df_usdpln, use_recent_corr)
+            df_eurpln, corr_eurpln, slope_eurpln, intercept_eurpln = calculate_fair_value_model(
+                df_eurpln, use_recent_corr)
             
-            df = process_data(fx_df, short_df, long_df)
-        
-        if len(df) == 0:
-            st.error("❌ No overlapping data found. Check date ranges.")
-            st.stop()
-        
-        st.success(f"✅ Loaded {len(df)} observations from {df['Date'].min().date()} to {df['Date'].max().date()}")
+            # Calculate cross-rate correlation
+            eurusd_usdpln_corr, merged_cross = calculate_cross_rate_correlation(
+                df_eurusd[['Date', 'FX_Rate']], df_usdpln[['Date', 'FX_Rate']])
         
         # Current values
-        current = df.iloc[-1]
+        current_eurusd = df_eurusd.iloc[-1]
+        if has_pln_data:
+            current_usdpln = df_usdpln.iloc[-1]
+            current_eurpln = df_eurpln.iloc[-1]
         
         # Display current metrics
+        st.markdown('<div class="sub-header">📊 Current Market Data</div>', unsafe_allow_html=True)
+        
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric(f"{currency_pair}", f"{current['FX_Rate']:.4f}")
+            st.metric("EUR/USD", f"{current_eurusd['FX_Rate']:.4f}",
+                     delta=f"{current_eurusd['Deviation_Pct']:+.2f}% vs FV")
         with col2:
-            st.metric(f"{long_term_label}-{short_term_label} Spread", f"{current['Spread']:.2f}%")
+            st.metric("30Y-10Y Spread", f"{current_eurusd['Spread']:.2f}%")
         with col3:
-            st.metric(f"{quote_currency} {short_term_label}", f"{current['Short_Yield']:.2f}%")
+            if has_pln_data:
+                st.metric("USD/PLN", f"{current_usdpln['FX_Rate']:.4f}",
+                         delta=f"{current_usdpln['Deviation_Pct']:+.2f}% vs FV")
+            else:
+                st.info("Upload USD/PLN data")
         with col4:
-            st.metric(f"{quote_currency} {long_term_label}", f"{current['Long_Yield']:.2f}%")
-        
-        # Correlation calculation
-        full_corr = df['FX_Rate'].corr(df['Spread'])
-        recent_corr = df.tail(52)['FX_Rate'].corr(df.tail(52)['Spread'])
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.info(f"📊 **Full Period Correlation:** {full_corr:+.3f}")
-        with col2:
-            st.info(f"📈 **Recent 52-Week Correlation:** {recent_corr:+.3f}")
-        with col3:
-            if abs(full_corr) > 0.7:
-                st.success("✅ **Strong Correlation** - Model reliable")
-            elif abs(full_corr) > 0.4:
-                st.warning("⚠️ **Moderate Correlation** - Use with caution")
+            if has_pln_data:
+                st.metric("EUR/PLN", f"{current_eurpln['FX_Rate']:.4f}",
+                         delta=f"{current_eurpln['Deviation_Pct']:+.2f}% vs FV")
             else:
-                st.error("❌ **Weak Correlation** - Model not recommended")
+                st.info("Upload EUR/PLN data")
         
-        # Model explanation box
-        with st.expander("ℹ️ Understanding the Correlation"):
-            if full_corr > 0:
-                st.markdown(f"""
-                **Positive Correlation ({full_corr:+.3f})**
-                
-                ✅ When {long_term_label}-{short_term_label} spread **WIDENS** → {currency_pair} typically **RISES** ({base_currency} strengthens)
-                
-                ✅ When {long_term_label}-{short_term_label} spread **NARROWS** → {currency_pair} typically **FALLS** ({base_currency} weakens)
-                
-                **Interpretation:**
-                - Steeper {quote_currency} curve = {base_currency} appreciation
-                - Flatter {quote_currency} curve = {base_currency} depreciation
-                """)
-            else:
-                st.markdown(f"""
-                **Negative Correlation ({full_corr:+.3f})**
-                
-                ✅ When {long_term_label}-{short_term_label} spread **WIDENS** → {currency_pair} typically **FALLS** ({base_currency} weakens)
-                
-                ✅ When {long_term_label}-{short_term_label} spread **NARROWS** → {currency_pair} typically **RISES** ({base_currency} strengthens)
-                
-                **Interpretation:**
-                - Steeper {quote_currency} curve = {base_currency} depreciation
-                - Flatter {quote_currency} curve = {base_currency} appreciation
-                """)
+        # Correlation summary
+        st.markdown('<div class="sub-header">🔗 Correlation Analysis</div>', unsafe_allow_html=True)
+        
+        cols = st.columns(4 if has_pln_data else 2)
+        
+        with cols[0]:
+            st.info(f"**EUR/USD vs Spread**\n\n{corr_eurusd:+.3f}")
+        with cols[1]:
+            if has_pln_data:
+                st.info(f"**EUR/USD vs USD/PLN**\n\n{eurusd_usdpln_corr:+.3f}")
+        if has_pln_data:
+            with cols[2]:
+                st.info(f"**USD/PLN vs Spread**\n\n{corr_usdpln:+.3f}")
+            with cols[3]:
+                st.info(f"**EUR/PLN vs Spread**\n\n{corr_eurpln:+.3f}")
         
         # Scenario setup
-        st.markdown('<div class="sub-header">🎯 Prognosis Scenario</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sub-header">🎯 EUR/USD Prognosis Scenario</div>', unsafe_allow_html=True)
         
         col1, col2 = st.columns(2)
         
         with col1:
             scenario = st.selectbox(
                 "Select Scenario",
-                ["Custom", "Steepening (+20%)", "Steepening (+50%)", "Flattening (-20%)", "Flattening (-50%)", "Current Stable"]
+                ["Custom", "Steepening (+20%)", "Steepening (+50%)", "Flattening (-20%)", 
+                 "Flattening (-50%)", "Current Stable"]
             )
             
             if scenario == "Custom":
-                target_short = st.number_input(f"Target {short_term_label} Yield (%)", 
-                                              value=float(current['Short_Yield']), 
-                                              min_value=0.0, max_value=20.0, step=0.1)
-                target_long = st.number_input(f"Target {long_term_label} Yield (%)", 
-                                             value=float(current['Long_Yield']), 
-                                             min_value=0.0, max_value=20.0, step=0.1)
+                target_10y = st.number_input("Target 10Y Yield (%)", 
+                                           value=float(current_eurusd['10Y']), 
+                                           min_value=0.0, max_value=10.0, step=0.1)
+                target_30y = st.number_input("Target 30Y Yield (%)", 
+                                           value=float(current_eurusd['30Y']), 
+                                           min_value=0.0, max_value=10.0, step=0.1)
             elif "Steepening" in scenario:
                 pct = 0.2 if "20%" in scenario else 0.5
-                target_short = float(current['Short_Yield'])
-                target_long = float(current['Long_Yield']) + (current['Spread'] * pct)
-                st.info(f"📈 Spread widens by {int(pct*100)}%: {short_term_label} stable, {long_term_label} rises")
+                target_10y = float(current_eurusd['10Y'])
+                target_30y = float(current_eurusd['30Y']) + (current_eurusd['Spread'] * pct)
             elif "Flattening" in scenario:
                 pct = 0.2 if "20%" in scenario else 0.5
-                target_short = float(current['Short_Yield'])
-                target_long = float(current['Long_Yield']) - (current['Spread'] * pct)
-                st.info(f"📉 Spread narrows by {int(pct*100)}%: {short_term_label} stable, {long_term_label} falls")
-            else:  # Current Stable
-                target_short = float(current['Short_Yield'])
-                target_long = float(current['Long_Yield'])
-                st.info("➡️ Yields stay at current levels")
-        
-        with col2:
-            target_spread = target_long - target_short
-            st.metric("Target Spread", f"{target_spread:.2f}%", 
-                     delta=f"{target_spread - current['Spread']:.2f}%")
-            
-            spread_direction = "WIDENING" if target_spread > current['Spread'] else "NARROWING" if target_spread < current['Spread'] else "STABLE"
-            
-            if full_corr > 0:
-                if target_spread > current['Spread']:
-                    st.success(f"🟢 {spread_direction} → {currency_pair} likely UP")
-                elif target_spread < current['Spread']:
-                    st.error(f"🔴 {spread_direction} → {currency_pair} likely DOWN")
-                else:
-                    st.info(f"⚪ {spread_direction} → {currency_pair} likely FLAT")
-            else:  # Negative correlation
-                if target_spread > current['Spread']:
-                    st.error(f"🔴 {spread_direction} → {currency_pair} likely DOWN")
-                elif target_spread < current['Spread']:
-                    st.success(f"🟢 {spread_direction} → {currency_pair} likely UP")
-                else:
-                    st.info(f"⚪ {spread_direction} → {currency_pair} likely FLAT")
-        
-        # Calculate prognosis
-        corr_value = None if auto_calculate_corr else correlation
-        recent_weeks = recent_period if use_recent_corr else 52
-        prognosis = calculate_prognosis(df, target_spread, corr_value, use_recent_corr, recent_weeks)
-        df = prognosis['df_with_fv']
-        
-        # Fair Value Analysis
-        st.markdown('<div class="sub-header">⚖️ Fair Value Analysis</div>', unsafe_allow_html=True)
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown(f"### Actual {currency_pair}")
-            st.markdown(f"## **{prognosis['current_fx']:.4f}**")
-            st.markdown("*(Market Price)*")
-            st.markdown("</div>", unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown("### Fair Value")
-            st.markdown(f"## **{prognosis['current_fair_value']:.4f}**")
-            st.markdown("*(Model Based on Spread)*")
-            st.markdown("</div>", unsafe_allow_html=True)
-        
-        with col3:
-            deviation = prognosis['current_deviation']
-            if abs(deviation) < 2:
-                box_class = "neutral-box"
-                signal = "✅ FAIR VALUED"
-                color = "🟢"
-            elif deviation > 2:
-                box_class = "warning-box"
-                signal = f"⚠️ {base_currency} OVERVALUED"
-                color = "🔴"
+                target_10y = float(current_eurusd['10Y'])
+                target_30y = float(current_eurusd['30Y']) - (current_eurusd['Spread'] * pct)
             else:
-                box_class = "success-box"
-                signal = f"💎 {base_currency} UNDERVALUED"
-                color = "🟢"
-            
-            st.markdown(f'<div class="{box_class}">', unsafe_allow_html=True)
-            st.markdown("### Deviation")
-            st.markdown(f"## **{deviation:+.2f}%**")
-            st.markdown(f"**{color} {signal}**")
-            st.markdown("</div>", unsafe_allow_html=True)
+                target_10y = float(current_eurusd['10Y'])
+                target_30y = float(current_eurusd['30Y'])
         
-        # Prognosis Results
-        st.markdown('<div class="sub-header">📊 Prognosis Results</div>', unsafe_allow_html=True)
+        with col2:
+            target_spread = target_30y - target_10y
+            st.metric("Target Spread", f"{target_spread:.2f}%", 
+                     delta=f"{target_spread - current_eurusd['Spread']:.2f}%")
+            
+            # Calculate EUR/USD target
+            eurusd_target = slope_eurusd * target_spread + intercept_eurusd
+            eurusd_change_pct = ((eurusd_target - current_eurusd['FX_Rate']) / 
+                                current_eurusd['FX_Rate']) * 100
+            
+            st.metric("EUR/USD Target", f"{eurusd_target:.4f}",
+                     delta=f"{eurusd_change_pct:+.2f}%")
+        
+        # EUR/USD Prognosis
+        st.markdown('<div class="sub-header">📈 EUR/USD Prognosis</div>', unsafe_allow_html=True)
         
         col1, col2, col3 = st.columns(3)
         
         with col1:
             st.markdown('<div class="prognosis-box">', unsafe_allow_html=True)
-            st.markdown(f"### Current {currency_pair}")
-            st.markdown(f"## **{prognosis['current_fx']:.4f}**")
+            st.markdown("### Current")
+            st.markdown(f"## **{current_eurusd['FX_Rate']:.4f}**")
+            st.markdown(f"Fair Value: {current_eurusd['Fair_Value']:.4f}")
             st.markdown("</div>", unsafe_allow_html=True)
         
         with col2:
             st.markdown('<div class="prognosis-box">', unsafe_allow_html=True)
-            st.markdown(f"### Predicted {currency_pair}")
-            st.markdown(f"## **{prognosis['predicted_fx']:.4f}**")
-            change_color = "🟢" if prognosis['fx_change'] > 0 else "🔴"
-            st.markdown(f"{change_color} {prognosis['fx_change']:+.4f} ({prognosis['fx_change_pct']:+.2f}%)")
+            st.markdown("### Target")
+            st.markdown(f"## **{eurusd_target:.4f}**")
+            change_color = "🟢" if eurusd_change_pct > 0 else "🔴"
+            st.markdown(f"{change_color} {eurusd_change_pct:+.2f}%")
             st.markdown("</div>", unsafe_allow_html=True)
         
         with col3:
             st.markdown('<div class="prognosis-box">', unsafe_allow_html=True)
             st.markdown("### Direction")
-            if prognosis['fx_change_pct'] > 2:
-                st.markdown(f"## 🟢 **{base_currency} ↑**")
-                st.markdown(f"{base_currency} strengthening")
-            elif prognosis['fx_change_pct'] < -2:
-                st.markdown(f"## 🔴 **{base_currency} ↓**")
-                st.markdown(f"{base_currency} weakening")
+            if eurusd_change_pct > 2:
+                st.markdown("## 🟢 **EUR ↑**")
+            elif eurusd_change_pct < -2:
+                st.markdown("## 🔴 **EUR ↓**")
             else:
-                st.markdown("## ⚪ **NEUTRAL**")
-                st.markdown("Range-bound")
+                st.markdown("## ⚪ **FLAT**")
             st.markdown("</div>", unsafe_allow_html=True)
         
-        # Visualization - simplified to avoid errors
-        st.markdown('<div class="sub-header">📈 Charts</div>', unsafe_allow_html=True)
+        # PLN Pairs Prognosis
+        if has_pln_data:
+            st.markdown('<div class="sub-header">🇵🇱 PLN Pairs Prognosis</div>', unsafe_allow_html=True)
+            
+            # Calculate PLN predictions
+            pln_pred = predict_pln_pairs(
+                current_eurusd['FX_Rate'],
+                eurusd_target,
+                current_usdpln['FX_Rate'],
+                current_eurpln['FX_Rate'],
+                eurusd_usdpln_corr,
+                method
+            )
+            
+            # Display PLN prognosis
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown('<div class="pln-box">', unsafe_allow_html=True)
+                st.markdown("### USD/PLN Prognosis")
+                st.markdown(f"**Current:** {current_usdpln['FX_Rate']:.4f}")
+                st.markdown(f"**Target:** {pln_pred['usdpln_target']:.4f}")
+                change_color = "🟢" if pln_pred['usdpln_change_pct'] < 0 else "🔴"  # Lower USD/PLN = PLN stronger
+                st.markdown(f"**Change:** {change_color} {pln_pred['usdpln_change_pct']:+.2f}%")
+                
+                if pln_pred['usdpln_change_pct'] < -1:
+                    st.markdown("✅ **PLN strengthens vs USD**")
+                elif pln_pred['usdpln_change_pct'] > 1:
+                    st.markdown("⚠️ **PLN weakens vs USD**")
+                else:
+                    st.markdown("➡️ **PLN stable vs USD**")
+                st.markdown("</div>", unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown('<div class="pln-box">', unsafe_allow_html=True)
+                st.markdown("### EUR/PLN Prognosis")
+                st.markdown(f"**Current:** {current_eurpln['FX_Rate']:.4f}")
+                st.markdown(f"**Target:** {pln_pred['eurpln_target']:.4f}")
+                change_color = "🟢" if pln_pred['eurpln_change_pct'] < 0 else "🔴"  # Lower EUR/PLN = PLN stronger
+                st.markdown(f"**Change:** {change_color} {pln_pred['eurpln_change_pct']:+.2f}%")
+                
+                if pln_pred['eurpln_change_pct'] < -1:
+                    st.markdown("✅ **PLN strengthens vs EUR**")
+                elif pln_pred['eurpln_change_pct'] > 1:
+                    st.markdown("⚠️ **PLN weakens vs EUR**")
+                else:
+                    st.markdown("➡️ **PLN stable vs EUR**")
+                st.markdown("</div>", unsafe_allow_html=True)
+            
+            # Explanation
+            with st.expander("ℹ️ How PLN Prognosis Works"):
+                if method == "Cross-Rate Calculation":
+                    st.markdown("""
+                    **Cross-Rate Method (Mathematical):**
+                    
+                    1. EUR/USD forecast: {:.4f} → {:.4f} ({:+.2f}%)
+                    2. USD/PLN inverse relationship: USD weakens → USD/PLN falls
+                    3. USD/PLN target: {:.4f} → {:.4f} ({:+.2f}%)
+                    4. EUR/PLN = EUR/USD × USD/PLN
+                    5. EUR/PLN target: {:.4f}
+                    
+                    **Logic:** EUR/USD and USD/PLN have high inverse correlation (~-0.8 to -0.9)
+                    When EUR strengthens vs USD, USD typically weakens vs PLN proportionally.
+                    """.format(
+                        current_eurusd['FX_Rate'], eurusd_target, eurusd_change_pct,
+                        current_usdpln['FX_Rate'], pln_pred['usdpln_target'], pln_pred['usdpln_change_pct'],
+                        pln_pred['eurpln_target']
+                    ))
+                elif method == "Direct Correlation":
+                    st.markdown("""
+                    **Direct Correlation Method:**
+                    
+                    Uses historical correlation between each pair and US yield spread:
+                    - USD/PLN vs Spread: {:.3f}
+                    - EUR/PLN vs Spread: {:.3f}
+                    
+                    Each pair's prognosis calculated independently based on spread change.
+                    Applied dampening factor (0.8) since correlation isn't perfect.
+                    """.format(corr_usdpln, corr_eurpln))
+                else:
+                    st.markdown("""
+                    **Hybrid Method (Best of Both):**
+                    
+                    Combines two approaches:
+                    1. **Cross-Rate** (mathematical relationship)
+                    2. **Direct Correlation** (historical spread correlation)
+                    
+                    Weight: {:.0f}% Direct + {:.0f}% Cross-Rate
+                    
+                    Provides more robust forecast by averaging different methodologies.
+                    """.format(weight_direct * 100, weight_cross * 100))
         
-        tab1, tab2 = st.tabs(["Fair Value Analysis", "Prognosis Scatter"])
+        # Visualization
+        st.markdown('<div class="sub-header">📊 Charts</div>', unsafe_allow_html=True)
         
-        with tab1:
-            # Fair Value Chart
+        tabs = ["EUR/USD Fair Value", "PLN Pairs Analysis"] if has_pln_data else ["EUR/USD Fair Value"]
+        tab_objects = st.tabs(tabs)
+        
+        with tab_objects[0]:
+            # EUR/USD Fair Value Chart
             fig = make_subplots(
                 rows=2, cols=1,
-                subplot_titles=(f'{currency_pair}: Actual vs Fair Value', 'Deviation from Fair Value (%)'),
+                subplot_titles=('EUR/USD: Actual vs Fair Value', 'Deviation (%)'),
                 vertical_spacing=0.15,
                 row_heights=[0.6, 0.4]
             )
             
             fig.add_trace(go.Scatter(
-                x=df['Date'], y=df['FX_Rate'],
-                name=f'Actual {currency_pair}',
+                x=df_eurusd['Date'], y=df_eurusd['FX_Rate'],
+                name='EUR/USD Actual',
                 line=dict(color='#0051a5', width=2.5)
             ), row=1, col=1)
             
             fig.add_trace(go.Scatter(
-                x=df['Date'], y=df['Fair_Value'],
+                x=df_eurusd['Date'], y=df_eurusd['Fair_Value'],
                 name='Fair Value',
                 line=dict(color='#ff7f0e', width=2, dash='dash')
             ), row=1, col=1)
             
             fig.add_trace(go.Scatter(
-                x=df['Date'], y=df['Deviation_Pct'],
-                name='Deviation %',
+                x=df_eurusd['Date'], y=df_eurusd['Deviation_Pct'],
+                name='Deviation',
                 fill='tozeroy',
                 line=dict(color='purple', width=2)
             ), row=2, col=1)
@@ -574,80 +546,107 @@ if all([fx_file, short_file, long_file]):
             fig.add_hline(y=-2, line_dash="dash", line_color="green", opacity=0.5, row=2, col=1)
             
             fig.update_xaxes(title_text="Date", row=2, col=1)
-            fig.update_yaxes(title_text=currency_pair, row=1, col=1)
+            fig.update_yaxes(title_text="EUR/USD", row=1, col=1)
             fig.update_yaxes(title_text="Deviation (%)", row=2, col=1)
             
-            fig.update_layout(height=800, showlegend=True, hovermode='x unified')
+            fig.update_layout(height=800, showlegend=True, hovermode='x unified',
+                            title_text=f'EUR/USD Analysis | Correlation: {corr_eurusd:+.3f}')
             
             st.plotly_chart(fig, use_container_width=True)
         
-        with tab2:
-            # Scatter plot
-            fig = go.Figure()
-            
-            fig.add_trace(go.Scatter(
-                x=df['Spread'], y=df['FX_Rate'],
-                mode='markers',
-                name='Historical',
-                marker=dict(size=5, color='lightblue', opacity=0.5)
-            ))
-            
-            # Regression line
-            x_range = np.linspace(df['Spread'].min(), df['Spread'].max(), 100)
-            y_pred = prognosis['slope'] * x_range + prognosis['intercept']
-            fig.add_trace(go.Scatter(
-                x=x_range, y=y_pred,
-                mode='lines',
-                name=f'Trend (r={prognosis["correlation"]:.3f})',
-                line=dict(color='red', width=2, dash='dash')
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=[prognosis['current_spread']], y=[prognosis['current_fx']],
-                mode='markers',
-                name='Current',
-                marker=dict(size=15, color='green', symbol='star')
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=[prognosis['target_spread']], y=[prognosis['predicted_fx']],
-                mode='markers',
-                name='Target',
-                marker=dict(size=15, color='orange', symbol='star')
-            ))
-            
-            fig.update_layout(
-                title=f'{currency_pair} vs {long_term_label}-{short_term_label} Spread',
-                xaxis_title=f'Spread (%)',
-                yaxis_title=currency_pair,
-                height=600
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
+        if has_pln_data:
+            with tab_objects[1]:
+                # PLN Pairs Comparison
+                fig = make_subplots(
+                    rows=3, cols=1,
+                    subplot_titles=('EUR/USD vs USD/PLN', 'USD/PLN Fair Value', 'EUR/PLN Fair Value'),
+                    vertical_spacing=0.1,
+                    row_heights=[0.33, 0.33, 0.34]
+                )
+                
+                # Panel 1: EUR/USD vs USD/PLN (inverse relationship)
+                fig.add_trace(go.Scatter(
+                    x=df_eurusd['Date'], y=df_eurusd['FX_Rate'],
+                    name='EUR/USD',
+                    line=dict(color='#0051a5', width=2)
+                ), row=1, col=1)
+                
+                fig.add_trace(go.Scatter(
+                    x=df_usdpln['Date'], y=df_usdpln['FX_Rate'],
+                    name='USD/PLN',
+                    line=dict(color='#d62728', width=2),
+                    yaxis='y2'
+                ), row=1, col=1)
+                
+                # Panel 2: USD/PLN
+                fig.add_trace(go.Scatter(
+                    x=df_usdpln['Date'], y=df_usdpln['FX_Rate'],
+                    name='USD/PLN Actual',
+                    line=dict(color='#d62728', width=2.5)
+                ), row=2, col=1)
+                
+                fig.add_trace(go.Scatter(
+                    x=df_usdpln['Date'], y=df_usdpln['Fair_Value'],
+                    name='USD/PLN Fair Value',
+                    line=dict(color='#ff7f0e', width=2, dash='dash')
+                ), row=2, col=1)
+                
+                # Panel 3: EUR/PLN
+                fig.add_trace(go.Scatter(
+                    x=df_eurpln['Date'], y=df_eurpln['FX_Rate'],
+                    name='EUR/PLN Actual',
+                    line=dict(color='#2ca02c', width=2.5)
+                ), row=3, col=1)
+                
+                fig.add_trace(go.Scatter(
+                    x=df_eurpln['Date'], y=df_eurpln['Fair_Value'],
+                    name='EUR/PLN Fair Value',
+                    line=dict(color='#ff7f0e', width=2, dash='dash')
+                ), row=3, col=1)
+                
+                fig.update_xaxes(title_text="Date", row=3, col=1)
+                fig.update_yaxes(title_text="EUR/USD", row=1, col=1)
+                fig.update_yaxes(title_text="USD/PLN", row=2, col=1)
+                fig.update_yaxes(title_text="EUR/PLN", row=3, col=1)
+                
+                fig.update_layout(height=1000, showlegend=True, hovermode='x unified',
+                                title_text=f'PLN Pairs Analysis | EUR/USD vs USD/PLN Corr: {eurusd_usdpln_corr:+.3f}')
+                
+                st.plotly_chart(fig, use_container_width=True)
         
         # Export
         st.markdown('<div class="sub-header">💾 Export Results</div>', unsafe_allow_html=True)
         
-        export_data = pd.DataFrame([{
+        export_dict = {
             'Date': datetime.now().strftime('%Y-%m-%d'),
-            'Currency_Pair': currency_pair,
-            'Current_FX': prognosis['current_fx'],
-            'Fair_Value': prognosis['current_fair_value'],
-            'Deviation_Pct': prognosis['current_deviation'],
-            'Current_Spread': prognosis['current_spread'],
-            f'Target_{short_term_label}': target_short,
-            f'Target_{long_term_label}': target_long,
-            'Target_Spread': prognosis['target_spread'],
-            'Predicted_FX': prognosis['predicted_fx'],
-            'Change_Percent': prognosis['fx_change_pct'],
-            'Correlation': prognosis['correlation']
-        }])
+            'Scenario': scenario,
+            'Target_10Y': target_10y,
+            'Target_30Y': target_30y,
+            'Target_Spread': target_spread,
+            'EURUSD_Current': current_eurusd['FX_Rate'],
+            'EURUSD_Target': eurusd_target,
+            'EURUSD_Change_Pct': eurusd_change_pct,
+            'EURUSD_Correlation': corr_eurusd
+        }
         
+        if has_pln_data:
+            export_dict.update({
+                'USDPLN_Current': current_usdpln['FX_Rate'],
+                'USDPLN_Target': pln_pred['usdpln_target'],
+                'USDPLN_Change_Pct': pln_pred['usdpln_change_pct'],
+                'EURPLN_Current': current_eurpln['FX_Rate'],
+                'EURPLN_Target': pln_pred['eurpln_target'],
+                'EURPLN_Change_Pct': pln_pred['eurpln_change_pct'],
+                'Method': method
+            })
+        
+        export_data = pd.DataFrame([export_dict])
         csv = export_data.to_csv(index=False)
+        
         st.download_button(
-            label=f"📥 Download Results",
+            label="📥 Download Prognosis Results (CSV)",
             data=csv,
-            file_name=f"{base_currency}{quote_currency}_prognosis_{datetime.now().strftime('%Y%m%d')}.csv",
+            file_name=f"fx_prognosis_pln_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv"
         )
         
@@ -658,31 +657,31 @@ if all([fx_file, short_file, long_file]):
 
 else:
     st.markdown('<div class="info-box">', unsafe_allow_html=True)
-    st.markdown(f"""
+    st.markdown("""
     ### 👆 Getting Started
     
-    **Configure in sidebar:**
-    1. Set your currency pair (default: EUR/USD)
-    2. Define yield labels (default: 10Y-30Y)
-    3. Upload 3 CSV files
+    **Minimum Required (EUR/USD only):**
+    1. EUR/USD historical data (Investing.com)
+    2. US 10Y Treasury (FRED)
+    3. US 30Y Treasury (FRED)
     
-    **File format requirements:**
-    - **FX data**: First 2 columns = Date, Close price
-    - **Yield data**: First 2 columns = Date, Yield value
-    - Other columns will be ignored
+    **For PLN Prognosis (Recommended):**
+    4. USD/PLN historical data (Investing.com)
+    5. EUR/PLN historical data (Investing.com)
     
-    **Supported formats:**
-    - Investing.com (Polish/English)
-    - Yahoo Finance
-    - FRED
-    - Custom CSV
+    **How it works:**
+    - Forecast EUR/USD based on US yield curve spread (+0.878 correlation)
+    - Use EUR/USD forecast to derive USD/PLN and EUR/PLN via:
+      - **Cross-Rate:** Mathematical relationship (EUR/USD × USD/PLN = EUR/PLN)
+      - **Direct Correlation:** Each pair's own spread correlation
+      - **Hybrid:** Weighted average of both methods
     """)
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9rem;'>
-    <b>Universal FX Spread Prognosis Tool</b> | 
-    Works with any currency pair and yield curve
+    <b>FX Spread Prognosis - PLN Enhanced</b> | 
+    EUR/USD → USD/PLN → EUR/PLN cross-rate analysis
 </div>
 """, unsafe_allow_html=True)
