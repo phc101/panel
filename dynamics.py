@@ -56,6 +56,12 @@ st.markdown("""
         border-radius: 0.5rem;
         border-left: 4px solid #2ca02c;
     }
+    .neutral-box {
+        background-color: #e6e6fa;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #9467bd;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -66,12 +72,14 @@ st.markdown("**Forecast EUR/USD based on 30Y-10Y Treasury Spread (+0.878 Correla
 # Sidebar
 with st.sidebar:
     st.header("📁 Data Upload")
-    st.markdown("Upload CSV files from Investing.com")
+    st.markdown("Upload CSV files from Investing.com / FRED")
     
-    eurusd_file = st.file_uploader("EUR/USD Historical Data", type=['csv'])
-    ffr_file = st.file_uploader("Fed Funds Rate (FEDFUNDS)", type=['csv'])
-    dgs10_file = st.file_uploader("10Y Treasury (DGS10)", type=['csv'])
-    dgs30_file = st.file_uploader("30Y Treasury (DGS30)", type=['csv'])
+    eurusd_file = st.file_uploader("EUR/USD Historical Data", type=['csv'], 
+                                   help="From Investing.com")
+    dgs10_file = st.file_uploader("10Y Treasury (DGS10)", type=['csv'],
+                                  help="From FRED")
+    dgs30_file = st.file_uploader("30Y Treasury (DGS30)", type=['csv'],
+                                  help="From FRED")
     
     st.markdown("---")
     st.header("⚙️ Model Settings")
@@ -107,8 +115,8 @@ def parse_fred(file):
     df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
     return df.dropna()
 
-# Main processing function
-def process_data(eurusd_df, ffr_df, dgs10_df, dgs30_df):
+# Main processing function (without Fed Funds)
+def process_data(eurusd_df, dgs10_df, dgs30_df):
     # Merge daily rates
     rates = dgs10_df.merge(dgs30_df, on='Date', how='inner', suffixes=('_10Y', '_30Y'))
     
@@ -123,29 +131,21 @@ def process_data(eurusd_df, ffr_df, dgs10_df, dgs30_df):
             closest_idx = (rate_window['Date'] - eur_date).abs().idxmin()
             closest_rates = rates.loc[closest_idx]
             
-            # Find FFR (monthly, more tolerance)
-            ffr_before = ffr_df[ffr_df['Date'] <= eur_date]
-            if len(ffr_before) > 0:
-                ffr_val = ffr_before.iloc[-1]['Value']
-                
-                merged_data.append({
-                    'Date': eur_date,
-                    'EURUSD': row['Close'],
-                    'FFR': ffr_val,
-                    '10Y': closest_rates['Value_10Y'],
-                    '30Y': closest_rates['Value_30Y']
-                })
+            merged_data.append({
+                'Date': eur_date,
+                'EURUSD': row['Close'],
+                '10Y': closest_rates['Value_10Y'],
+                '30Y': closest_rates['Value_30Y']
+            })
     
     df = pd.DataFrame(merged_data)
     
     # Calculate spreads
-    df['Spread_10Y_FFR'] = df['10Y'] - df['FFR']
-    df['Spread_30Y_FFR'] = df['30Y'] - df['FFR']
     df['Spread_30Y_10Y'] = df['30Y'] - df['10Y']
     
     return df
 
-# Calculate prognosis
+# Calculate prognosis and fair value
 def calculate_prognosis(df, target_spread, correlation_val, use_recent=False):
     if use_recent:
         recent_df = df.tail(52)
@@ -159,12 +159,19 @@ def calculate_prognosis(df, target_spread, correlation_val, use_recent=False):
     z = np.polyfit(base_data['Spread_30Y_10Y'], base_data['EURUSD'], 1)
     slope, intercept = z[0], z[1]
     
+    # Calculate fair value for all historical data
+    df['Fair_Value'] = slope * df['Spread_30Y_10Y'] + intercept
+    df['Deviation'] = df['EURUSD'] - df['Fair_Value']
+    df['Deviation_Pct'] = (df['Deviation'] / df['Fair_Value']) * 100
+    
     # Predict EUR/USD for target spread
     predicted_eurusd = slope * target_spread + intercept
     
     # Current values
     current_spread = df['Spread_30Y_10Y'].iloc[-1]
     current_eurusd = df['EURUSD'].iloc[-1]
+    current_fair_value = df['Fair_Value'].iloc[-1]
+    current_deviation = df['Deviation_Pct'].iloc[-1]
     
     # Change
     spread_change = target_spread - current_spread
@@ -174,6 +181,8 @@ def calculate_prognosis(df, target_spread, correlation_val, use_recent=False):
     return {
         'predicted_eurusd': predicted_eurusd,
         'current_eurusd': current_eurusd,
+        'current_fair_value': current_fair_value,
+        'current_deviation': current_deviation,
         'current_spread': current_spread,
         'target_spread': target_spread,
         'spread_change': spread_change,
@@ -181,21 +190,21 @@ def calculate_prognosis(df, target_spread, correlation_val, use_recent=False):
         'eurusd_change_pct': eurusd_change_pct,
         'correlation': corr,
         'slope': slope,
-        'intercept': intercept
+        'intercept': intercept,
+        'df_with_fv': df  # Return df with fair value calculated
     }
 
 # Main app logic
-if all([eurusd_file, ffr_file, dgs10_file, dgs30_file]):
+if all([eurusd_file, dgs10_file, dgs30_file]):
     try:
         # Parse all files
         eurusd_df = parse_eurusd_investing(eurusd_file)
-        ffr_df = parse_fred(ffr_file)
         dgs10_df = parse_fred(dgs10_file)
         dgs30_df = parse_fred(dgs30_file)
         
-        # Process and merge
+        # Process and merge (no Fed Funds needed)
         with st.spinner("Processing data..."):
-            df = process_data(eurusd_df, ffr_df, dgs10_df, dgs30_df)
+            df = process_data(eurusd_df, dgs10_df, dgs30_df)
         
         if len(df) == 0:
             st.error("❌ No overlapping data found. Check date ranges.")
@@ -274,6 +283,47 @@ if all([eurusd_file, ffr_file, dgs10_file, dgs30_file]):
         
         # Calculate prognosis
         prognosis = calculate_prognosis(df, target_spread, correlation, use_recent_corr)
+        df = prognosis['df_with_fv']  # Get df with fair value
+        
+        # Fair Value Analysis Box
+        st.markdown('<div class="sub-header">⚖️ Fair Value Analysis</div>', unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown("### Actual EUR/USD")
+            st.markdown(f"## **{prognosis['current_eurusd']:.4f}**")
+            st.markdown("*(Market Price)*")
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown("### Fair Value")
+            st.markdown(f"## **{prognosis['current_fair_value']:.4f}**")
+            st.markdown("*(Model Based on Spread)*")
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        with col3:
+            deviation = prognosis['current_deviation']
+            if abs(deviation) < 2:
+                box_class = "neutral-box"
+                signal = "✅ FAIR VALUED"
+                color = "🟢"
+            elif deviation > 2:
+                box_class = "warning-box"
+                signal = "⚠️ OVERVALUED"
+                color = "🔴"
+            else:
+                box_class = "success-box"
+                signal = "💎 UNDERVALUED"
+                color = "🟢"
+            
+            st.markdown(f'<div class="{box_class}">', unsafe_allow_html=True)
+            st.markdown("### Deviation")
+            st.markdown(f"## **{deviation:+.2f}%**")
+            st.markdown(f"**{color} {signal}**")
+            st.markdown("</div>", unsafe_allow_html=True)
         
         # Display prognosis
         st.markdown('<div class="sub-header">📊 Prognosis Results</div>', unsafe_allow_html=True)
@@ -321,6 +371,8 @@ if all([eurusd_file, ffr_file, dgs10_file, dgs30_file]):
             **Current State:**
             - Current Spread: {prognosis['current_spread']:.2f}%
             - Current EUR/USD: {prognosis['current_eurusd']:.4f}
+            - Fair Value: {prognosis['current_fair_value']:.4f}
+            - Deviation: {prognosis['current_deviation']:+.2f}%
             
             **Target State:**
             - Target Spread: {prognosis['target_spread']:.2f}%
@@ -334,10 +386,119 @@ if all([eurusd_file, ffr_file, dgs10_file, dgs30_file]):
         # Visualization
         st.markdown('<div class="sub-header">📈 Visualization</div>', unsafe_allow_html=True)
         
-        tab1, tab2, tab3 = st.tabs(["Prognosis Chart", "Historical Correlation", "Scenario Analysis"])
+        tab1, tab2, tab3, tab4 = st.tabs(["Fair Value", "Prognosis Chart", "Historical Correlation", "Scenario Analysis"])
         
         with tab1:
-            # Create scatter plot with prognosis
+            # Fair Value Chart - NEW!
+            fig = make_subplots(
+                rows=2, cols=1,
+                subplot_titles=('EUR/USD: Actual vs Fair Value', 'Deviation from Fair Value (%)'),
+                vertical_spacing=0.15,
+                row_heights=[0.6, 0.4]
+            )
+            
+            # Top panel: Actual vs Fair Value
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['EURUSD'],
+                name='Actual EUR/USD',
+                line=dict(color='#0051a5', width=2.5),
+                hovertemplate='%{x}<br>Actual: %{y:.4f}<extra></extra>'
+            ), row=1, col=1)
+            
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['Fair_Value'],
+                name='Fair Value',
+                line=dict(color='#ff7f0e', width=2, dash='dash'),
+                hovertemplate='%{x}<br>Fair Value: %{y:.4f}<extra></extra>'
+            ), row=1, col=1)
+            
+            # Shade overvalued/undervalued
+            overvalued = df['EURUSD'] > df['Fair_Value']
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['EURUSD'],
+                fill='tonexty',
+                fillcolor='rgba(255, 0, 0, 0.1)',
+                line=dict(width=0),
+                showlegend=False,
+                hoverinfo='skip'
+            ), row=1, col=1)
+            
+            # Current points
+            current_date = df['Date'].iloc[-1]
+            fig.add_trace(go.Scatter(
+                x=[current_date], y=[df['EURUSD'].iloc[-1]],
+                mode='markers',
+                name='Current Actual',
+                marker=dict(size=15, color='green', symbol='circle', 
+                           line=dict(color='black', width=2)),
+                hovertemplate='Current Actual<br>%{y:.4f}<extra></extra>'
+            ), row=1, col=1)
+            
+            fig.add_trace(go.Scatter(
+                x=[current_date], y=[df['Fair_Value'].iloc[-1]],
+                mode='markers',
+                name='Current Fair Value',
+                marker=dict(size=15, color='orange', symbol='square',
+                           line=dict(color='black', width=2)),
+                hovertemplate='Current Fair Value<br>%{y:.4f}<extra></extra>'
+            ), row=1, col=1)
+            
+            # Bottom panel: Deviation
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['Deviation_Pct'],
+                name='Deviation %',
+                fill='tozeroy',
+                fillcolor='rgba(128, 0, 128, 0.2)',
+                line=dict(color='purple', width=2),
+                hovertemplate='%{x}<br>Deviation: %{y:+.2f}%<extra></extra>'
+            ), row=2, col=1)
+            
+            # Zero line
+            fig.add_hline(y=0, line_dash="solid", line_color="black", line_width=1, row=2, col=1)
+            
+            # +/- 2% bands
+            fig.add_hline(y=2, line_dash="dash", line_color="red", line_width=1, 
+                         opacity=0.5, row=2, col=1)
+            fig.add_hline(y=-2, line_dash="dash", line_color="green", line_width=1,
+                         opacity=0.5, row=2, col=1)
+            
+            # Current deviation
+            fig.add_trace(go.Scatter(
+                x=[current_date], y=[df['Deviation_Pct'].iloc[-1]],
+                mode='markers',
+                name='Current Deviation',
+                marker=dict(size=15, 
+                           color='red' if df['Deviation_Pct'].iloc[-1] > 0 else 'green',
+                           symbol='circle',
+                           line=dict(color='black', width=2)),
+                hovertemplate='Current<br>%{y:+.2f}%<extra></extra>'
+            ), row=2, col=1)
+            
+            fig.update_xaxes(title_text="Date", row=2, col=1)
+            fig.update_yaxes(title_text="EUR/USD", row=1, col=1)
+            fig.update_yaxes(title_text="Deviation (%)", row=2, col=1)
+            
+            fig.update_layout(
+                height=800,
+                showlegend=True,
+                hovermode='x unified',
+                title_text=f'Fair Value Analysis | Current Deviation: {df["Deviation_Pct"].iloc[-1]:+.2f}% | Correlation: {prognosis["correlation"]:+.3f}'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Fair value statistics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Mean Deviation", f"{df['Deviation_Pct'].mean():+.2f}%")
+            with col2:
+                st.metric("Std Deviation", f"{df['Deviation_Pct'].std():.2f}%")
+            with col3:
+                recent_dev = df.tail(52)['Deviation_Pct'].mean()
+                st.metric("Recent 52w Mean", f"{recent_dev:+.2f}%")
+        
+        with tab2:
+            # Original prognosis scatter plot
             fig = go.Figure()
             
             # Historical data
@@ -422,7 +583,7 @@ if all([eurusd_file, ffr_file, dgs10_file, dgs30_file]):
             
             st.plotly_chart(fig, use_container_width=True)
         
-        with tab2:
+        with tab3:
             # Time series
             fig = make_subplots(
                 rows=2, cols=1,
@@ -452,7 +613,7 @@ if all([eurusd_file, ffr_file, dgs10_file, dgs30_file]):
             
             st.plotly_chart(fig, use_container_width=True)
         
-        with tab3:
+        with tab4:
             # Multiple scenarios
             st.markdown("**Compare Multiple Scenarios:**")
             
@@ -517,23 +678,45 @@ if all([eurusd_file, ffr_file, dgs10_file, dgs30_file]):
         col1, col2 = st.columns(2)
         
         with col1:
+            # Fair value assessment
+            if abs(prognosis['current_deviation']) > 2:
+                st.markdown('<div class="warning-box">', unsafe_allow_html=True)
+                if prognosis['current_deviation'] > 2:
+                    st.markdown("### 🔴 EUR Overvalued")
+                    st.markdown(f"EUR/USD is **{prognosis['current_deviation']:.2f}%** above fair value")
+                    st.markdown("**Trading Signal:** Consider SELLING EUR")
+                    st.markdown(f"**Target:** {prognosis['current_fair_value']:.4f} (fair value)")
+                else:
+                    st.markdown("### 🟢 EUR Undervalued")
+                    st.markdown(f"EUR/USD is **{abs(prognosis['current_deviation']):.2f}%** below fair value")
+                    st.markdown("**Trading Signal:** Consider BUYING EUR")
+                    st.markdown(f"**Target:** {prognosis['current_fair_value']:.4f} (fair value)")
+                st.markdown("</div>", unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="success-box">', unsafe_allow_html=True)
+                st.markdown("### ✅ EUR Fairly Valued")
+                st.markdown(f"EUR/USD within ±2% of fair value ({prognosis['current_deviation']:+.2f}%)")
+                st.markdown("**Trading Signal:** NEUTRAL / HOLD")
+                st.markdown("**Recommendation:** Standard hedging appropriate")
+                st.markdown("</div>", unsafe_allow_html=True)
+            
+            # Prognosis impact
             if abs(prognosis['eurusd_change_pct']) > 5:
                 st.markdown('<div class="warning-box">', unsafe_allow_html=True)
-                st.markdown("### 🔴 High Impact Scenario")
+                st.markdown("### 🔴 High Impact Prognosis")
                 st.markdown(f"Predicted change of **{prognosis['eurusd_change_pct']:+.2f}%** is significant.")
                 st.markdown("**Recommendations:**")
                 st.markdown("- Consider hedging FX exposure")
                 st.markdown("- Use options for large moves")
-                st.markdown("- Monitor Fed/ECB policy closely")
+                st.markdown("- Monitor spread developments")
                 st.markdown("</div>", unsafe_allow_html=True)
             else:
                 st.markdown('<div class="success-box">', unsafe_allow_html=True)
-                st.markdown("### 🟢 Moderate Impact Scenario")
+                st.markdown("### 🟢 Moderate Impact Prognosis")
                 st.markdown(f"Predicted change of **{prognosis['eurusd_change_pct']:+.2f}%** is manageable.")
                 st.markdown("**Recommendations:**")
                 st.markdown("- Standard hedging appropriate")
                 st.markdown("- Range-bound strategies work")
-                st.markdown("- Monitor spread developments")
                 st.markdown("</div>", unsafe_allow_html=True)
         
         with col2:
@@ -546,6 +729,7 @@ if all([eurusd_file, ffr_file, dgs10_file, dgs30_file]):
             **Technical Levels:**
             - **Resistance:** {resistance:.4f}
             - **Current:** {prognosis['current_eurusd']:.4f}
+            - **Fair Value:** {prognosis['current_fair_value']:.4f}
             - **Support:** {support:.4f}
             - **Target:** {prognosis['predicted_eurusd']:.4f}
             
@@ -553,6 +737,11 @@ if all([eurusd_file, ffr_file, dgs10_file, dgs30_file]):
             - **Current:** {prognosis['current_spread']:.2f}%
             - **Target:** {prognosis['target_spread']:.2f}%
             - **Critical:** 0.40% (flattening) / 0.90% (steep)
+            
+            **Deviation Stats:**
+            - **Current:** {prognosis['current_deviation']:+.2f}%
+            - **Mean:** {df['Deviation_Pct'].mean():+.2f}%
+            - **Std Dev:** {df['Deviation_Pct'].std():.2f}%
             """)
         
         # Download results
@@ -562,6 +751,8 @@ if all([eurusd_file, ffr_file, dgs10_file, dgs30_file]):
         export_data = pd.DataFrame([{
             'Date': datetime.now().strftime('%Y-%m-%d'),
             'Current_EURUSD': prognosis['current_eurusd'],
+            'Fair_Value': prognosis['current_fair_value'],
+            'Deviation_Pct': prognosis['current_deviation'],
             'Current_Spread': prognosis['current_spread'],
             'Target_10Y': target_10y,
             'Target_30Y': target_30y,
@@ -587,82 +778,69 @@ if all([eurusd_file, ffr_file, dgs10_file, dgs30_file]):
 
 else:
     # Instructions when no files uploaded
-    st.info("👆 **Please upload all 4 CSV files from the sidebar to start**")
+    st.info("👆 **Please upload 3 CSV files from the sidebar to start**")
     
     with st.expander("📖 How to Use This Tool"):
         st.markdown("""
         ### Step 1: Get Data from Investing.com / FRED
         
         **EUR/USD Historical Data** (Investing.com):
-        1. Go to https://www.investing.com/currencies/eur-usd-historical-data
+        1. Go to: https://www.investing.com/currencies/eur-usd-historical-data
         2. Select date range (suggest 5 years)
         3. Download CSV
         
         **US Treasury Data** (FRED):
-        1. Fed Funds Rate: https://fred.stlouisfed.org/series/FEDFUNDS
-        2. 10Y Treasury: https://fred.stlouisfed.org/series/DGS10
-        3. 30Y Treasury: https://fred.stlouisfed.org/series/DGS30
-        4. Download as CSV for each
+        1. 10Y Treasury: https://fred.stlouisfed.org/series/DGS10
+        2. 30Y Treasury: https://fred.stlouisfed.org/series/DGS30
+        3. Download each as CSV
+        
+        **Note:** Fed Funds Rate is NOT needed for this analysis!
         
         ### Step 2: Upload Files
         - Use the sidebar file uploaders
-        - All 4 files are required
+        - Only 3 files required: EUR/USD, 10Y, 30Y
         
-        ### Step 3: Set Your Scenario
+        ### Step 3: Analyze Fair Value
+        - See if EUR/USD is overvalued or undervalued vs spread-based model
+        - Current deviation shown in % (above/below fair value)
+        - Trading signals automatically generated
+        
+        ### Step 4: Set Your Scenario
         - Choose from preset scenarios or create custom
         - Set target 10Y and 30Y yields
         - Tool calculates expected EUR/USD
         
-        ### Step 4: Analyze Results
+        ### Step 5: Review Results
         - View predicted EUR/USD rate
-        - See impact of spread changes
+        - See fair value analysis
         - Compare multiple scenarios
         - Export results
         
-        ### 🎯 How It Works
+        ### 🎯 Fair Value Model
         
-        This tool uses the **+0.878 correlation** between EUR/USD and the 30Y-10Y Treasury spread:
+        The tool calculates **fair value EUR/USD** based on the 30Y-10Y spread:
         
-        - **Spread WIDENS** → EUR/USD typically RISES (USD weakens)
-        - **Spread NARROWS** → EUR/USD typically FALLS (USD strengthens)
+        - **Correlation:** +0.878 (very strong)
+        - **Formula:** EUR/USD = 0.23 × Spread + 1.03
+        - **Deviation > +2%:** EUR overvalued → Sell signal
+        - **Deviation < -2%:** EUR undervalued → Buy signal
+        - **Deviation ±2%:** Fair valued → Neutral
         
-        Based on your target yields, the model predicts where EUR/USD should trade.
+        ### 📊 Key Features
         
-        ### ⚠️ Important Notes
-        
-        - **Correlation is historical** - past performance doesn't guarantee future results
-        - **Bear vs Bull steepener** - same spread can mean different things
-        - **Use as guidance** - combine with other analysis and risk management
-        - **For professional use** - suitable for FX hedging decisions
-        """)
-    
-    with st.expander("📊 Example Scenarios"):
-        st.markdown("""
-        ### Bull Steepener (Growth Optimism)
-        - 10Y: 4.2% → 4.5%
-        - 30Y: 4.8% → 5.3%
-        - Spread: 0.60% → 0.80%
-        - **Expected:** EUR/USD rises (risk-on)
-        
-        ### Bear Steepener (Fiscal Crisis)
-        - 10Y: 4.2% → 4.0%
-        - 30Y: 4.8% → 5.5%
-        - Spread: 0.60% → 1.50%
-        - **Expected:** EUR/USD rises initially, but may reverse
-        
-        ### Flattening (Fed Tightening)
-        - 10Y: 4.2% → 4.8%
-        - 30Y: 4.8% → 5.0%
-        - Spread: 0.60% → 0.20%
-        - **Expected:** EUR/USD falls (USD strengthens)
+        1. **Fair Value Chart:** See actual vs model-predicted EUR/USD
+        2. **Deviation Chart:** Track over/undervaluation over time
+        3. **Prognosis:** Predict EUR/USD based on target spreads
+        4. **Scenarios:** Compare multiple spread scenarios
+        5. **Export:** Download results for reports
         """)
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9rem;'>
-    <b>EUR/USD Spread Prognosis Tool</b> | 
-    Correlation-based forecast using 30Y-10Y Treasury spread | 
+    <b>EUR/USD Spread Prognosis Tool v2</b> | 
+    Fair value analysis + Correlation-based forecast | 
     For professional FX hedging decisions
 </div>
 """, unsafe_allow_html=True)
