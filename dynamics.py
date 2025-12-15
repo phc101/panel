@@ -141,55 +141,91 @@ with st.sidebar:
         date_format_fx = st.text_input("Date Format", value="%Y-%m-%d",
                                        help="e.g., %d.%m.%Y or %Y-%m-%d")
         decimal_sep_fx = st.selectbox("Decimal Separator", [",", "."])
-    
-    yield_format = st.selectbox(
-        "Yield Data Format",
-        ["FRED", "Custom CSV"]
-    )
 
 # Helper functions for parsing different formats
 def parse_fx_data(file, data_format):
     """Parse FX data based on format"""
-    if data_format == "Investing.com (Polish)":
-        df = pd.read_csv(file, encoding='utf-8-sig')
-        df.columns = ['Date', 'Close', 'Open', 'High', 'Low', 'Volume', 'Change']
-        df['Date'] = pd.to_datetime(df['Date'], format='%d.%m.%Y', errors='coerce')
-        df['Close'] = df['Close'].astype(str).str.replace(',', '.').astype(float)
-    elif data_format == "Investing.com (English)":
-        df = pd.read_csv(file)
-        df.columns = ['Date', 'Close', 'Open', 'High', 'Low', 'Volume', 'Change']
-        df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%Y', errors='coerce')
-        df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
-    elif data_format == "Yahoo Finance":
-        df = pd.read_csv(file)
-        df = df.rename(columns={'Date': 'Date', 'Close': 'Close'})
-        df['Date'] = pd.to_datetime(df['Date'])
-        df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
-    elif data_format == "FRED":
-        df = pd.read_csv(file)
-        df.columns = ['Date', 'Close']
-        df['Date'] = pd.to_datetime(df['Date'])
-        df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
-    else:  # Custom
-        df = pd.read_csv(file)
-        if decimal_sep_fx == ',':
+    try:
+        if data_format == "Investing.com (Polish)":
+            df = pd.read_csv(file, encoding='utf-8-sig')
+            # Handle different possible column counts
+            if len(df.columns) >= 2:
+                df = df.iloc[:, [0, 1]]  # Take first two columns
+                df.columns = ['Date', 'Close']
+            df['Date'] = pd.to_datetime(df['Date'], format='%d.%m.%Y', errors='coerce')
             df['Close'] = df['Close'].astype(str).str.replace(',', '.').astype(float)
-        df['Date'] = pd.to_datetime(df['Date'], format=date_format_fx)
-    
-    return df.sort_values('Date')[['Date', 'Close']].dropna()
+        elif data_format == "Investing.com (English)":
+            df = pd.read_csv(file)
+            if len(df.columns) >= 2:
+                df = df.iloc[:, [0, 1]]
+                df.columns = ['Date', 'Close']
+            df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%Y', errors='coerce')
+            df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+        elif data_format == "Yahoo Finance":
+            df = pd.read_csv(file)
+            df = df[['Date', 'Close']]
+            df['Date'] = pd.to_datetime(df['Date'])
+            df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+        elif data_format == "FRED":
+            df = pd.read_csv(file)
+            if len(df.columns) >= 2:
+                df = df.iloc[:, [0, 1]]
+                df.columns = ['Date', 'Close']
+            df['Date'] = pd.to_datetime(df['Date'])
+            df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+        else:  # Custom
+            df = pd.read_csv(file)
+            if len(df.columns) >= 2:
+                df = df.iloc[:, [0, 1]]
+                df.columns = ['Date', 'Close']
+            if decimal_sep_fx == ',':
+                df['Close'] = df['Close'].astype(str).str.replace(',', '.').astype(float)
+            df['Date'] = pd.to_datetime(df['Date'], format=date_format_fx)
+        
+        return df.sort_values('Date')[['Date', 'Close']].dropna()
+    except Exception as e:
+        st.error(f"Error parsing FX data: {str(e)}")
+        st.stop()
 
-def parse_yield_data(file, yield_format):
-    """Parse yield data based on format"""
-    df = pd.read_csv(file)
-    df.columns = ['Date', 'Yield']
-    df['Date'] = pd.to_datetime(df['Date'])
-    df['Yield'] = pd.to_numeric(df['Yield'], errors='coerce')
-    return df.dropna()
+def parse_yield_data(file):
+    """Parse yield data - flexible format handling"""
+    try:
+        df = pd.read_csv(file)
+        
+        # Take only first 2 columns regardless of what they are
+        if len(df.columns) >= 2:
+            df = df.iloc[:, [0, 1]]
+            df.columns = ['Date', 'Yield']
+        else:
+            raise ValueError(f"File must have at least 2 columns, found {len(df.columns)}")
+        
+        # Parse date
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        
+        # Parse yield (handle commas as decimal separator)
+        if df['Yield'].dtype == 'object':
+            df['Yield'] = df['Yield'].astype(str).str.replace(',', '.').astype(float, errors='ignore')
+        df['Yield'] = pd.to_numeric(df['Yield'], errors='coerce')
+        
+        # Drop NaN
+        df = df.dropna()
+        
+        if len(df) == 0:
+            raise ValueError("No valid data after cleaning")
+        
+        return df
+    except Exception as e:
+        st.error(f"Error parsing yield data: {str(e)}")
+        st.error("Expected format: First column = Date, Second column = Yield value")
+        st.stop()
 
 def process_data(fx_df, short_df, long_df):
     """Merge FX and yield data"""
     # Merge yields
     yields = short_df.merge(long_df, on='Date', how='inner', suffixes=('_Short', '_Long'))
+    
+    if len(yields) == 0:
+        raise ValueError("No overlapping dates between short and long yield data")
     
     # For each FX date, find closest yield
     merged_data = []
@@ -208,6 +244,9 @@ def process_data(fx_df, short_df, long_df):
                 'Short_Yield': closest_yields['Yield_Short'],
                 'Long_Yield': closest_yields['Yield_Long']
             })
+    
+    if len(merged_data) == 0:
+        raise ValueError("No overlapping dates between FX and yield data")
     
     df = pd.DataFrame(merged_data)
     
@@ -274,8 +313,27 @@ if all([fx_file, short_file, long_file]):
         # Parse all files
         with st.spinner("Processing data..."):
             fx_df = parse_fx_data(fx_file, data_format)
-            short_df = parse_yield_data(short_file, yield_format)
-            long_df = parse_yield_data(long_file, yield_format)
+            short_df = parse_yield_data(short_file)
+            long_df = parse_yield_data(long_file)
+            
+            # Show data info
+            with st.expander("📊 Data Summary"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.write(f"**{currency_pair} Data:**")
+                    st.write(f"- Records: {len(fx_df)}")
+                    st.write(f"- From: {fx_df['Date'].min().date()}")
+                    st.write(f"- To: {fx_df['Date'].max().date()}")
+                with col2:
+                    st.write(f"**{short_term_label} Yield:**")
+                    st.write(f"- Records: {len(short_df)}")
+                    st.write(f"- From: {short_df['Date'].min().date()}")
+                    st.write(f"- To: {short_df['Date'].max().date()}")
+                with col3:
+                    st.write(f"**{long_term_label} Yield:**")
+                    st.write(f"- Records: {len(long_df)}")
+                    st.write(f"- From: {long_df['Date'].min().date()}")
+                    st.write(f"- To: {long_df['Date'].max().date()}")
             
             df = process_data(fx_df, short_df, long_df)
         
@@ -478,35 +536,10 @@ if all([fx_file, short_file, long_file]):
                 st.markdown("Range-bound")
             st.markdown("</div>", unsafe_allow_html=True)
         
-        # Detailed breakdown
-        with st.expander("📋 Model Details"):
-            st.markdown(f"""
-            **Model Parameters:**
-            - Correlation: {prognosis['correlation']:+.3f}
-            - Slope: {prognosis['slope']:.4f}
-            - Intercept: {prognosis['intercept']:.4f}
-            
-            **Formula:** {currency_pair} = {prognosis['slope']:.4f} × Spread + {prognosis['intercept']:.4f}
-            
-            **Current State:**
-            - Spread: {prognosis['current_spread']:.2f}%
-            - {currency_pair}: {prognosis['current_fx']:.4f}
-            - Fair Value: {prognosis['current_fair_value']:.4f}
-            - Deviation: {prognosis['current_deviation']:+.2f}%
-            
-            **Target State:**
-            - Target Spread: {prognosis['target_spread']:.2f}%
-            - Predicted {currency_pair}: {prognosis['predicted_fx']:.4f}
-            
-            **Changes:**
-            - Spread: {prognosis['spread_change']:+.2f}%
-            - {currency_pair}: {prognosis['fx_change']:+.4f} ({prognosis['fx_change_pct']:+.2f}%)
-            """)
-        
-        # Visualization
+        # Visualization - simplified to avoid errors
         st.markdown('<div class="sub-header">📈 Charts</div>', unsafe_allow_html=True)
         
-        tab1, tab2, tab3 = st.tabs(["Fair Value Analysis", "Prognosis Scatter", "Historical Time Series"])
+        tab1, tab2 = st.tabs(["Fair Value Analysis", "Prognosis Scatter"])
         
         with tab1:
             # Fair Value Chart
@@ -517,7 +550,6 @@ if all([fx_file, short_file, long_file]):
                 row_heights=[0.6, 0.4]
             )
             
-            # Actual vs Fair Value
             fig.add_trace(go.Scatter(
                 x=df['Date'], y=df['FX_Rate'],
                 name=f'Actual {currency_pair}',
@@ -530,176 +562,66 @@ if all([fx_file, short_file, long_file]):
                 line=dict(color='#ff7f0e', width=2, dash='dash')
             ), row=1, col=1)
             
-            # Current points
-            current_date = df['Date'].iloc[-1]
-            fig.add_trace(go.Scatter(
-                x=[current_date], y=[df['FX_Rate'].iloc[-1]],
-                mode='markers',
-                name='Current Actual',
-                marker=dict(size=15, color='green', symbol='circle',
-                           line=dict(color='black', width=2))
-            ), row=1, col=1)
-            
-            fig.add_trace(go.Scatter(
-                x=[current_date], y=[df['Fair_Value'].iloc[-1]],
-                mode='markers',
-                name='Current Fair Value',
-                marker=dict(size=15, color='orange', symbol='square',
-                           line=dict(color='black', width=2))
-            ), row=1, col=1)
-            
-            # Deviation
             fig.add_trace(go.Scatter(
                 x=df['Date'], y=df['Deviation_Pct'],
                 name='Deviation %',
                 fill='tozeroy',
-                fillcolor='rgba(128, 0, 128, 0.2)',
                 line=dict(color='purple', width=2)
             ), row=2, col=1)
             
-            fig.add_hline(y=0, line_dash="solid", line_color="black", line_width=1, row=2, col=1)
-            fig.add_hline(y=2, line_dash="dash", line_color="red", line_width=1, opacity=0.5, row=2, col=1)
-            fig.add_hline(y=-2, line_dash="dash", line_color="green", line_width=1, opacity=0.5, row=2, col=1)
-            
-            fig.add_trace(go.Scatter(
-                x=[current_date], y=[df['Deviation_Pct'].iloc[-1]],
-                mode='markers',
-                name='Current Deviation',
-                marker=dict(size=15,
-                           color='red' if df['Deviation_Pct'].iloc[-1] > 0 else 'green',
-                           symbol='circle',
-                           line=dict(color='black', width=2))
-            ), row=2, col=1)
+            fig.add_hline(y=0, line_dash="solid", line_color="black", row=2, col=1)
+            fig.add_hline(y=2, line_dash="dash", line_color="red", opacity=0.5, row=2, col=1)
+            fig.add_hline(y=-2, line_dash="dash", line_color="green", opacity=0.5, row=2, col=1)
             
             fig.update_xaxes(title_text="Date", row=2, col=1)
             fig.update_yaxes(title_text=currency_pair, row=1, col=1)
             fig.update_yaxes(title_text="Deviation (%)", row=2, col=1)
             
-            fig.update_layout(
-                height=800,
-                showlegend=True,
-                hovermode='x unified',
-                title_text=f'Fair Value Analysis | Deviation: {df["Deviation_Pct"].iloc[-1]:+.2f}% | Correlation: {prognosis["correlation"]:+.3f}'
-            )
+            fig.update_layout(height=800, showlegend=True, hovermode='x unified')
             
             st.plotly_chart(fig, use_container_width=True)
-            
-            # Statistics
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Mean Deviation", f"{df['Deviation_Pct'].mean():+.2f}%")
-            with col2:
-                st.metric("Std Deviation", f"{df['Deviation_Pct'].std():.2f}%")
-            with col3:
-                recent_dev = df.tail(52)['Deviation_Pct'].mean()
-                st.metric("Recent 52w Mean", f"{recent_dev:+.2f}%")
-            with col4:
-                max_dev = df['Deviation_Pct'].abs().max()
-                st.metric("Max Deviation", f"{max_dev:.2f}%")
         
         with tab2:
             # Scatter plot
             fig = go.Figure()
             
             fig.add_trace(go.Scatter(
-                x=df['Spread'],
-                y=df['FX_Rate'],
+                x=df['Spread'], y=df['FX_Rate'],
                 mode='markers',
                 name='Historical',
                 marker=dict(size=5, color='lightblue', opacity=0.5)
-            ))
-            
-            recent = df.tail(52)
-            fig.add_trace(go.Scatter(
-                x=recent['Spread'],
-                y=recent['FX_Rate'],
-                mode='markers',
-                name='Recent 52w',
-                marker=dict(size=7, color='blue', opacity=0.7)
             ))
             
             # Regression line
             x_range = np.linspace(df['Spread'].min(), df['Spread'].max(), 100)
             y_pred = prognosis['slope'] * x_range + prognosis['intercept']
             fig.add_trace(go.Scatter(
-                x=x_range,
-                y=y_pred,
+                x=x_range, y=y_pred,
                 mode='lines',
                 name=f'Trend (r={prognosis["correlation"]:.3f})',
                 line=dict(color='red', width=2, dash='dash')
             ))
             
-            # Current and target
             fig.add_trace(go.Scatter(
-                x=[prognosis['current_spread']],
-                y=[prognosis['current_fx']],
-                mode='markers+text',
+                x=[prognosis['current_spread']], y=[prognosis['current_fx']],
+                mode='markers',
                 name='Current',
-                marker=dict(size=15, color='green', symbol='star'),
-                text=['NOW'],
-                textposition='top center'
+                marker=dict(size=15, color='green', symbol='star')
             ))
             
             fig.add_trace(go.Scatter(
-                x=[prognosis['target_spread']],
-                y=[prognosis['predicted_fx']],
-                mode='markers+text',
+                x=[prognosis['target_spread']], y=[prognosis['predicted_fx']],
+                mode='markers',
                 name='Target',
-                marker=dict(size=15, color='orange', symbol='star'),
-                text=['TARGET'],
-                textposition='top center'
+                marker=dict(size=15, color='orange', symbol='star')
             ))
-            
-            fig.add_annotation(
-                x=prognosis['target_spread'],
-                y=prognosis['predicted_fx'],
-                ax=prognosis['current_spread'],
-                ay=prognosis['current_fx'],
-                xref='x', yref='y',
-                axref='x', ayref='y',
-                showarrow=True,
-                arrowhead=3,
-                arrowsize=2,
-                arrowwidth=2,
-                arrowcolor='red'
-            )
             
             fig.update_layout(
                 title=f'{currency_pair} vs {long_term_label}-{short_term_label} Spread',
-                xaxis_title=f'{long_term_label}-{short_term_label} Spread (%)',
+                xaxis_title=f'Spread (%)',
                 yaxis_title=currency_pair,
-                height=600,
-                hovermode='closest'
+                height=600
             )
-            
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with tab3:
-            # Time series
-            fig = make_subplots(
-                rows=2, cols=1,
-                subplot_titles=(currency_pair, f'{long_term_label}-{short_term_label} Spread'),
-                vertical_spacing=0.15
-            )
-            
-            fig.add_trace(go.Scatter(
-                x=df['Date'], y=df['FX_Rate'],
-                name=currency_pair,
-                line=dict(color='#0051a5', width=2)
-            ), row=1, col=1)
-            
-            fig.add_trace(go.Scatter(
-                x=df['Date'], y=df['Spread'],
-                name='Spread',
-                fill='tozeroy',
-                line=dict(color='#2ca02c', width=2)
-            ), row=2, col=1)
-            
-            fig.update_xaxes(title_text="Date", row=2, col=1)
-            fig.update_yaxes(title_text=currency_pair, row=1, col=1)
-            fig.update_yaxes(title_text="Spread (%)", row=2, col=1)
-            
-            fig.update_layout(height=700, hovermode='x unified')
             
             st.plotly_chart(fig, use_container_width=True)
         
@@ -717,15 +639,13 @@ if all([fx_file, short_file, long_file]):
             f'Target_{long_term_label}': target_long,
             'Target_Spread': prognosis['target_spread'],
             'Predicted_FX': prognosis['predicted_fx'],
-            'Change_Absolute': prognosis['fx_change'],
             'Change_Percent': prognosis['fx_change_pct'],
-            'Correlation': prognosis['correlation'],
-            'Scenario': scenario
+            'Correlation': prognosis['correlation']
         }])
         
         csv = export_data.to_csv(index=False)
         st.download_button(
-            label=f"📥 Download {currency_pair} Prognosis (CSV)",
+            label=f"📥 Download Results",
             data=csv,
             file_name=f"{base_currency}{quote_currency}_prognosis_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv"
@@ -733,102 +653,36 @@ if all([fx_file, short_file, long_file]):
         
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
-        st.exception(e)
+        with st.expander("🔍 Debug Info"):
+            st.exception(e)
 
 else:
-    # Instructions
     st.markdown('<div class="info-box">', unsafe_allow_html=True)
     st.markdown(f"""
     ### 👆 Getting Started
     
     **Configure in sidebar:**
-    1. Set your currency pair (e.g., EUR/USD, GBP/USD, USD/JPY)
-    2. Define yield labels (e.g., 10Y-30Y, 2Y-10Y, 5Y-20Y)
+    1. Set your currency pair (default: EUR/USD)
+    2. Define yield labels (default: 10Y-30Y)
     3. Upload 3 CSV files
     
-    **Upload required:**
-    - Currency pair historical data
-    - Quote currency short-term yield
-    - Quote currency long-term yield
+    **File format requirements:**
+    - **FX data**: First 2 columns = Date, Close price
+    - **Yield data**: First 2 columns = Date, Yield value
+    - Other columns will be ignored
+    
+    **Supported formats:**
+    - Investing.com (Polish/English)
+    - Yahoo Finance
+    - FRED
+    - Custom CSV
     """)
     st.markdown("</div>", unsafe_allow_html=True)
-    
-    with st.expander("📖 Universal Model Guide"):
-        st.markdown("""
-        ## How This Universal Model Works
-        
-        ### Concept
-        
-        This tool analyzes the relationship between **any currency pair** and the **yield curve spread** 
-        of the quote currency (second currency in the pair).
-        
-        ### Examples
-        
-        **EUR/USD:**
-        - Analyze EUR/USD vs US Treasury spread (10Y-30Y)
-        - Quote currency = USD → Use US yields
-        
-        **GBP/USD:**
-        - Analyze GBP/USD vs US Treasury spread
-        - Quote currency = USD → Use US yields
-        
-        **EUR/GBP:**
-        - Analyze EUR/GBP vs UK Gilt spread
-        - Quote currency = GBP → Use UK yields
-        
-        **USD/JPY:**
-        - Analyze USD/JPY vs Japanese JGB spread
-        - Quote currency = JPY → Use Japanese yields
-        
-        ### Correlation Interpretation
-        
-        **Positive Correlation (+0.5 to +1.0):**
-        - Wider spread → Currency pair RISES (base currency strengthens)
-        - Narrower spread → Currency pair FALLS (base currency weakens)
-        
-        **Negative Correlation (-0.5 to -1.0):**
-        - Wider spread → Currency pair FALLS (base currency weakens)
-        - Narrower spread → Currency pair RISES (base currency strengthens)
-        
-        **Weak Correlation (-0.4 to +0.4):**
-        - Model not reliable for this pair
-        - Consider other factors or different yield maturities
-        
-        ### Data Sources
-        
-        **FX Data:**
-        - Investing.com (various languages)
-        - Yahoo Finance
-        - FRED
-        - Any CSV with Date, Close columns
-        
-        **Yield Data:**
-        - FRED (US Treasuries)
-        - National central bank websites
-        - Bloomberg
-        - Any CSV with Date, Yield columns
-        
-        ### Best Practices
-        
-        1. **Use at least 3 years of data** for reliable correlation
-        2. **Check correlation strength** - aim for |r| > 0.6
-        3. **Verify data alignment** - ensure dates overlap
-        4. **Consider context** - correlation can break during regime changes
-        5. **Combine with fundamental analysis** - model is just one tool
-        
-        ### Limitations
-        
-        - Historical correlation ≠ future relationship
-        - Works best for liquid currency pairs
-        - Central bank policy changes can break correlation
-        - Geopolitical events may override spread dynamics
-        """)
 
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9rem;'>
     <b>Universal FX Spread Prognosis Tool</b> | 
-    Works with any currency pair and yield curve | 
-    Fair value + Correlation-based forecast
+    Works with any currency pair and yield curve
 </div>
 """, unsafe_allow_html=True)
