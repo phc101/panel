@@ -3,15 +3,26 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 from io import BytesIO
 from datetime import datetime
-import pdfplumber
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.lib.units import cm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+
+# Optional imports - app will work without them
+try:
+    import pdfplumber
+    PDFPLUMBER_AVAILABLE = True
+except ImportError:
+    PDFPLUMBER_AVAILABLE = False
+    
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
 
 # Page config
 st.set_page_config(
@@ -931,18 +942,23 @@ def main():
             st.markdown("---")
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                if st.button("📥 Pobierz raport PDF", type="primary", use_container_width=True):
-                    pdf_buffer = BytesIO()
-                    generate_pdf_report(analyzer, pdf_buffer)
-                    pdf_buffer.seek(0)
-                    
-                    st.download_button(
-                        label="💾 Zapisz raport PDF",
-                        data=pdf_buffer,
-                        file_name=f"Analiza_kredytowa_{analyzer.data.get('nip', 'N-A')}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
+                if not REPORTLAB_AVAILABLE:
+                    st.warning("⚠️ Eksport PDF wymaga pakietu reportlab. Zainstaluj: `pip install reportlab`")
+                elif st.button("📥 Pobierz raport PDF", type="primary", use_container_width=True):
+                    try:
+                        pdf_buffer = BytesIO()
+                        generate_pdf_report(analyzer, pdf_buffer)
+                        pdf_buffer.seek(0)
+                        
+                        st.download_button(
+                            label="💾 Zapisz raport PDF",
+                            data=pdf_buffer,
+                            file_name=f"Analiza_kredytowa_{analyzer.data.get('nip', 'N-A')}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                    except Exception as e:
+                        st.error(f"Błąd generowania PDF: {str(e)}")
 
 
 if __name__ == "__main__":
