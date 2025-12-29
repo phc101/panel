@@ -28,126 +28,131 @@ st.set_page_config(page_title="Analityk Kredytowy - FX Forward", page_icon="📊
 
 
 class PDFParser:
-    """Parser dla PDF z e-sprawozdania.biz.pl"""
+    """Parser dla PDF z e-sprawozdania.biz.pl - wersja z tabelami"""
     
     @staticmethod
     def parse_pdf(pdf_file):
-        """Parse PDF financial statement from e-sprawozdania.biz.pl"""
+        """Parse PDF financial statement using table extraction"""
         try:
             data = {}
             
             with pdfplumber.open(pdf_file) as pdf:
+                # Extract all text for basic info
                 full_text = ""
                 for page in pdf.pages:
                     full_text += page.extract_text() + "\n"
+                
+                # Extract tables from all pages
+                all_tables = []
+                for page in pdf.pages:
+                    tables = page.extract_tables()
+                    if tables:
+                        all_tables.extend(tables)
             
-            # Debug - show what we found
-            st.write("🔍 **Debug - Znalezione dane:**")
+            st.write("🔍 **Debug - Parser działa...**")
             
-            # Basic info
+            # Basic info from text
             data['company_name'] = PDFParser._extract_value(full_text, r'NazwaFirmy:\s*(.+?)(?:\n|Siedziba)')
             data['nip'] = PDFParser._extract_value(full_text, r'Identyfikator podatkowy NIP:\s*(\d+)')
             data['krs'] = PDFParser._extract_value(full_text, r'Numer KRS[^:]*:\s*(\d+)')
-            
-            st.write(f"Firma: {data['company_name']}")
-            st.write(f"NIP: {data['nip']}")
-            
-            # Dates
             data['period_from'] = PDFParser._extract_value(full_text, r'DataOd:\s*([\d-]+)')
             data['period_to'] = PDFParser._extract_value(full_text, r'DataDo:\s*([\d-]+)')
             
             if data['period_to']:
                 match = re.search(r'(\d{4})', data['period_to'])
-                data['year'] = int(match.group(1)) if match else 2023
+                data['year'] = int(match.group(1)) if match else 2024
             else:
-                data['year'] = 2023
+                data['year'] = 2024
             
-            # Find the Bilans section and extract amounts
-            # Format: "Label Amount1 Amount2" where Amount1 is current year, Amount2 is previous year
+            st.write(f"✅ Firma: **{data['company_name']}**")
+            st.write(f"✅ NIP: {data['nip']} | KRS: {data['krs']}")
             
-            # Assets
-            data['total_assets'] = PDFParser._extract_bilans_amount(full_text, 
-                r'Aktywa razem\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
-            data['current_assets'] = PDFParser._extract_bilans_amount(full_text,
-                r'B\.\s*Aktywa obrotowe\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
-            data['fixed_assets'] = PDFParser._extract_bilans_amount(full_text,
-                r'A\.\s*Aktywa trwałe\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            # Now extract from tables
+            bilans_data = PDFParser._find_in_tables(all_tables, 'Bilans')
             
-            # Inventory
-            data['inventory'] = PDFParser._extract_bilans_amount(full_text,
-                r'I\.\s*Zapasy\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            # Extract key values
+            data['total_assets'] = PDFParser._get_table_value(bilans_data, 'Aktywa razem')
+            data['current_assets'] = PDFParser._get_table_value(bilans_data, 'B. Aktywa obrotowe')
+            data['fixed_assets'] = PDFParser._get_table_value(bilans_data, 'A. Aktywa trwałe')
+            data['inventory'] = PDFParser._get_table_value(bilans_data, 'I. Zapasy')
+            data['cash'] = PDFParser._get_table_value(bilans_data, 'środki pieniężne w kasie i na rachunkach')
+            if data['cash'] == 0:
+                data['cash'] = PDFParser._get_table_value(bilans_data, 'Środki pieniężne i inne aktywa pieniężne')
             
-            # Cash - środki pieniężne w kasie i na rachunkach
-            cash = PDFParser._extract_bilans_amount(full_text,
-                r'środki pieniężne w kasie i na rachunkach\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
-            if cash == 0:
-                cash = PDFParser._extract_bilans_amount(full_text,
-                    r'Środki pieniężne i inne aktywa pieniężne\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
-            data['cash'] = cash
-            
-            # Receivables
-            data['receivables'] = PDFParser._extract_bilans_amount(full_text,
-                r'II\.\s*Należności krótkoterminowe\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
-            
-            # Equity
-            data['equity'] = PDFParser._extract_bilans_amount(full_text,
-                r'A\.\s*Kapitał.*?własny\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
-            
-            # Liabilities
-            liabilities = PDFParser._extract_bilans_amount(full_text,
-                r'B\.\s*Zobowiązania i rezerwy na zobowiązania\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
-            data['liabilities'] = liabilities
-            
-            data['short_term_liabilities'] = PDFParser._extract_bilans_amount(full_text,
-                r'III\.\s*Zobowiązania krótkoterminowe\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
-            
-            # Show what we extracted
-            st.write(f"Aktywa: {data['total_assets']:,.0f} PLN")
-            st.write(f"Kapitał własny: {data['equity']:,.0f} PLN")
-            st.write(f"Zobowiązania: {data['liabilities']:,.0f} PLN")
+            data['receivables'] = PDFParser._get_table_value(bilans_data, 'II. Należności krótkoterminowe')
+            data['equity'] = PDFParser._get_table_value(bilans_data, 'A. Kapitał (fundusz) własny')
+            data['liabilities'] = PDFParser._get_table_value(bilans_data, 'B. Zobowiązania i rezerwy na zobowiązania')
+            data['short_term_liabilities'] = PDFParser._get_table_value(bilans_data, 'III. Zobowiązania krótkoterminowe')
             
             # P&L
-            data['revenue'] = PDFParser._extract_bilans_amount(full_text,
-                r'A\.\s*Przychody netto ze sprzedaży.*?\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            rzis_data = PDFParser._find_in_tables(all_tables, 'Rachunek zysków')
+            data['revenue'] = PDFParser._get_table_value(rzis_data, 'A. Przychody netto ze sprzedaży')
+            data['operating_profit'] = PDFParser._get_table_value(rzis_data, 'F. Zysk (strata) z działalności operacyjnej')
             
-            # Operating profit - Zysk (strata) z działalności operacyjnej
-            op_profit = PDFParser._extract_bilans_amount(full_text,
-                r'I\.\s*Zysk.*?z działalności operacyjnej.*?\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
-            data['operating_profit'] = op_profit
-            
-            # Net profit - Zysk (strata) netto
-            net_profit_text = re.search(r'O\.\s*Zysk.*?netto.*?\s+([-\d\s,\.]+)\s+([-\d\s,\.]+)', full_text, re.IGNORECASE)
-            if net_profit_text:
-                net_str = net_profit_text.group(1).strip()
-                # Check if negative (has minus)
-                if '-' in net_str:
-                    data['net_profit'] = -abs(PDFParser._parse_amount(net_str))
-                else:
-                    data['net_profit'] = PDFParser._parse_amount(net_str)
-            else:
-                data['net_profit'] = 0
-            
-            st.write(f"Przychody: {data['revenue']:,.0f} PLN")
-            st.write(f"Zysk operacyjny: {data['operating_profit']:,.0f} PLN")
-            st.write(f"Zysk netto: {data['net_profit']:,.0f} PLN")
+            net_profit_raw = PDFParser._get_table_value(rzis_data, 'L. Zysk (strata) netto', allow_negative=True)
+            data['net_profit'] = net_profit_raw
             
             # Cash flow
-            data['operating_cf'] = PDFParser._extract_bilans_amount(full_text,
-                r'III\.\s*Przepływy pieniężne netto z działalności operacyjnej.*?\s+([-\d\s,\.]+)\s+([-\d\s,\.]+)')
-            data['investing_cf'] = PDFParser._extract_bilans_amount(full_text,
-                r'III\.\s*Przepływy pieniężne netto z działalności inwestycyjnej.*?\s+([-\d\s,\.]+)\s+([-\d\s,\.]+)')
-            data['financing_cf'] = PDFParser._extract_bilans_amount(full_text,
-                r'III\.\s*Przepływy pieniężne netto z działalności finansowej.*?\s+([-\d\s,\.]+)\s+([-\d\s,\.]+)')
+            cf_data = PDFParser._find_in_tables(all_tables, 'Rachunek przepływów')
+            data['operating_cf'] = PDFParser._get_table_value(cf_data, 'III. Przepływy pieniężne netto z działalności operacyjnej', allow_negative=True)
+            data['investing_cf'] = PDFParser._get_table_value(cf_data, 'III. Przepływy pieniężne netto z działalności inwestycyjnej', allow_negative=True)
+            data['financing_cf'] = PDFParser._get_table_value(cf_data, 'III. Przepływy pieniężne netto z działalności finansowej', allow_negative=True)
             
             data['ebitda'] = data.get('operating_profit', 0)
+            
+            # Show results
+            st.write("---")
+            st.write("📊 **Wyciągnięte dane:**")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Aktywa razem", f"{data['total_assets']:,.0f} PLN")
+                st.metric("Kapitał własny", f"{data['equity']:,.0f} PLN")
+                st.metric("Zobowiązania", f"{data['liabilities']:,.0f} PLN")
+            with col2:
+                st.metric("Przychody", f"{data['revenue']:,.0f} PLN")
+                st.metric("Zysk netto", f"{data['net_profit']:,.0f} PLN")
+                st.metric("Gotówka", f"{data['cash']:,.0f} PLN")
             
             return data
             
         except Exception as e:
-            st.error(f"Błąd parsowania PDF: {str(e)}")
+            st.error(f"❌ Błąd parsowania PDF: {str(e)}")
             import traceback
             st.error(traceback.format_exc())
             return None
+    
+    @staticmethod
+    def _find_in_tables(tables, keyword):
+        """Find table section containing keyword"""
+        result = []
+        for table in tables:
+            table_text = ' '.join([' '.join([str(cell) if cell else '' for cell in row]) for row in table])
+            if keyword.lower() in table_text.lower():
+                result.extend(table)
+        return result
+    
+    @staticmethod
+    def _get_table_value(table_data, label, allow_negative=False):
+        """Extract numeric value from table row matching label"""
+        if not table_data:
+            return 0.0
+        
+        for row in table_data:
+            if not row:
+                continue
+            
+            # Check if label is in first column
+            first_cell = str(row[0]) if row[0] else ''
+            if label.lower() in first_cell.lower():
+                # Get the second column (current year value)
+                if len(row) >= 2 and row[1]:
+                    value = PDFParser._parse_amount(str(row[1]))
+                    # Check if negative (strata)
+                    if allow_negative and 'strata' in first_cell.lower():
+                        return -abs(value)
+                    return value
+        
+        return 0.0
     
     @staticmethod
     def _extract_value(text, pattern):
@@ -158,23 +163,14 @@ class PDFParser:
         return "N/A"
     
     @staticmethod
-    def _extract_bilans_amount(text, pattern):
-        """Extract first numeric amount from bilans line (current year)"""
-        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-        if match:
-            amount_str = match.group(1)
-            return PDFParser._parse_amount(amount_str)
-        return 0.0
-    
-    @staticmethod
     def _parse_amount(amount_str):
         """Parse amount string to float"""
-        if not amount_str:
+        if not amount_str or amount_str == 'None':
             return 0.0
         try:
-            # Clean: "78 520 094,50" -> 78520094.50
+            # Clean: "18 506 056,70" -> 18506056.70
             amount_str = str(amount_str).strip()
-            # Remove spaces
+            # Remove all spaces
             amount_str = amount_str.replace(' ', '')
             # Replace comma with dot
             amount_str = amount_str.replace(',', '.')
