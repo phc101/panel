@@ -43,39 +43,22 @@ class XMLParser:
     def parse_xml_file(xml_content):
         """Parse XML and extract financial data"""
         try:
-            root = ET.fromstring(xml_content)
+            # Remove namespace declarations to simplify parsing
+            xml_str = xml_content.decode('utf-8') if isinstance(xml_content, bytes) else xml_content
             
-            # Remove namespace if present
-            ns = {'': 'http://www.mf.gov.pl'}
+            # Remove xmlns declarations
+            xml_str = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', xml_str)
+            
+            root = ET.fromstring(xml_str.encode('utf-8'))
             
             data = {}
             
-            # Basic info
-            data['company_name'] = XMLParser._find_text(root, [
-                './/NazwaFirmy',
-                './/*[local-name()="NazwaFirmy"]'
-            ])
-            
-            data['nip'] = XMLParser._find_text(root, [
-                './/IdentyfikatorPodatkowyNIP',
-                './/*[local-name()="IdentyfikatorPodatkowyNIP"]',
-                './/NIP'
-            ])
-            
-            data['krs'] = XMLParser._find_text(root, [
-                './/NumerKRS',
-                './/*[local-name()="NumerKRS"]'
-            ])
-            
-            data['period_from'] = XMLParser._find_text(root, [
-                './/DataOd',
-                './/*[local-name()="DataOd"]'
-            ])
-            
-            data['period_to'] = XMLParser._find_text(root, [
-                './/DataDo',
-                './/*[local-name()="DataDo"]'
-            ])
+            # Basic info - using direct search in text
+            data['company_name'] = XMLParser._find_text_simple(root, 'NazwaFirmy')
+            data['nip'] = XMLParser._find_text_simple(root, 'IdentyfikatorPodatkowyNIP')
+            data['krs'] = XMLParser._find_text_simple(root, 'NumerKRS')
+            data['period_from'] = XMLParser._find_text_simple(root, 'DataOd')
+            data['period_to'] = XMLParser._find_text_simple(root, 'DataDo')
             
             # Extract year from period
             if data['period_to']:
@@ -85,122 +68,109 @@ class XMLParser:
                 data['year'] = None
             
             # Balance sheet - AKTYWA
-            data['total_assets'] = XMLParser._find_float(root, [
-                './/AktywaRazem',
-                './/*[local-name()="AktywaRazem"]',
-                './/A'
-            ])
+            data['total_assets'] = XMLParser._find_float_simple(root, 'AktywaRazem')
+            data['fixed_assets'] = XMLParser._find_float_simple(root, 'AktywaTrwale')
+            data['current_assets'] = XMLParser._find_float_simple(root, 'AktywaObrotowe')
+            data['inventory'] = XMLParser._find_float_simple(root, 'Zapasy')
+            data['receivables'] = XMLParser._find_float_simple(root, 'NaleznosciKrotkoterminowe')
             
-            data['fixed_assets'] = XMLParser._find_float(root, [
-                './/AktywaTrwale',
-                './/*[local-name()="AktywaTrwale"]'
-            ])
-            
-            data['current_assets'] = XMLParser._find_float(root, [
-                './/AktywaObrotowe',
-                './/*[local-name()="AktywaObrotowe"]'
-            ])
-            
-            data['inventory'] = XMLParser._find_float(root, [
-                './/Zapasy',
-                './/*[local-name()="Zapasy"]'
-            ])
-            
-            data['receivables'] = XMLParser._find_float(root, [
-                './/NaleznosciKrotkoterminowe',
-                './/*[local-name()="NaleznosciKrotkoterminowe"]'
-            ])
-            
-            data['cash'] = XMLParser._find_float(root, [
-                './/SrodkiPieniezne',
-                './/*[local-name()="SrodkiPieniezne"]',
-                './/SrodkiPieniezneIInneAktywaPieniezne'
-            ])
+            # Cash - try multiple variants
+            data['cash'] = XMLParser._find_float_simple(root, 'SrodkiPieniezne')
+            if data['cash'] == 0:
+                # Try alternative names
+                cash_elem = root.find('.//*[contains(text(),"Srodki")]/..')
+                if cash_elem is not None:
+                    data['cash'] = XMLParser._parse_float(cash_elem.text)
             
             # Balance sheet - PASYWA
-            data['equity'] = XMLParser._find_float(root, [
-                './/KapitalWlasny',
-                './/*[local-name()="KapitalWlasny"]',
-                './/KapitalFunduszWlasny'
-            ])
+            data['equity'] = XMLParser._find_float_simple(root, 'KapitalWlasny')
+            if data['equity'] == 0:
+                data['equity'] = XMLParser._find_float_simple(root, 'KapitalFunduszWlasny')
             
-            data['liabilities'] = XMLParser._find_float(root, [
-                './/ZobowiazaniaIRezerwyNaZobowiazania',
-                './/*[local-name()="ZobowiazaniaIRezerwyNaZobowiazania"]',
-                './/ZobowiazaniaRazem'
-            ])
+            data['liabilities'] = XMLParser._find_float_simple(root, 'ZobowiazaniaIRezerwyNaZobowiazania')
+            if data['liabilities'] == 0:
+                data['liabilities'] = XMLParser._find_float_simple(root, 'ZobowiazaniaRazem')
             
-            data['short_term_liabilities'] = XMLParser._find_float(root, [
-                './/ZobowiazaniaKrotkoterminowe',
-                './/*[local-name()="ZobowiazaniaKrotkoterminowe"]'
-            ])
+            data['short_term_liabilities'] = XMLParser._find_float_simple(root, 'ZobowiazaniaKrotkoterminowe')
             
-            # P&L
-            data['revenue'] = XMLParser._find_float(root, [
-                './/PrzychodyNettoZeSprzedazyProduktowTowarowMaterialow',
-                './/*[local-name()="PrzychodyNettoZeSprzedazyProduktowTowarowMaterialow"]',
-                './/PrzychodyNettoZeSprzedazy',
-                './/*[local-name()="PrzychodyNettoZeSprzedazy"]'
-            ])
+            # P&L - try multiple revenue variants
+            data['revenue'] = XMLParser._find_float_simple(root, 'PrzychodyNettoZeSprzedazyProduktowTowarowMaterialow')
+            if data['revenue'] == 0:
+                data['revenue'] = XMLParser._find_float_simple(root, 'PrzychodyNettoZeSprzedazy')
+            if data['revenue'] == 0:
+                data['revenue'] = XMLParser._find_float_simple(root, 'PrzychodyNetto')
             
-            data['operating_profit'] = XMLParser._find_float(root, [
-                './/ZyskStrataDzialalnosciOperacyjnej',
-                './/*[local-name()="ZyskStrataDzialalnosciOperacyjnej"]',
-                './/ZyskStrataZeSprzedazy'
-            ])
+            data['operating_profit'] = XMLParser._find_float_simple(root, 'ZyskStrataDzialalnosciOperacyjnej')
+            if data['operating_profit'] == 0:
+                data['operating_profit'] = XMLParser._find_float_simple(root, 'ZyskStrataZeSprzedazy')
             
-            data['net_profit'] = XMLParser._find_float(root, [
-                './/ZyskStrataNetto',
-                './/*[local-name()="ZyskStrataNetto"]'
-            ])
+            data['net_profit'] = XMLParser._find_float_simple(root, 'ZyskStrataNetto')
             
-            # Calculate EBITDA if not present
+            # EBITDA - usually same as operating profit in simple statements
             data['ebitda'] = data.get('operating_profit', 0)
             
             # Cash flow
-            data['operating_cf'] = XMLParser._find_float(root, [
-                './/PrzeplywyPieniezneNettoDzialalnosciOperacyjnej',
-                './/*[local-name()="PrzeplywyPieniezneNettoDzialalnosciOperacyjnej"]'
-            ])
-            
-            data['investing_cf'] = XMLParser._find_float(root, [
-                './/PrzeplywyPieniezneNettoDzialalnosciInwestycyjnej',
-                './/*[local-name()="PrzeplywyPieniezneNettoDzialalnosciInwestycyjnej"]'
-            ])
-            
-            data['financing_cf'] = XMLParser._find_float(root, [
-                './/PrzeplywyPieniezneNettoDzialalnosciFinansowej',
-                './/*[local-name()="PrzeplywyPieniezneNettoDzialalnosciFinansowej"]'
-            ])
+            data['operating_cf'] = XMLParser._find_float_simple(root, 'PrzeplywyPieniezneNettoDzialalnosciOperacyjnej')
+            data['investing_cf'] = XMLParser._find_float_simple(root, 'PrzeplywyPieniezneNettoDzialalnosciInwestycyjnej')
+            data['financing_cf'] = XMLParser._find_float_simple(root, 'PrzeplywyPieniezneNettoDzialalnosciFinansowej')
             
             return data
             
         except Exception as e:
             st.error(f"Błąd parsowania XML: {str(e)}")
+            import traceback
+            st.error(traceback.format_exc())
             return None
     
     @staticmethod
-    def _find_text(root, paths):
-        """Find text in XML using multiple possible paths"""
-        for path in paths:
-            elem = root.find(path)
-            if elem is not None and elem.text:
-                return elem.text.strip()
+    def _find_text_simple(root, tag_name):
+        """Find text by tag name - simple search"""
+        # Try direct find
+        elem = root.find(f'.//{tag_name}')
+        if elem is not None and elem.text:
+            return elem.text.strip()
+        
+        # Try case-insensitive
+        for elem in root.iter():
+            if elem.tag.endswith(tag_name) or tag_name in elem.tag:
+                if elem.text:
+                    return elem.text.strip()
+        
         return "N/A"
     
     @staticmethod
-    def _find_float(root, paths):
-        """Find float value in XML using multiple possible paths"""
-        for path in paths:
-            elem = root.find(path)
-            if elem is not None and elem.text:
-                try:
-                    # Clean the text and convert to float
-                    value = elem.text.strip().replace(',', '.').replace(' ', '')
-                    return float(value)
-                except:
-                    continue
+    def _find_float_simple(root, tag_name):
+        """Find float value by tag name"""
+        # Try direct find
+        elem = root.find(f'.//{tag_name}')
+        if elem is not None and elem.text:
+            return XMLParser._parse_float(elem.text)
+        
+        # Try case-insensitive
+        for elem in root.iter():
+            if elem.tag.endswith(tag_name) or tag_name in elem.tag:
+                if elem.text:
+                    return XMLParser._parse_float(elem.text)
+        
         return 0.0
+    
+    @staticmethod
+    def _parse_float(value):
+        """Parse string to float, handling Polish number format"""
+        if not value:
+            return 0.0
+        try:
+            # Clean the text
+            value = str(value).strip()
+            # Remove spaces
+            value = value.replace(' ', '')
+            # Replace comma with dot
+            value = value.replace(',', '.')
+            # Remove any other non-numeric characters except dot and minus
+            value = re.sub(r'[^\d.-]', '', value)
+            return float(value) if value else 0.0
+        except:
+            return 0.0
 
 
 class FinancialAnalyzer:
