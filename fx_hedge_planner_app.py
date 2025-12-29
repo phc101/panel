@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
+import pdfplumber
 from io import BytesIO
 from datetime import datetime
+import re
 
 # Optional reportlab
 try:
@@ -10,7 +12,7 @@ try:
     from reportlab.lib.units import cm
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+    from reportlab.lib.enums import TA_CENTER
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
     REPORTLAB_AVAILABLE = True
@@ -22,21 +24,142 @@ try:
 except ImportError:
     REPORTLAB_AVAILABLE = False
 
-# Page config
-st.set_page_config(
-    page_title="Analityk Kredytowy - FX Forward",
-    page_icon="📊",
-    layout="wide"
-)
+st.set_page_config(page_title="Analityk Kredytowy - FX Forward", page_icon="📊", layout="wide")
 
-st.markdown("""
-<style>
-    .main-title {font-size: 2.5rem; font-weight: bold; color: #1f4788; text-align: center; padding: 1rem 0;}
-    .metric-good {background: #d4edda; padding: 1rem; border-radius: 5px; border-left: 5px solid #28a745;}
-    .metric-warn {background: #fff3cd; padding: 1rem; border-radius: 5px; border-left: 5px solid #ffc107;}
-    .metric-bad {background: #f8d7da; padding: 1rem; border-radius: 5px; border-left: 5px solid #dc3545;}
-</style>
-""", unsafe_allow_html=True)
+
+class PDFParser:
+    """Parser dla PDF z e-sprawozdania.biz.pl"""
+    
+    @staticmethod
+    def parse_pdf(pdf_file):
+        """Parse PDF financial statement"""
+        try:
+            data = {}
+            
+            with pdfplumber.open(pdf_file) as pdf:
+                full_text = ""
+                for page in pdf.pages:
+                    full_text += page.extract_text() + "\n"
+            
+            # Basic info
+            data['company_name'] = PDFParser._extract_value(full_text, r'NazwaFirmy:\s*(.+?)(?:\n|Siedziba)')
+            data['nip'] = PDFParser._extract_value(full_text, r'Identyfikator podatkowy NIP:\s*(\d+)')
+            data['krs'] = PDFParser._extract_value(full_text, r'Numer KRS[^:]*:\s*(\d+)')
+            
+            # Dates
+            period_from = PDFParser._extract_value(full_text, r'Data początkowa okresu[^:]*:\s*([\d-]+)')
+            period_to = PDFParser._extract_value(full_text, r'Data końcowa okresu[^:]*:\s*([\d-]+)')
+            data['period_from'] = period_from
+            data['period_to'] = period_to
+            
+            # Extract year
+            if period_to:
+                match = re.search(r'(\d{4})', period_to)
+                data['year'] = int(match.group(1)) if match else datetime.now().year
+            else:
+                data['year'] = datetime.now().year
+            
+            # Find balance sheet section
+            bilans_match = re.search(r'Bilans:(.*?)(?:Rachunek zysków|$)', full_text, re.DOTALL)
+            if bilans_match:
+                bilans_text = bilans_match.group(1)
+                
+                # Assets
+                data['total_assets'] = PDFParser._extract_amount(bilans_text, r'Aktywa razem\s+([\d\s,\.]+)')
+                data['fixed_assets'] = PDFParser._extract_amount(bilans_text, r'A\.\s*Aktywa trwałe\s+([\d\s,\.]+)')
+                data['current_assets'] = PDFParser._extract_amount(bilans_text, r'B\.\s*Aktywa obrotowe\s+([\d\s,\.]+)')
+                data['inventory'] = PDFParser._extract_amount(bilans_text, r'I\.\s*Zapasy\s+([\d\s,\.]+)')
+                
+                # Try to find cash
+                cash = PDFParser._extract_amount(bilans_text, r'Środki pieniężne i inne aktywa pieniężne\s+([\d\s,\.]+)')
+                if cash == 0:
+                    cash = PDFParser._extract_amount(bilans_text, r'środki pieniężne w kasie i na rachunkach\s+([\d\s,\.]+)')
+                data['cash'] = cash
+                
+                # Liabilities & Equity
+                data['equity'] = PDFParser._extract_amount(bilans_text, r'A\.\s*Kapitał.*?własny\s+([\d\s,\.]+)')
+                
+                liabilities = PDFParser._extract_amount(bilans_text, r'B\.\s*Zobowiązania i rezerwy na zobowiązania\s+([\d\s,\.]+)')
+                if liabilities == 0:
+                    liabilities = PDFParser._extract_amount(bilans_text, r'Zobowiązania.*?razem\s+([\d\s,\.]+)')
+                data['liabilities'] = liabilities
+                
+                data['short_term_liabilities'] = PDFParser._extract_amount(bilans_text, 
+                    r'III\.\s*Zobowiązania krótkoterminowe\s+([\d\s,\.]+)')
+            
+            # Find P&L section
+            rzis_match = re.search(r'Rachunek zysków i strat:(.*?)(?:Zestawienie zmian|$)', full_text, re.DOTALL)
+            if rzis_match:
+                rzis_text = rzis_match.group(1)
+                
+                data['revenue'] = PDFParser._extract_amount(rzis_text, 
+                    r'A\.\s*Przychody netto ze sprzedaży.*?\s+([\d\s,\.]+)')
+                
+                data['operating_profit'] = PDFParser._extract_amount(rzis_text,
+                    r'I\.\s*Zysk.*?z działalności operacyjnej.*?\s+([\d\s,\.]+)')
+                
+                net_profit = PDFParser._extract_amount(rzis_text, r'O\.\s*Zysk.*?netto.*?\s+([\d\s,\.]+)')
+                # Check if it's a loss (strata)
+                if 'strata netto' in rzis_text.lower() or net_profit == 0:
+                    # Try to find negative value
+                    loss = PDFParser._extract_amount(rzis_text, r'strata.*?netto.*?\s+([\d\s,\.]+)')
+                    if loss > 0:
+                        net_profit = -loss
+                data['net_profit'] = net_profit
+            
+            # Cash flow
+            cf_match = re.search(r'Rachunek przepływów pieniężnych:(.*?)(?:Dodatkowe|$)', full_text, re.DOTALL)
+            if cf_match:
+                cf_text = cf_match.group(1)
+                
+                data['operating_cf'] = PDFParser._extract_amount(cf_text,
+                    r'III\.\s*Przepływy.*?operacyjnej.*?\s+([\d\s,\.]+)')
+                data['investing_cf'] = PDFParser._extract_amount(cf_text,
+                    r'III\.\s*Przepływy.*?inwestycyjnej.*?\s+([\d\s,\.]+)')
+                data['financing_cf'] = PDFParser._extract_amount(cf_text,
+                    r'III\.\s*Przepływy.*?finansowej.*?\s+([\d\s,\.]+)')
+            else:
+                data['operating_cf'] = 0
+                data['investing_cf'] = 0
+                data['financing_cf'] = 0
+            
+            data['ebitda'] = data.get('operating_profit', 0)
+            
+            # Receivables (for additional context)
+            data['receivables'] = PDFParser._extract_amount(full_text,
+                r'II\.\s*Należności krótkoterminowe\s+([\d\s,\.]+)')
+            
+            return data
+            
+        except Exception as e:
+            st.error(f"Błąd parsowania PDF: {str(e)}")
+            import traceback
+            st.error(traceback.format_exc())
+            return None
+    
+    @staticmethod
+    def _extract_value(text, pattern):
+        """Extract text value using regex"""
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        return "N/A"
+    
+    @staticmethod
+    def _extract_amount(text, pattern):
+        """Extract numeric amount using regex"""
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            amount_str = match.group(1)
+            # Clean and convert
+            amount_str = amount_str.replace(' ', '').replace(',', '.')
+            # Remove everything except digits, dot, and minus
+            amount_str = re.sub(r'[^\d.-]', '', amount_str)
+            try:
+                return float(amount_str) if amount_str else 0.0
+            except:
+                return 0.0
+        return 0.0
 
 
 class FinancialAnalyzer:
@@ -147,114 +270,105 @@ class FinancialAnalyzer:
         collateral = "120% cash" if rating['score'] < 50 else "100% cash/gwarancja" if rating['score'] < 65 else "10-20%"
         tenor = "12 mies" if rating['score'] >= 65 else "6 mies" if rating['score'] >= 50 else "3 mies"
         
+        conditions = []
+        if self.indicators['current_ratio'] < 1.5:
+            conditions.append("Monitoring płynności co miesiąc")
+        if d['net_profit'] < 0:
+            conditions.append("Zakaz wypłat dywidend do osiągnięcia zyskowności")
+        if self.indicators['debt_to_equity'] > 1.0:
+            conditions.append("Covenant: D/E nie może przekroczyć 1.5")
+        
         self.recommendation = {
             'decision': decision,
             'color': color,
             'recommended_limit_mln': round(recommended_limit, 2),
             'requested_limit_mln': requested_limit_mln,
             'collateral': collateral,
-            'tenor': tenor
+            'tenor': tenor,
+            'conditions': conditions
         }
         return self.recommendation
 
 
 def main():
-    st.markdown('<p class="main-title">📊 Analityk Kredytowy - Limity FX Forward</p>', unsafe_allow_html=True)
+    st.markdown("# 📊 Analityk Kredytowy - Limity FX Forward")
+    st.markdown("### Automatyczna analiza PDF z e-sprawozdania.biz.pl")
     
-    # Sidebar
     with st.sidebar:
-        st.title("⚙️ Dane firmy")
-        
-        company_name = st.text_input("Nazwa firmy", "")
-        nip = st.text_input("NIP", "")
-        year = st.number_input("Rok sprawozdania", 2020, 2025, 2024)
+        st.title("⚙️ Ustawienia")
         
         st.markdown("---")
-        st.subheader("💰 Bilans (w PLN)")
+        st.subheader("📤 Wczytaj PDF")
+        st.info("**Format:** PDF z e-sprawozdania.biz.pl\n(wygenerowany z XML)")
         
-        total_assets = st.number_input("Aktywa razem", 0, None, 0, 1000000, format="%d")
-        current_assets = st.number_input("Aktywa obrotowe", 0, None, 0, 1000000, format="%d")
-        inventory = st.number_input("Zapasy", 0, None, 0, 1000000, format="%d")
-        cash = st.number_input("Środki pieniężne", 0, None, 0, 1000000, format="%d")
-        
-        equity = st.number_input("Kapitał własny", -100000000, None, 0, 1000000, format="%d")
-        liabilities = st.number_input("Zobowiązania razem", 0, None, 0, 1000000, format="%d")
-        short_term_liabilities = st.number_input("Zobowiązania krótkoterm.", 0, None, 0, 1000000, format="%d")
-        
-        st.markdown("---")
-        st.subheader("📈 Rachunek zysków i strat")
-        
-        revenue = st.number_input("Przychody ze sprzedaży", 0, None, 0, 1000000, format="%d")
-        operating_profit = st.number_input("Zysk operacyjny", -100000000, None, 0, 1000000, format="%d")
-        net_profit = st.number_input("Zysk netto", -100000000, None, 0, 1000000, format="%d")
+        uploaded_files = st.file_uploader(
+            "Wybierz pliki PDF",
+            type=['pdf'],
+            accept_multiple_files=True,
+            help="Możesz wgrać 1-5 plików z różnych lat"
+        )
         
         st.markdown("---")
-        st.subheader("💵 Cash Flow (opcjonalnie)")
-        operating_cf = st.number_input("CF operacyjny", -100000000, None, 0, 1000000, format="%d")
-        
-        st.markdown("---")
-        st.subheader("🎯 Limit")
+        st.subheader("💰 Parametry")
         requested_limit = st.number_input("Wnioskowany limit (mln PLN)", 0.1, 100.0, 1.0, 0.1)
         
-        analyze_btn = st.button("🔍 Analizuj", type="primary", use_container_width=True)
+        analyze_btn = st.button("🔍 Analizuj PDF", type="primary", use_container_width=True)
     
-    # Main
-    if not analyze_btn:
-        st.info("👈 Wprowadź dane finansowe i kliknij 'Analizuj'")
+    if not uploaded_files:
+        st.info("👈 Wczytaj PDF aby rozpocząć analizę")
         
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Wspierane formaty", "Ręczne wprowadzanie")
-        col2.metric("Czas analizy", "< 1 sek")
-        col3.metric("Dokładność", "100%")
-        col4.metric("Błędy parsowania", "0")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Format", "PDF z e-sprawozdania.biz.pl")
+        col2.metric("Maksymalna liczba plików", "5")
+        col3.metric("Czas analizy", "< 10 sek")
         
         st.markdown("---")
         st.subheader("📖 Instrukcja")
         st.markdown("""
-        1. **Otwórz PDF** ze sprawozdaniem finansowym (z e-sprawozdania.biz.pl)
-        2. **Przepisz dane** do formularza po lewej stronie:
-           - Bilans: Aktywa, Pasywa
-           - RZiS: Przychody, Zysk operacyjny, Zysk netto
-           - CF: Przepływy operacyjne (opcjonalnie)
-        3. **Wprowadź wnioskowany limit** w mln PLN
-        4. **Kliknij "Analizuj"** i otrzymaj rekomendację
-        
-        💡 **Wskazówka:** Wartości wprowadzaj bez spacji i przecinków (np. 5000000 zamiast 5 000 000)
+        1. Wejdź na **e-sprawozdania.biz.pl**
+        2. Wczytaj XML ze sprawozdaniem finansowym
+        3. **Wydrukuj jako PDF** (Ctrl+P → Zapisz jako PDF)
+        4. Wczytaj ten PDF tutaj
+        5. Kliknij "Analizuj PDF"
         """)
         
-    else:
-        if not company_name or total_assets == 0 or revenue == 0:
-            st.error("❌ Wypełnij przynajmniej: Nazwę firmy, Aktywa razem i Przychody")
-            return
+    elif analyze_btn and uploaded_files:
+        with st.spinner("Przetwarzam PDF..."):
+            all_data = []
+            for uploaded_file in uploaded_files:
+                data = PDFParser.parse_pdf(uploaded_file)
+                if data:
+                    all_data.append(data)
+                    st.success(f"✅ {data.get('company_name', 'N/A')} ({data.get('year', 'N/A')})")
+            
+            if not all_data:
+                st.error("❌ Nie udało się sparsować żadnego PDF")
+                return
+            
+            # Use most recent
+            all_data = sorted(all_data, key=lambda x: x.get('year', 0), reverse=True)
+            current_data = all_data[0]
+            
+            # Analyze
+            analyzer = FinancialAnalyzer(current_data)
+            analyzer.calculate_indicators()
+            analyzer.assess_credit_risk()
+            analyzer.generate_recommendation(requested_limit)
+            
+            st.session_state['analyzer'] = analyzer
+            st.session_state['all_data'] = all_data
+    
+    if 'analyzer' in st.session_state:
+        analyzer = st.session_state['analyzer']
+        d = analyzer.data
         
-        # Create analyzer
-        data = {
-            'company_name': company_name,
-            'nip': nip,
-            'year': year,
-            'total_assets': total_assets,
-            'current_assets': current_assets,
-            'inventory': inventory,
-            'cash': cash,
-            'equity': equity,
-            'liabilities': liabilities,
-            'short_term_liabilities': short_term_liabilities,
-            'revenue': revenue,
-            'operating_profit': operating_profit,
-            'net_profit': net_profit,
-            'operating_cf': operating_cf
-        }
+        st.markdown(f"## 🏢 {d.get('company_name', 'N/A')}")
+        col1, col2, col3 = st.columns(3)
+        col1.markdown(f"**NIP:** {d.get('nip', 'N/A')}")
+        col2.markdown(f"**KRS:** {d.get('krs', 'N/A')}")
+        col3.markdown(f"**Okres:** {d.get('period_from', 'N/A')} - {d.get('period_to', 'N/A')}")
         
-        analyzer = FinancialAnalyzer(data)
-        analyzer.calculate_indicators()
-        analyzer.assess_credit_risk()
-        analyzer.generate_recommendation(requested_limit)
-        
-        # Display results
-        st.markdown(f"## 🏢 {company_name}")
-        st.markdown(f"**NIP:** {nip} | **Rok:** {year}")
-        
-        # Rating banner
+        # Rating
         colors_map = {'green': '#28a745', 'blue': '#007bff', 'orange': '#fd7e14', 'red': '#dc3545', 'darkred': '#8b0000'}
         rating_color = colors_map.get(analyzer.rating['color'], '#666')
         
@@ -263,17 +377,16 @@ def main():
                     padding: 2rem; border-radius: 15px; color: white; text-align: center; margin: 1rem 0;'>
             <h1 style='margin: 0; font-size: 3rem;'>{analyzer.rating['rating']}</h1>
             <h3 style='margin: 0.5rem 0;'>{analyzer.rating['risk_level']}</h3>
-            <p style='margin: 0.5rem 0; font-size: 1.2rem;'>Wynik: {analyzer.rating['score']}/100 pkt</p>
+            <p style='margin: 0.5rem 0; font-size: 1.2rem;'>Wynik: {analyzer.rating['score']}/100</p>
         </div>
         """, unsafe_allow_html=True)
         
         # Metrics
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Przychody", f"{revenue/1_000_000:.1f} mln")
-        col2.metric("Wynik netto", f"{net_profit/1_000_000:.2f} mln", 
-                   delta="Zysk" if net_profit > 0 else "Strata")
-        col3.metric("Gotówka", f"{cash/1_000_000:.2f} mln")
-        col4.metric("Kapitał własny", f"{equity/1_000_000:.1f} mln")
+        col1.metric("Przychody", f"{d['revenue']/1_000_000:.1f} mln")
+        col2.metric("Wynik netto", f"{d['net_profit']/1_000_000:.2f} mln")
+        col3.metric("Gotówka", f"{d['cash']/1_000_000:.2f} mln")
+        col4.metric("Kapitał własny", f"{d['equity']/1_000_000:.1f} mln")
         
         # Tabs
         tab1, tab2, tab3 = st.tabs(["📊 Wskaźniki", "⚠️ Ryzyka", "💰 Rekomendacja"])
@@ -283,7 +396,7 @@ def main():
             df = pd.DataFrame({
                 'Wskaźnik': [
                     'Płynność bieżąca', 'Płynność szybka', 'Płynność gotówkowa',
-                    'Dług / Kapitał własny', 'Dług / Aktywa',
+                    'Dług / Kapitał', 'Dług / Aktywa',
                     'ROE', 'ROA', 'Marża netto', 'Marża operacyjna'
                 ],
                 'Wartość': [
@@ -302,7 +415,7 @@ def main():
                     '✅' if ind['quick_ratio'] >= 1.0 else '⚠️' if ind['quick_ratio'] >= 0.7 else '❌',
                     '✅' if ind['cash_ratio'] >= 0.2 else '⚠️' if ind['cash_ratio'] >= 0.1 else '❌',
                     '✅' if ind['debt_to_equity'] < 1.0 else '⚠️' if ind['debt_to_equity'] < 1.5 else '❌',
-                    '✅' if ind['debt_to_assets'] < 0.6 else '⚠️' if ind['debt_to_assets'] < 0.7 else '❌',
+                    '✅' if ind['debt_to_assets'] < 0.6 else '⚠️',
                     '✅' if ind['roe'] > 10 else '⚠️' if ind['roe'] > 0 else '❌',
                     '✅' if ind['roa'] > 5 else '⚠️' if ind['roa'] > 0 else '❌',
                     '✅' if ind['net_margin'] > 5 else '⚠️' if ind['net_margin'] > 0 else '❌',
@@ -316,7 +429,7 @@ def main():
                 for flag in analyzer.rating['red_flags']:
                     st.error(f"🔴 {flag}")
             else:
-                st.success("✅ Brak krytycznych czerwonych flag")
+                st.success("✅ Brak krytycznych flag")
         
         with tab3:
             rec = analyzer.recommendation
@@ -331,9 +444,13 @@ def main():
             col1.metric("Rekomendowany limit", f"{rec['recommended_limit_mln']:.2f} mln PLN")
             col1.metric("Wnioskowany limit", f"{rec['requested_limit_mln']:.2f} mln PLN")
             col2.info(f"**Zabezpieczenie:** {rec['collateral']}")
-            col2.info(f"**Maksymalny tenor:** {rec['tenor']}")
+            col2.info(f"**Tenor:** {rec['tenor']}")
+            
+            if rec['conditions']:
+                st.markdown("### Warunki:")
+                for i, cond in enumerate(rec['conditions'], 1):
+                    st.markdown(f"{i}. {cond}")
         
-        # Export
         st.markdown("---")
         if st.button("📊 Eksportuj do Excel", use_container_width=True):
             output = BytesIO()
@@ -343,7 +460,7 @@ def main():
             st.download_button(
                 "💾 Pobierz Excel",
                 output,
-                f"Analiza_{nip}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                f"Analiza_{d.get('nip', 'NA')}_{datetime.now().strftime('%Y%m%d')}.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
