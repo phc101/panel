@@ -32,7 +32,7 @@ class PDFParser:
     
     @staticmethod
     def parse_pdf(pdf_file):
-        """Parse PDF financial statement"""
+        """Parse PDF financial statement from e-sprawozdania.biz.pl"""
         try:
             data = {}
             
@@ -41,93 +41,105 @@ class PDFParser:
                 for page in pdf.pages:
                     full_text += page.extract_text() + "\n"
             
+            # Debug - show what we found
+            st.write("🔍 **Debug - Znalezione dane:**")
+            
             # Basic info
             data['company_name'] = PDFParser._extract_value(full_text, r'NazwaFirmy:\s*(.+?)(?:\n|Siedziba)')
             data['nip'] = PDFParser._extract_value(full_text, r'Identyfikator podatkowy NIP:\s*(\d+)')
             data['krs'] = PDFParser._extract_value(full_text, r'Numer KRS[^:]*:\s*(\d+)')
             
+            st.write(f"Firma: {data['company_name']}")
+            st.write(f"NIP: {data['nip']}")
+            
             # Dates
-            period_from = PDFParser._extract_value(full_text, r'Data początkowa okresu[^:]*:\s*([\d-]+)')
-            period_to = PDFParser._extract_value(full_text, r'Data końcowa okresu[^:]*:\s*([\d-]+)')
-            data['period_from'] = period_from
-            data['period_to'] = period_to
+            data['period_from'] = PDFParser._extract_value(full_text, r'DataOd:\s*([\d-]+)')
+            data['period_to'] = PDFParser._extract_value(full_text, r'DataDo:\s*([\d-]+)')
             
-            # Extract year
-            if period_to:
-                match = re.search(r'(\d{4})', period_to)
-                data['year'] = int(match.group(1)) if match else datetime.now().year
+            if data['period_to']:
+                match = re.search(r'(\d{4})', data['period_to'])
+                data['year'] = int(match.group(1)) if match else 2023
             else:
-                data['year'] = datetime.now().year
+                data['year'] = 2023
             
-            # Find balance sheet section
-            bilans_match = re.search(r'Bilans:(.*?)(?:Rachunek zysków|$)', full_text, re.DOTALL)
-            if bilans_match:
-                bilans_text = bilans_match.group(1)
-                
-                # Assets
-                data['total_assets'] = PDFParser._extract_amount(bilans_text, r'Aktywa razem\s+([\d\s,\.]+)')
-                data['fixed_assets'] = PDFParser._extract_amount(bilans_text, r'A\.\s*Aktywa trwałe\s+([\d\s,\.]+)')
-                data['current_assets'] = PDFParser._extract_amount(bilans_text, r'B\.\s*Aktywa obrotowe\s+([\d\s,\.]+)')
-                data['inventory'] = PDFParser._extract_amount(bilans_text, r'I\.\s*Zapasy\s+([\d\s,\.]+)')
-                
-                # Try to find cash
-                cash = PDFParser._extract_amount(bilans_text, r'Środki pieniężne i inne aktywa pieniężne\s+([\d\s,\.]+)')
-                if cash == 0:
-                    cash = PDFParser._extract_amount(bilans_text, r'środki pieniężne w kasie i na rachunkach\s+([\d\s,\.]+)')
-                data['cash'] = cash
-                
-                # Liabilities & Equity
-                data['equity'] = PDFParser._extract_amount(bilans_text, r'A\.\s*Kapitał.*?własny\s+([\d\s,\.]+)')
-                
-                liabilities = PDFParser._extract_amount(bilans_text, r'B\.\s*Zobowiązania i rezerwy na zobowiązania\s+([\d\s,\.]+)')
-                if liabilities == 0:
-                    liabilities = PDFParser._extract_amount(bilans_text, r'Zobowiązania.*?razem\s+([\d\s,\.]+)')
-                data['liabilities'] = liabilities
-                
-                data['short_term_liabilities'] = PDFParser._extract_amount(bilans_text, 
-                    r'III\.\s*Zobowiązania krótkoterminowe\s+([\d\s,\.]+)')
+            # Find the Bilans section and extract amounts
+            # Format: "Label Amount1 Amount2" where Amount1 is current year, Amount2 is previous year
             
-            # Find P&L section
-            rzis_match = re.search(r'Rachunek zysków i strat:(.*?)(?:Zestawienie zmian|$)', full_text, re.DOTALL)
-            if rzis_match:
-                rzis_text = rzis_match.group(1)
-                
-                data['revenue'] = PDFParser._extract_amount(rzis_text, 
-                    r'A\.\s*Przychody netto ze sprzedaży.*?\s+([\d\s,\.]+)')
-                
-                data['operating_profit'] = PDFParser._extract_amount(rzis_text,
-                    r'I\.\s*Zysk.*?z działalności operacyjnej.*?\s+([\d\s,\.]+)')
-                
-                net_profit = PDFParser._extract_amount(rzis_text, r'O\.\s*Zysk.*?netto.*?\s+([\d\s,\.]+)')
-                # Check if it's a loss (strata)
-                if 'strata netto' in rzis_text.lower() or net_profit == 0:
-                    # Try to find negative value
-                    loss = PDFParser._extract_amount(rzis_text, r'strata.*?netto.*?\s+([\d\s,\.]+)')
-                    if loss > 0:
-                        net_profit = -loss
-                data['net_profit'] = net_profit
+            # Assets
+            data['total_assets'] = PDFParser._extract_bilans_amount(full_text, 
+                r'Aktywa razem\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            data['current_assets'] = PDFParser._extract_bilans_amount(full_text,
+                r'B\.\s*Aktywa obrotowe\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            data['fixed_assets'] = PDFParser._extract_bilans_amount(full_text,
+                r'A\.\s*Aktywa trwałe\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            
+            # Inventory
+            data['inventory'] = PDFParser._extract_bilans_amount(full_text,
+                r'I\.\s*Zapasy\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            
+            # Cash - środki pieniężne w kasie i na rachunkach
+            cash = PDFParser._extract_bilans_amount(full_text,
+                r'środki pieniężne w kasie i na rachunkach\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            if cash == 0:
+                cash = PDFParser._extract_bilans_amount(full_text,
+                    r'Środki pieniężne i inne aktywa pieniężne\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            data['cash'] = cash
+            
+            # Receivables
+            data['receivables'] = PDFParser._extract_bilans_amount(full_text,
+                r'II\.\s*Należności krótkoterminowe\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            
+            # Equity
+            data['equity'] = PDFParser._extract_bilans_amount(full_text,
+                r'A\.\s*Kapitał.*?własny\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            
+            # Liabilities
+            liabilities = PDFParser._extract_bilans_amount(full_text,
+                r'B\.\s*Zobowiązania i rezerwy na zobowiązania\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            data['liabilities'] = liabilities
+            
+            data['short_term_liabilities'] = PDFParser._extract_bilans_amount(full_text,
+                r'III\.\s*Zobowiązania krótkoterminowe\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            
+            # Show what we extracted
+            st.write(f"Aktywa: {data['total_assets']:,.0f} PLN")
+            st.write(f"Kapitał własny: {data['equity']:,.0f} PLN")
+            st.write(f"Zobowiązania: {data['liabilities']:,.0f} PLN")
+            
+            # P&L
+            data['revenue'] = PDFParser._extract_bilans_amount(full_text,
+                r'A\.\s*Przychody netto ze sprzedaży.*?\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            
+            # Operating profit - Zysk (strata) z działalności operacyjnej
+            op_profit = PDFParser._extract_bilans_amount(full_text,
+                r'I\.\s*Zysk.*?z działalności operacyjnej.*?\s+([\d\s,\.]+)\s+([\d\s,\.]+)')
+            data['operating_profit'] = op_profit
+            
+            # Net profit - Zysk (strata) netto
+            net_profit_text = re.search(r'O\.\s*Zysk.*?netto.*?\s+([-\d\s,\.]+)\s+([-\d\s,\.]+)', full_text, re.IGNORECASE)
+            if net_profit_text:
+                net_str = net_profit_text.group(1).strip()
+                # Check if negative (has minus)
+                if '-' in net_str:
+                    data['net_profit'] = -abs(PDFParser._parse_amount(net_str))
+                else:
+                    data['net_profit'] = PDFParser._parse_amount(net_str)
+            else:
+                data['net_profit'] = 0
+            
+            st.write(f"Przychody: {data['revenue']:,.0f} PLN")
+            st.write(f"Zysk operacyjny: {data['operating_profit']:,.0f} PLN")
+            st.write(f"Zysk netto: {data['net_profit']:,.0f} PLN")
             
             # Cash flow
-            cf_match = re.search(r'Rachunek przepływów pieniężnych:(.*?)(?:Dodatkowe|$)', full_text, re.DOTALL)
-            if cf_match:
-                cf_text = cf_match.group(1)
-                
-                data['operating_cf'] = PDFParser._extract_amount(cf_text,
-                    r'III\.\s*Przepływy.*?operacyjnej.*?\s+([\d\s,\.]+)')
-                data['investing_cf'] = PDFParser._extract_amount(cf_text,
-                    r'III\.\s*Przepływy.*?inwestycyjnej.*?\s+([\d\s,\.]+)')
-                data['financing_cf'] = PDFParser._extract_amount(cf_text,
-                    r'III\.\s*Przepływy.*?finansowej.*?\s+([\d\s,\.]+)')
-            else:
-                data['operating_cf'] = 0
-                data['investing_cf'] = 0
-                data['financing_cf'] = 0
+            data['operating_cf'] = PDFParser._extract_bilans_amount(full_text,
+                r'III\.\s*Przepływy pieniężne netto z działalności operacyjnej.*?\s+([-\d\s,\.]+)\s+([-\d\s,\.]+)')
+            data['investing_cf'] = PDFParser._extract_bilans_amount(full_text,
+                r'III\.\s*Przepływy pieniężne netto z działalności inwestycyjnej.*?\s+([-\d\s,\.]+)\s+([-\d\s,\.]+)')
+            data['financing_cf'] = PDFParser._extract_bilans_amount(full_text,
+                r'III\.\s*Przepływy pieniężne netto z działalności finansowej.*?\s+([-\d\s,\.]+)\s+([-\d\s,\.]+)')
             
             data['ebitda'] = data.get('operating_profit', 0)
-            
-            # Receivables (for additional context)
-            data['receivables'] = PDFParser._extract_amount(full_text,
-                r'II\.\s*Należności krótkoterminowe\s+([\d\s,\.]+)')
             
             return data
             
@@ -140,26 +152,37 @@ class PDFParser:
     @staticmethod
     def _extract_value(text, pattern):
         """Extract text value using regex"""
-        match = re.search(pattern, text, re.IGNORECASE)
+        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
         if match:
             return match.group(1).strip()
         return "N/A"
     
     @staticmethod
-    def _extract_amount(text, pattern):
-        """Extract numeric amount using regex"""
-        match = re.search(pattern, text, re.IGNORECASE)
+    def _extract_bilans_amount(text, pattern):
+        """Extract first numeric amount from bilans line (current year)"""
+        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
         if match:
             amount_str = match.group(1)
-            # Clean and convert
-            amount_str = amount_str.replace(' ', '').replace(',', '.')
-            # Remove everything except digits, dot, and minus
-            amount_str = re.sub(r'[^\d.-]', '', amount_str)
-            try:
-                return float(amount_str) if amount_str else 0.0
-            except:
-                return 0.0
+            return PDFParser._parse_amount(amount_str)
         return 0.0
+    
+    @staticmethod
+    def _parse_amount(amount_str):
+        """Parse amount string to float"""
+        if not amount_str:
+            return 0.0
+        try:
+            # Clean: "78 520 094,50" -> 78520094.50
+            amount_str = str(amount_str).strip()
+            # Remove spaces
+            amount_str = amount_str.replace(' ', '')
+            # Replace comma with dot
+            amount_str = amount_str.replace(',', '.')
+            # Keep only digits, dot, and minus
+            amount_str = re.sub(r'[^\d.-]', '', amount_str)
+            return float(amount_str) if amount_str and amount_str != '-' else 0.0
+        except:
+            return 0.0
 
 
 class FinancialAnalyzer:
