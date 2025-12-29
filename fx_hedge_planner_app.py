@@ -1,1348 +1,949 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import requests
-from datetime import datetime, timedelta
-import math
-from scipy.stats import norm
-from math import comb
+import xml.etree.ElementTree as ET
+from io import BytesIO
+from datetime import datetime
+import pdfplumber
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.units import cm
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 # Page config
 st.set_page_config(
-    page_title="Professional FX Calculator",
-    page_icon="🚀",
-    layout="wide"
+    page_title="Analityk Kredytowy - Limity FX Forward",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Alpha Vantage API Configuration
-ALPHA_VANTAGE_API_KEY = "MQGKUNL9JWIJHF9S"
-FRED_API_KEY = st.secrets.get("FRED_API_KEY", "693819ccc32ac43704fbbc15cfb4a6d7")
+# Register fonts for PDF export
+try:
+    pdfmetrics.registerFont(TTFont('DejaVuSans', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
+    pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
+except:
+    pass
 
 # Custom CSS
 st.markdown("""
 <style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f4788;
+        text-align: center;
+        padding: 1rem 0;
+    }
     .metric-card {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #1f77b4;
-        margin: 0.5rem 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .profit-metric {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-        text-align: center;
-    }
-    .client-summary {
-        background: white;
-        color: #2c3e50;
-        border: 3px solid #2e68a5;
         padding: 1.5rem;
-        border-radius: 1rem;
-        margin: 1rem 0;
-        text-align: center;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-    .pricing-sync {
-        background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        border-radius: 10px;
         color: white;
+        text-align: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .metric-card-red {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .metric-card-green {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .warning-box {
+        background-color: #fff3cd;
+        border-left: 5px solid #ffc107;
         padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-        text-align: center;
+        margin: 1rem 0;
+        border-radius: 5px;
     }
-    .alpha-api {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 0.8rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-        text-align: center;
-        font-size: 0.9rem;
+    .danger-box {
+        background-color: #f8d7da;
+        border-left: 5px solid #dc3545;
+        padding: 1rem;
+        margin: 1rem 0;
+        border-radius: 5px;
+    }
+    .success-box {
+        background-color: #d4edda;
+        border-left: 5px solid #28a745;
+        padding: 1rem;
+        margin: 1rem 0;
+        border-radius: 5px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-class AlphaVantageAPI:
-    def __init__(self, api_key=ALPHA_VANTAGE_API_KEY):
-        self.api_key = api_key
-        self.base_url = "https://www.alphavantage.co/query"
+
+class FinancialAnalyzer:
+    """Klasa do analizy sprawozdań finansowych"""
     
-    def get_eur_pln_rate(self):
+    def __init__(self):
+        self.data = {}
+        self.indicators = {}
+        self.rating = None
+        self.recommendation = None
+        
+    def parse_xml(self, xml_content):
+        """Parse XML financial statement"""
         try:
-            params = {
-                'function': 'CURRENCY_EXCHANGE_RATE',
-                'from_currency': 'EUR',
-                'to_currency': 'PLN',
-                'apikey': self.api_key
+            root = ET.fromstring(xml_content)
+            
+            # Extracting data from XML - simplified version
+            # You would need to adjust namespaces and paths based on actual XML structure
+            self.data = {
+                'company_name': self._get_xml_value(root, './/NazwaFirmy'),
+                'nip': self._get_xml_value(root, './/IdentyfikatorPodatkowyNIP'),
+                'krs': self._get_xml_value(root, './/NumerKRS'),
+                'period_from': self._get_xml_value(root, './/DataOd'),
+                'period_to': self._get_xml_value(root, './/DataDo'),
             }
             
-            response = requests.get(self.base_url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
+            # Balance sheet data
+            balance = self._extract_balance_sheet(root)
+            pnl = self._extract_pnl(root)
+            cashflow = self._extract_cashflow(root)
             
-            if 'Realtime Currency Exchange Rate' in data:
-                rate_data = data['Realtime Currency Exchange Rate']
-                return {
-                    'rate': float(rate_data['5. Exchange Rate']),
-                    'date': rate_data['6. Last Refreshed'][:10],
-                    'source': 'Alpha Vantage',
-                    'success': True
-                }
-            else:
-                return self._get_nbp_fallback()
-                
+            self.data.update(balance)
+            self.data.update(pnl)
+            self.data.update(cashflow)
+            
+            return True
         except Exception as e:
-            return self._get_nbp_fallback()
+            st.error(f"Błąd parsowania XML: {str(e)}")
+            return False
     
-    def get_historical_eur_pln(self, days=30):
-        # Try Alpha Vantage first
-        try:
-            params = {
-                'function': 'FX_DAILY',
-                'from_symbol': 'EUR',
-                'to_symbol': 'PLN',
-                'apikey': self.api_key,
-                'outputsize': 'compact'
-            }
-            
-            response = requests.get(self.base_url, params=params, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-            
-            if 'Time Series (FX)' in data:
-                time_series = data['Time Series (FX)']
-                rates = []
-                dates = sorted(time_series.keys(), reverse=True)
-                
-                for date in dates[:days]:
-                    rate = float(time_series[date]['4. close'])
-                    rates.append(rate)
-                
-                if len(rates) >= 20:
-                    return {
-                        'rates': rates,
-                        'dates': dates[:len(rates)],
-                        'source': 'Alpha Vantage Historical',
-                        'success': True,
-                        'count': len(rates)
-                    }
-            
-            # If Alpha Vantage fails, try alternative APIs
-            return self._get_freeforex_historical(days)
-            
-        except Exception as e:
-            return self._get_freeforex_historical(days)
+    def _get_xml_value(self, root, path):
+        """Helper to extract XML value"""
+        elem = root.find(path)
+        return elem.text if elem is not None else "N/A"
     
-    def _get_freeforex_historical(self, days=30):
-        """Alternative free forex API for historical data"""
-        try:
-            # Try FreeCurrency API (no key required)
-            url = "https://api.freecurrencyapi.com/v1/historical"
-            params = {
-                'base_currency': 'EUR',
-                'currencies': 'PLN'
-            }
-            
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            
-            if 'data' in data:
-                rates = []
-                dates = []
-                
-                # Get last 30 days of data
-                for date_str, currencies in sorted(data['data'].items(), reverse=True):
-                    if len(rates) >= days:
-                        break
-                    if 'PLN' in currencies:
-                        rates.append(float(currencies['PLN']))
-                        dates.append(date_str)
-                
-                if len(rates) >= 20:
-                    return {
-                        'rates': rates,
-                        'dates': dates,
-                        'source': 'FreeCurrency API',
-                        'success': True,
-                        'count': len(rates)
-                    }
-            
-            # If that fails, try ExchangeRate-API
-            return self._get_exchangerate_historical(days)
-            
-        except Exception:
-            return self._get_exchangerate_historical(days)
-    
-    def _get_exchangerate_historical(self, days=30):
-        """ExchangeRate-API alternative"""
-        try:
-            rates = []
-            dates = []
-            
-            # Get data for last 30 days
-            for i in range(days):
-                date = datetime.now() - timedelta(days=i)
-                date_str = date.strftime('%Y-%m-%d')
-                
-                # Skip weekends for forex data
-                if date.weekday() >= 5:
-                    continue
-                
-                try:
-                    url = f"https://api.exchangerate-api.com/v4/historical/EUR/{date_str}"
-                    response = requests.get(url, timeout=5)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        if 'rates' in data and 'PLN' in data['rates']:
-                            rates.append(float(data['rates']['PLN']))
-                            dates.append(date_str)
-                            
-                            if len(rates) >= 20:
-                                break
-                except:
-                    continue
-            
-            if len(rates) >= 15:
-                return {
-                    'rates': rates,
-                    'dates': dates,
-                    'source': 'ExchangeRate-API',
-                    'success': True,
-                    'count': len(rates)
-                }
-            
-            # Final fallback to NBP
-            return self._get_nbp_historical_fallback(days)
-            
-        except Exception:
-            return self._get_nbp_historical_fallback(days)
-    
-    def _get_nbp_fallback(self):
-        try:
-            url = "https://api.nbp.pl/api/exchangerates/rates/a/eur/"
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            
-            if data.get('rates') and len(data['rates']) > 0:
-                return {
-                    'rate': data['rates'][0]['mid'],
-                    'date': data['rates'][0]['effectiveDate'],
-                    'source': 'NBP Backup',
-                    'success': True
-                }
-        except Exception:
-            pass
-        
+    def _extract_balance_sheet(self, root):
+        """Extract balance sheet data"""
         return {
-            'rate': 4.25,
-            'date': datetime.now().strftime('%Y-%m-%d'),
-            'source': 'Fallback',
-            'success': False
+            'total_assets': self._parse_float(self._get_xml_value(root, './/AktywaRazem')),
+            'fixed_assets': self._parse_float(self._get_xml_value(root, './/AktywaTrwale')),
+            'current_assets': self._parse_float(self._get_xml_value(root, './/AktywaObrotowe')),
+            'inventory': self._parse_float(self._get_xml_value(root, './/Zapasy')),
+            'receivables': self._parse_float(self._get_xml_value(root, './/NaleznosciKrotkoterminowe')),
+            'cash': self._parse_float(self._get_xml_value(root, './/SrodkiPieniezne')),
+            'equity': self._parse_float(self._get_xml_value(root, './/KapitalWlasny')),
+            'liabilities': self._parse_float(self._get_xml_value(root, './/ZobowiazaniaRazem')),
+            'short_term_liabilities': self._parse_float(self._get_xml_value(root, './/ZobowiazaniaKrotkoterminowe')),
         }
     
-    def _get_nbp_historical_fallback(self, days=30):
-        try:
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=days+10)
-            start_str = start_date.strftime('%Y-%m-%d')
-            end_str = end_date.strftime('%Y-%m-%d')
-            
-            url = f"https://api.nbp.pl/api/exchangerates/rates/a/eur/{start_str}/{end_str}/"
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            
-            if data.get('rates') and len(data['rates']) >= 15:
-                rates = [rate_data['mid'] for rate_data in data['rates']]
-                dates = [rate_data['effectiveDate'] for rate_data in data['rates']]
-                take_count = min(days, len(rates))
-                
-                return {
-                    'rates': rates[-take_count:],
-                    'dates': dates[-take_count:],
-                    'source': 'NBP Historical Backup',
-                    'success': True,
-                    'count': take_count
-                }
-        except Exception:
-            pass
-        
-        # Ultimate fallback - synthetic data with realistic volatility
-        base_rate = 4.25
-        rates = []
-        dates = []
-        
-        for i in range(20):
-            # Add realistic daily volatility (~0.5% daily)
-            daily_change = np.random.normal(0, 0.005)
-            rate = base_rate * (1 + daily_change * i * 0.1)
-            rates.append(rate)
-            
-            date = datetime.now() - timedelta(days=i)
-            dates.append(date.strftime('%Y-%m-%d'))
-        
+    def _extract_pnl(self, root):
+        """Extract P&L data"""
         return {
-            'rates': rates,
-            'dates': dates,
-            'source': 'Synthetic Historical Data',
-            'success': False,
-            'count': 20
+            'revenue': self._parse_float(self._get_xml_value(root, './/PrzychodyNetto')),
+            'operating_profit': self._parse_float(self._get_xml_value(root, './/ZyskStrataDzialalnosciOperacyjnej')),
+            'net_profit': self._parse_float(self._get_xml_value(root, './/ZyskStrataNetto')),
+            'ebitda': self._parse_float(self._get_xml_value(root, './/EBITDA')),
         }
-
-class FREDAPIClient:
-    def __init__(self, api_key=FRED_API_KEY):
-        self.api_key = api_key
     
-    def get_series_data(self, series_id, limit=1, sort_order='desc'):
-        url = "https://api.stlouisfed.org/fred/series/observations"
-        params = {
-            'series_id': series_id,
-            'api_key': self.api_key,
-            'file_type': 'json',
-            'limit': limit,
-            'sort_order': sort_order
-        }
-        
-        try:
-            response = requests.get(url, params=params, timeout=10)
-            data = response.json()
-            
-            if 'observations' in data and data['observations']:
-                latest = data['observations'][0]
-                if latest['value'] != '.':
-                    return {
-                        'value': float(latest['value']),
-                        'date': latest['date'],
-                        'series_id': series_id,
-                        'source': 'FRED'
-                    }
-            return None
-        except Exception as e:
-            return None
-
-class APIIntegratedForwardCalculator:
-    def __init__(self, fred_client):
-        self.fred_client = fred_client
-        self.points_factor = 0.70
-        self.risk_factor = 0.40
-    
-    def calculate_theoretical_forward_points(self, spot_rate, pl_yield, de_yield, days):
-        T = days / 365.0
-        forward_rate = spot_rate * (1 + pl_yield/100 * T) / (1 + de_yield/100 * T)
-        forward_points = forward_rate - spot_rate
-        
+    def _extract_cashflow(self, root):
+        """Extract cash flow data"""
         return {
-            'forward_rate': forward_rate,
-            'forward_points': forward_points,
-            'days': days,
-            'yield_spread': pl_yield - de_yield,
-            'time_factor': T
+            'operating_cf': self._parse_float(self._get_xml_value(root, './/PrzeplywyOperacyjne')),
+            'investing_cf': self._parse_float(self._get_xml_value(root, './/PrzeplywyInwestycyjne')),
+            'financing_cf': self._parse_float(self._get_xml_value(root, './/PrzeplywyFinansowe')),
         }
     
-    def calculate_professional_rates(self, spot_rate, points_to_window, swap_risk, min_profit_floor=0.0):
-        points_given_to_client = points_to_window * self.points_factor
-        swap_risk_charged = swap_risk * self.risk_factor
+    def _parse_float(self, value):
+        """Parse string to float"""
+        try:
+            return float(str(value).replace(',', '.').replace(' ', ''))
+        except:
+            return 0.0
+    
+    def calculate_indicators(self):
+        """Calculate financial indicators"""
+        d = self.data
         
-        fwd_client_initial = spot_rate + points_given_to_client - swap_risk_charged
-        fwd_to_open = spot_rate + points_to_window
+        # Liquidity ratios
+        current_ratio = d.get('current_assets', 0) / d.get('short_term_liabilities', 1) if d.get('short_term_liabilities', 0) > 0 else 0
+        quick_ratio = (d.get('current_assets', 0) - d.get('inventory', 0)) / d.get('short_term_liabilities', 1) if d.get('short_term_liabilities', 0) > 0 else 0
+        cash_ratio = d.get('cash', 0) / d.get('short_term_liabilities', 1) if d.get('short_term_liabilities', 0) > 0 else 0
         
-        initial_profit = fwd_to_open - fwd_client_initial
+        # Leverage ratios
+        debt_to_equity = d.get('liabilities', 0) / d.get('equity', 1) if d.get('equity', 0) > 0 else 0
+        debt_to_assets = d.get('liabilities', 0) / d.get('total_assets', 1) if d.get('total_assets', 0) > 0 else 0
         
-        if initial_profit < min_profit_floor:
-            fwd_client = fwd_to_open - min_profit_floor
-            profit_per_eur = min_profit_floor
+        # Profitability ratios
+        roe = d.get('net_profit', 0) / d.get('equity', 1) * 100 if d.get('equity', 0) > 0 else 0
+        roa = d.get('net_profit', 0) / d.get('total_assets', 1) * 100 if d.get('total_assets', 0) > 0 else 0
+        net_margin = d.get('net_profit', 0) / d.get('revenue', 1) * 100 if d.get('revenue', 0) > 0 else 0
+        operating_margin = d.get('operating_profit', 0) / d.get('revenue', 1) * 100 if d.get('revenue', 0) > 0 else 0
+        
+        # Working capital
+        working_capital = d.get('current_assets', 0) - d.get('short_term_liabilities', 0)
+        
+        self.indicators = {
+            'current_ratio': current_ratio,
+            'quick_ratio': quick_ratio,
+            'cash_ratio': cash_ratio,
+            'debt_to_equity': debt_to_equity,
+            'debt_to_assets': debt_to_assets,
+            'roe': roe,
+            'roa': roa,
+            'net_margin': net_margin,
+            'operating_margin': operating_margin,
+            'working_capital': working_capital,
+        }
+        
+        return self.indicators
+    
+    def assess_credit_risk(self):
+        """Assess credit risk and provide rating"""
+        ind = self.indicators
+        d = self.data
+        
+        score = 0
+        max_score = 100
+        red_flags = []
+        
+        # 1. Liquidity assessment (25 points)
+        if ind['current_ratio'] >= 1.5:
+            score += 25
+        elif ind['current_ratio'] >= 1.2:
+            score += 15
+        elif ind['current_ratio'] >= 1.0:
+            score += 5
         else:
-            fwd_client = fwd_client_initial
-            profit_per_eur = initial_profit
+            red_flags.append("Krytycznie niski wskaźnik bieżącej płynności")
         
-        return {
-            'fwd_client': fwd_client,
-            'fwd_to_open': fwd_to_open,
-            'profit_per_eur': profit_per_eur,
-            'points_given_to_client': points_given_to_client,
-            'swap_risk_charged': swap_risk_charged
-        }
-
-def initialize_session_state():
-    if 'dealer_pricing_data' not in st.session_state:
-        st.session_state.dealer_pricing_data = None
-    if 'dealer_config' not in st.session_state:
-        st.session_state.dealer_config = {
-            'spot_rate': 4.25,
-            'spot_source': 'Fallback',
-            'pl_yield': 5.70,
-            'de_yield': 2.35,
-            'window_days': 90,
-            'points_factor': 0.70,
-            'risk_factor': 0.40,
-            'bid_ask_spread': 0.002,
-            'volatility_factor': 0.25,
-            'hedging_savings_pct': 0.60,
-            'minimum_profit_floor': 0.000
-        }
-    if 'hedge_transactions' not in st.session_state:
-        st.session_state.hedge_transactions = []
-
-@st.cache_data(ttl=3600)
-def get_fred_bond_data():
-    fred_client = FREDAPIClient()
-    try:
-        bond_series = {
-            'Poland_10Y': 'IRLTLT01PLM156N',
-            'Germany_10Y': 'IRLTLT01DEM156N'
-        }
-        
-        results = {}
-        for name, series_id in bond_series.items():
-            data = fred_client.get_series_data(series_id)
-            if data:
-                results[name] = data
-        
-        if results:
-            return results
+        # 2. Profitability assessment (25 points)
+        if d.get('net_profit', 0) > 0 and ind['net_margin'] > 5:
+            score += 25
+        elif d.get('net_profit', 0) > 0 and ind['net_margin'] > 0:
+            score += 15
+        elif d.get('net_profit', 0) > 0:
+            score += 10
         else:
-            raise Exception("No data from FRED API")
-    except Exception as e:
-        return {
-            'Poland_10Y': {'value': 5.42, 'date': '2025-07-03', 'source': 'Current Market'},
-            'Germany_10Y': {'value': 2.63, 'date': '2025-07-03', 'source': 'Current Market'}
-        }
-
-@st.cache_data(ttl=300)
-def get_eur_pln_rate():
-    alpha_api = AlphaVantageAPI()
-    return alpha_api.get_eur_pln_rate()
-
-@st.cache_data(ttl=1800)
-def get_historical_eur_pln_data(days=30):
-    alpha_api = AlphaVantageAPI()
-    return alpha_api.get_historical_eur_pln(days)
-
-def create_dealer_panel():
-    st.header("🚀 Panel Dealerski - Wycena Master")
-    st.markdown("*Ustaw parametry wyceny - te kursy będą widoczne w panelu zabezpieczeń*")
-    
-    # Load market data
-    with st.spinner("📡 Ładowanie danych rynkowych..."):
-        bond_data = get_fred_bond_data()
-        forex_data = get_eur_pln_rate()
-    
-    # Spot rate control
-    st.subheader("⚙️ Kontrola Kursu Spot")
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        use_manual_spot = st.checkbox(
-            "Ustaw kurs ręcznie", 
-            value=False,
-            help="Odznacz aby używać automatycznego kursu z Alpha Vantage/NBP"
-        )
-    
-    with col2:
-        if use_manual_spot:
-            spot_rate = st.number_input(
-                "Kurs EUR/PLN:",
-                value=st.session_state.dealer_config['spot_rate'],
-                min_value=3.50,
-                max_value=6.00,
-                step=0.0001,
-                format="%.4f"
-            )
-            spot_source = "Manual"
+            red_flags.append("Firma generuje stratę netto")
+        
+        # 3. Leverage assessment (25 points)
+        if ind['debt_to_equity'] < 0.5:
+            score += 25
+        elif ind['debt_to_equity'] < 1.0:
+            score += 15
+        elif ind['debt_to_equity'] < 1.5:
+            score += 5
         else:
-            spot_rate = forex_data['rate']
-            spot_source = forex_data['source']
-            st.info(f"Automatyczny kurs: {spot_rate:.4f} (źródło: {spot_source})")
-    
-    # Market data display
-    st.subheader("📊 Dane Rynkowe")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    pl_yield = bond_data['Poland_10Y']['value'] if 'Poland_10Y' in bond_data else 5.42
-    de_yield = bond_data['Germany_10Y']['value'] if 'Germany_10Y' in bond_data else 2.63
-    spread = pl_yield - de_yield
-    
-    with col1:
-        st.metric("EUR/PLN Spot", f"{spot_rate:.4f}", help=f"Źródło: {spot_source}")
-    
-    with col2:
-        st.metric("Rentowność PL 10Y", f"{pl_yield:.2f}%")
-    
-    with col3:
-        st.metric("Rentowność DE 10Y", f"{de_yield:.2f}%")
-    
-    with col4:
-        st.metric("Spread PL-DE 10Y", f"{spread:.2f}pp")
-    
-    # Configuration
-    st.markdown("---")
-    st.subheader("⚙️ Konfiguracja Transakcji")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        window_days = st.number_input(
-            "Długość okna (dni):",
-            value=st.session_state.dealer_config['window_days'],
-            min_value=30,
-            max_value=365,
-            step=5
-        )
-    
-    with col2:
-        nominal_amount = st.number_input(
-            "Kwota nominalna (EUR):",
-            value=2_500_000,
-            min_value=10_000,
-            max_value=100_000_000,
-            step=10_000,
-            format="%d"
-        )
-    
-    with col3:
-        leverage = st.number_input(
-            "Współczynnik dźwigni:",
-            value=1.0,
-            min_value=1.0,
-            max_value=3.0,
-            step=0.1
-        )
-    
-    # Advanced parameters
-    with st.expander("🔧 Zaawansowane Parametry Wyceny"):
-        col1, col2, col3 = st.columns(3)
+            red_flags.append("Bardzo wysokie zadłużenie")
         
-        with col1:
-            points_factor = st.slider(
-                "Współczynnik punktów (% dla klienta):",
-                min_value=0.60,
-                max_value=0.85,
-                value=st.session_state.dealer_config['points_factor'],
-                step=0.01
-            )
+        # 4. Cash flow assessment (25 points)
+        if d.get('operating_cf', 0) > 0 and d.get('cash', 0) > d.get('revenue', 1) * 0.05:
+            score += 25
+        elif d.get('operating_cf', 0) > 0:
+            score += 15
+        else:
+            red_flags.append("Ujemny przepływ z działalności operacyjnej")
         
-        with col2:
-            risk_factor = st.slider(
-                "Współczynnik ryzyka (% obciążenia):",
-                min_value=0.30,
-                max_value=0.60,
-                value=st.session_state.dealer_config['risk_factor'],
-                step=0.01
-            )
+        # Determine rating
+        if score >= 80:
+            rating = "A"
+            risk_level = "NISKIE RYZYKO"
+            color = "green"
+        elif score >= 65:
+            rating = "B+"
+            risk_level = "UMIARKOWANE RYZYKO"
+            color = "blue"
+        elif score >= 50:
+            rating = "B"
+            risk_level = "PODWYŻSZONE RYZYKO"
+            color = "orange"
+        elif score >= 35:
+            rating = "C+"
+            risk_level = "WYSOKIE RYZYKO"
+            color = "red"
+        else:
+            rating = "C-"
+            risk_level = "BARDZO WYSOKIE RYZYKO"
+            color = "darkred"
         
-        with col3:
-            minimum_profit_floor = st.number_input(
-                "Min próg zysku (PLN/EUR):",
-                value=st.session_state.dealer_config['minimum_profit_floor'],
-                min_value=-0.020,
-                max_value=0.020,
-                step=0.001,
-                format="%.4f"
-            )
-    
-    # Update button
-    if st.button("🔄 Zaktualizuj Wycenę", type="primary", use_container_width=True):
-        # Update config
-        st.session_state.dealer_config.update({
-            'spot_rate': spot_rate,
-            'spot_source': spot_source,
-            'pl_yield': pl_yield,
-            'de_yield': de_yield,
-            'window_days': window_days,
-            'points_factor': points_factor,
-            'risk_factor': risk_factor,
-            'minimum_profit_floor': minimum_profit_floor
-        })
-        
-        # Generate pricing data
-        pricing_data = []
-        calculator = APIIntegratedForwardCalculator(FREDAPIClient())
-        calculator.points_factor = points_factor
-        calculator.risk_factor = risk_factor
-        
-        for i in range(1, 13):
-            days = i * 30
-            theoretical = calculator.calculate_theoretical_forward_points(spot_rate, pl_yield, de_yield, days)
-            forward_points = theoretical['forward_points']
-            
-            swap_risk = abs(forward_points) * 0.25 * np.sqrt(window_days / 90)
-            swap_risk = max(swap_risk, 0.015)
-            
-            rates = calculator.calculate_professional_rates(spot_rate, forward_points, swap_risk, minimum_profit_floor)
-            
-            pricing_data.append({
-                'tenor_name': f"{i} {'miesiąc' if i == 1 else 'miesiące' if i <= 4 else 'miesięcy'}",
-                'tenor_days': days,
-                'forward_points': forward_points,
-                'swap_risk': swap_risk,
-                'client_rate': rates['fwd_client'],
-                'profit_per_eur': rates['profit_per_eur']
-            })
-        
-        st.session_state.dealer_pricing_data = pricing_data
-        st.success("✅ Wycena zaktualizowana!")
-        st.rerun()
-    
-    # Show pricing if available
-    if st.session_state.dealer_pricing_data:
-        st.markdown("---")
-        st.subheader("💼 Aktualna Wycena Dealerska")
-        
-        pricing_df_data = []
-        for pricing in st.session_state.dealer_pricing_data:
-            pricing_df_data.append({
-                "Tenor": pricing['tenor_name'],
-                "Days": pricing['tenor_days'],
-                "Points": f"{pricing['forward_points']:.4f}",
-                "Risk": f"{pricing['swap_risk']:.4f}",
-                "Client Rate": f"{pricing['client_rate']:.4f}",
-                "Profit/EUR": f"{pricing['profit_per_eur']:.4f}"
-            })
-        
-        df_pricing = pd.DataFrame(pricing_df_data)
-        st.dataframe(df_pricing, use_container_width=True, height=400)
-        
-        # Portfolio summary metrics
-        st.subheader("📊 Podsumowanie Portfolio")
-        
-        # Calculate portfolio totals
-        portfolio_totals = {
-            'total_min_profit': 0,
-            'total_max_profit': 0,
-            'total_expected_profit': 0,
-            'total_notional': 0
+        self.rating = {
+            'score': score,
+            'rating': rating,
+            'risk_level': risk_level,
+            'color': color,
+            'red_flags': red_flags
         }
         
-        hedging_savings_pct = st.session_state.dealer_config['hedging_savings_pct']
+        return self.rating
+    
+    def generate_recommendation(self, requested_limit_mln=1.0):
+        """Generate credit limit recommendation for FX forwards"""
+        ind = self.indicators
+        d = self.data
+        rating = self.rating
         
-        for pricing in st.session_state.dealer_pricing_data:
-            window_min_profit_per_eur = pricing['profit_per_eur']
-            window_max_profit_per_eur = window_min_profit_per_eur + (pricing['swap_risk'] * hedging_savings_pct)
-            window_expected_profit_per_eur = (window_min_profit_per_eur + window_max_profit_per_eur) / 2
-            
-            window_min_profit_total = window_min_profit_per_eur * nominal_amount
-            window_max_profit_total = window_max_profit_per_eur * nominal_amount
-            window_expected_profit_total = window_expected_profit_per_eur * nominal_amount
-            
-            portfolio_totals['total_min_profit'] += window_min_profit_total
-            portfolio_totals['total_max_profit'] += window_max_profit_total
-            portfolio_totals['total_expected_profit'] += window_expected_profit_total
-            portfolio_totals['total_notional'] += nominal_amount
+        # Calculate recommended limit based on multiple factors
+        revenue_mln = d.get('revenue', 0) / 1_000_000
+        equity_mln = d.get('equity', 0) / 1_000_000
+        cash_mln = d.get('cash', 0) / 1_000_000
         
-        total_exposure_pln = spot_rate * portfolio_totals['total_notional']
-        min_profit_pct = (portfolio_totals['total_min_profit'] / total_exposure_pln) * 100
-        expected_profit_pct = (portfolio_totals['total_expected_profit'] / total_exposure_pln) * 100
-        max_profit_pct = (portfolio_totals['total_max_profit'] / total_exposure_pln) * 100
+        # Base limit: 5-10% of annual revenue for FX forwards
+        base_limit = revenue_mln * 0.075  # 7.5% of revenue
         
-        # Portfolio metrics in columns
-        col1, col2, col3, col4 = st.columns(4)
+        # Adjust by credit rating
+        rating_multiplier = {
+            'A': 1.2,
+            'B+': 1.0,
+            'B': 0.7,
+            'C+': 0.4,
+            'C-': 0.1
+        }
         
-        with col1:
-            st.metric(
-                "Portfolio Min Zysk", 
-                f"{portfolio_totals['total_min_profit']:,.0f} PLN"
-            )
+        adjusted_limit = base_limit * rating_multiplier.get(rating['rating'], 0.5)
         
-        with col2:
-            st.metric(
-                "Portfolio Oczekiwany", 
-                f"{portfolio_totals['total_expected_profit']:,.0f} PLN"
-            )
+        # Cap at 20% of equity
+        equity_cap = equity_mln * 0.20
+        recommended_limit = min(adjusted_limit, equity_cap)
         
-        with col3:
-            st.metric(
-                "Portfolio Max Zysk", 
-                f"{portfolio_totals['total_max_profit']:,.0f} PLN"
-            )
+        # Determine if approval recommended
+        if rating['score'] >= 65 and ind['current_ratio'] >= 1.2:
+            decision = "ZATWIERDZENIE"
+            decision_color = "success"
+        elif rating['score'] >= 50 and ind['current_ratio'] >= 1.0:
+            decision = "ZATWIERDZENIE WARUNKOWE"
+            decision_color = "warning"
+        else:
+            decision = "ODMOWA"
+            decision_color = "danger"
+            recommended_limit = 0
         
-        with col4:
-            st.metric(
-                "Zakres Zysku", 
-                f"{portfolio_totals['total_max_profit'] - portfolio_totals['total_min_profit']:,.0f} PLN"
-            )
+        # Collateral requirements
+        if rating['score'] < 50:
+            collateral = "120% zabezpieczenia gotówkowego"
+        elif rating['score'] < 65:
+            collateral = "100% zabezpieczenia gotówkowego lub gwarancja bankowa"
+        else:
+            collateral = "Standardowe zabezpieczenie 10-20%"
         
-        # Percentage metrics
-        st.markdown("### 📊 Marże Procentowe")
+        # Tenor recommendation
+        if rating['score'] >= 65:
+            max_tenor = "12 miesięcy"
+        elif rating['score'] >= 50:
+            max_tenor = "6 miesięcy"
+        else:
+            max_tenor = "3 miesiące"
         
-        col1, col2, col3, col4 = st.columns(4)
+        self.recommendation = {
+            'decision': decision,
+            'decision_color': decision_color,
+            'recommended_limit_mln': round(recommended_limit, 2),
+            'requested_limit_mln': requested_limit_mln,
+            'approval_ratio': round((recommended_limit / requested_limit_mln * 100) if requested_limit_mln > 0 else 0, 1),
+            'collateral': collateral,
+            'max_tenor': max_tenor,
+            'conditions': self._generate_conditions()
+        }
         
-        with col1:
-            st.markdown(f"""
-            <div class="profit-metric">
-                <h4 style="margin: 0; color: white;">Min Marża</h4>
-                <h2 style="margin: 0; color: white;">{min_profit_pct:.3f}%</h2>
-                <p style="margin: 0; color: #f8f9fa;">vs całkowita ekspozycja</p>
-            </div>
-            """, unsafe_allow_html=True)
+        return self.recommendation
+    
+    def _generate_conditions(self):
+        """Generate specific conditions based on risk profile"""
+        conditions = []
+        ind = self.indicators
+        d = self.data
         
-        with col2:
-            st.markdown(f"""
-            <div class="profit-metric" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
-                <h4 style="margin: 0; color: white;">Oczekiwana Marża</h4>
-                <h2 style="margin: 0; color: white;">{expected_profit_pct:.3f}%</h2>
-                <p style="margin: 0; color: #f8f9fa;">realistyczny scenariusz</p>
-            </div>
-            """, unsafe_allow_html=True)
+        if ind['current_ratio'] < 1.5:
+            conditions.append("Monitoring płynności co miesiąc")
         
-        with col3:
-            st.markdown(f"""
-            <div class="profit-metric" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
-                <h4 style="margin: 0; color: white;">Max Marża</h4>
-                <h2 style="margin: 0; color: white;">{max_profit_pct:.3f}%</h2>
-                <p style="margin: 0; color: #f8f9fa;">optymistyczny scenariusz</p>
-            </div>
-            """, unsafe_allow_html=True)
+        if d.get('net_profit', 0) < 0:
+            conditions.append("Zakaz wypłat dywidend do osiągnięcia zyskowności")
         
-        with col4:
-            margin_volatility = max_profit_pct - min_profit_pct
-            st.markdown(f"""
-            <div class="profit-metric" style="background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%); color: #2d3436;">
-                <h4 style="margin: 0;">Volatility Marży</h4>
-                <h2 style="margin: 0;">{margin_volatility:.3f}pp</h2>
-                <p style="margin: 0;">zakres zmienności</p>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("👆 Kliknij 'Zaktualizuj Wycenę' aby wygenerować kursy")
+        if ind['debt_to_equity'] > 1.0:
+            conditions.append("Covenant: D/E ratio nie może przekroczyć 1.5")
+        
+        if d.get('cash', 0) < d.get('revenue', 0) * 0.03:
+            conditions.append("Utrzymanie minimalnego salda gotówkowego")
+        
+        return conditions
 
-def create_client_hedging_advisor():
-    st.header("🛡️ Panel Zabezpieczeń EUR/PLN")
-    st.markdown("*Kursy synchronizowane z panelem dealerskim*")
+
+def generate_pdf_report(analyzer, output_buffer):
+    """Generate comprehensive PDF report"""
+    doc = SimpleDocTemplate(output_buffer, pagesize=A4, 
+                           topMargin=2*cm, bottomMargin=2*cm,
+                           leftMargin=2*cm, rightMargin=2*cm)
     
-    if not st.session_state.dealer_pricing_data:
-        st.warning("⚠️ Brak wyceny dealerskiej! Przejdź do panelu dealerskiego.")
-        forex_data = get_eur_pln_rate()
-        st.info(f"Aktualny kurs EUR/PLN: {forex_data['rate']:.4f}")
-        return
+    story = []
     
-    config = st.session_state.dealer_config
-    
-    st.markdown(f"""
-    <div class="pricing-sync">
-        <h4 style="margin: 0;">✅ Wycena Zsynchronizowana</h4>
-        <p style="margin: 0;">Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} dni</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    st.subheader("💱 Nowa Transakcja Forward Elastyczny")
-    
-    col1, col2, col3 = st.columns([1, 1, 2])
-    
-    with col1:
-        st.markdown("**SPRZEDAJ**")
-        sell_currency = st.selectbox("", ["EUR"], key="sell_curr")
-    
-    with col2:
-        st.markdown("**KUP**")
-        buy_currency = st.selectbox("", ["PLN"], key="buy_curr")
-    
-    with col3:
-        st.markdown("**CAŁKOWITY WOLUMEN**")
-        volume = st.number_input(
-            "",
-            value=1_000_000,
-            min_value=10_000,
-            max_value=50_000_000,
-            step=10_000,
-            format="%d"
-        )
-    
-    st.markdown("### 📅 Wybór Terminów Wykonania")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        settlement_date = st.date_input(
-            "**Data pierwszego wykonania:**",
-            value=(datetime.now() + timedelta(days=90)).date(),
-            min_value=datetime.now().date(),
-            max_value=(datetime.now() + timedelta(days=730)).date()
-        )
-    
-    with col2:
-        window_days = st.number_input(
-            "**Długość okna (dni):**",
-            value=config['window_days'],
-            min_value=30,
-            max_value=365,
-            step=5
-        )
-    
-    settlement_datetime = datetime.combine(settlement_date, datetime.min.time())
-    today_datetime = datetime.now()
-    days_to_settlement = (settlement_datetime - today_datetime).days
-    
-    calculator = APIIntegratedForwardCalculator(FREDAPIClient())
-    theoretical = calculator.calculate_theoretical_forward_points(
-        config['spot_rate'], 
-        config['pl_yield'], 
-        config['de_yield'], 
-        days_to_settlement
+    # Styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        fontSize=18,
+        textColor=colors.HexColor('#1a1a1a'),
+        spaceAfter=30,
+        alignment=TA_CENTER,
+        fontName='DejaVuSans-Bold'
     )
     
-    forward_points = theoretical['forward_points']
-    tenor_window_swap_risk = abs(forward_points) * 0.25 * np.sqrt(window_days / 90)
-    tenor_window_swap_risk = max(tenor_window_swap_risk, 0.015)
-    
-    calculator.points_factor = config['points_factor']
-    calculator.risk_factor = config['risk_factor']
-    
-    rates_result = calculator.calculate_professional_rates(
-        config['spot_rate'], 
-        forward_points, 
-        tenor_window_swap_risk, 
-        config['minimum_profit_floor']
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        fontSize=14,
+        textColor=colors.HexColor('#2c3e50'),
+        spaceAfter=12,
+        spaceBefore=12,
+        fontName='DejaVuSans-Bold'
     )
     
-    client_rate = rates_result['fwd_client']
-    
-    st.markdown("### 💰 Wycena Transakcji")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f"""
-        <div class="client-summary">
-            <h4 style="margin: 0; color: #2e68a5;">Kurs Zabezpieczenia</h4>
-            <h2 style="margin: 0; color: #2c3e50;">{client_rate:.4f}</h2>
-            <p style="margin: 0; color: #666;">EUR/PLN</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class="client-summary">
-            <h4 style="margin: 0; color: #2e68a5;">Kurs Końcowy</h4>
-            <h2 style="margin: 0; color: #2c3e50;">{client_rate:.4f}</h2>
-            <p style="margin: 0; color: #666;">Gwarantowany</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        pln_amount = client_rate * volume
-        st.markdown(f"""
-        <div class="client-summary">
-            <h4 style="margin: 0; color: #2e68a5;">Kwota PLN</h4>
-            <h2 style="margin: 0; color: #2c3e50;">{pln_amount:,.0f}</h2>
-            <p style="margin: 0; color: #666;">Do otrzymania</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        rate_advantage = ((client_rate - config['spot_rate']) / config['spot_rate']) * 100
-        advantage_pln = (client_rate - config['spot_rate']) * volume
-        color = "#28a745" if rate_advantage > 0 else "#dc3545"
-        st.markdown(f"""
-        <div class="client-summary">
-            <h4 style="margin: 0; color: #2e68a5;">Wycena do Rynku</h4>
-            <h2 style="margin: 0; color: {color};">{advantage_pln:+,.0f} PLN</h2>
-            <p style="margin: 0; color: #666;">{rate_advantage:+.2f}% vs spot</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    if st.button("➕ Dodaj elastyczny kontrakt forwardowy", type="primary", use_container_width=True):
-        execution_window_start = settlement_datetime
-        execution_window_end = execution_window_start + timedelta(days=window_days)
-        
-        # Skip weekends for expiration date - if Saturday (5) or Sunday (6), move to Monday
-        while execution_window_end.weekday() >= 5:  # 5=Saturday, 6=Sunday
-            execution_window_end += timedelta(days=1)
-        
-        months_approx = days_to_settlement / 30
-        if months_approx < 1:
-            tenor_name = f"{days_to_settlement} dni"
-        else:
-            tenor_name = f"{months_approx:.0f}M+"
-        
-        # Calculate percentage result vs spot
-        pct_vs_spot = ((client_rate - config['spot_rate']) / config['spot_rate']) * 100
-        
-        transaction_id = len(st.session_state.hedge_transactions) + 1
-        st.session_state.hedge_transactions.append({
-            "nr": transaction_id,
-            "typ": "Forward elastyczny",
-            "pierwsze_wykonanie": settlement_date.strftime("%d %b %Y"),
-            "data_wygasniecia": execution_window_end.strftime("%d %b %Y"),
-            "kwota_sprzedazy": f"(EUR) {volume:,.0f}",
-            "kwota_zakupu": f"(PLN) {pln_amount:,.0f}",
-            "kurs_zabezpieczenia": f"{client_rate:.4f}",
-            "pct_vs_spot": f"{pct_vs_spot:+.2f}%",
-            "wycena_do_rynku": f"{advantage_pln:+,.0f} PLN" if advantage_pln != 0 else "0,00 PLN",
-            "status": "PLANOWANE"
-        })
-        st.success(f"✅ Dodano kontrakt Forward Elastyczny na {volume:,.0f} EUR")
-        st.rerun()
-    
-    if st.session_state.hedge_transactions:
-        st.markdown("---")
-        st.markdown("## Lista transakcji")
-        
-        transactions_data = []
-        
-        for i, transaction in enumerate(st.session_state.hedge_transactions, 1):
-            transactions_data.append({
-                "#": i,
-                "TYP": transaction.get('typ', 'Forward elastyczny'),
-                "PIERWSZE WYKONANIE": transaction.get('pierwsze_wykonanie', 'Brak daty'),
-                "DATA WYGAŚNIĘCIA": transaction.get('data_wygasniecia', 'Brak daty'),
-                "KWOTA SPRZEDAŻY": transaction.get('kwota_sprzedazy', '(EUR) 0'),
-                "KWOTA ZAKUPU": transaction.get('kwota_zakupu', '(PLN) 0'),
-                "KURS ZABEZPIECZENIA": transaction.get('kurs_zabezpieczenia', '0.0000'),
-                "WYCENA DO RYNKU": transaction.get('wycena_do_rynku', '0 PLN'),
-                "STATUS": transaction.get('status', 'PLANOWANE')
-            })
-        
-        if transactions_data:
-            df_transactions = pd.DataFrame(transactions_data)
-            st.dataframe(df_transactions, use_container_width=True, height=400, hide_index=True)
-            
-            # Portfolio summary for client
-            st.markdown("### 📊 Podsumowanie Zabezpieczeń")
-            
-            # Calculate totals
-            total_volume_eur = 0
-            total_volume_pln = 0
-            weighted_rate_sum = 0
-            
-            for transaction in st.session_state.hedge_transactions:
-                try:
-                    # Extract EUR volume
-                    eur_str = str(transaction.get('kwota_sprzedazy', '0')).replace('(EUR) ', '').replace(',', '')
-                    if eur_str and eur_str != 'nan':
-                        eur_amount = float(eur_str)
-                        total_volume_eur += eur_amount
-                        
-                        # Extract rate for weighted average
-                        rate_str = str(transaction.get('kurs_zabezpieczenia', '0'))
-                        if rate_str and rate_str != 'nan':
-                            rate = float(rate_str)
-                            weighted_rate_sum += rate * eur_amount
-                    
-                    # Extract PLN volume
-                    pln_str = str(transaction.get('kwota_zakupu', '0')).replace('(PLN) ', '').replace(',', '')
-                    if pln_str and pln_str != 'nan':
-                        total_volume_pln += float(pln_str)
-                except (ValueError, TypeError):
-                    pass
-            
-            # Calculate weighted average rate
-            avg_hedging_rate = weighted_rate_sum / total_volume_eur if total_volume_eur > 0 else 0
-            
-            # Display summary metrics
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.markdown(f"""
-                <div class="client-summary">
-                    <h4 style="margin: 0; color: #2e68a5;">Suma Zabezpieczenia</h4>
-                    <h2 style="margin: 0; color: #2c3e50;">€{total_volume_eur:,.0f}</h2>
-                    <p style="margin: 0; color: #666;">Łączny wolumen</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown(f"""
-                <div class="client-summary">
-                    <h4 style="margin: 0; color: #2e68a5;">Średni Ważony Kurs</h4>
-                    <h2 style="margin: 0; color: #2c3e50;">{avg_hedging_rate:.4f}</h2>
-                    <p style="margin: 0; color: #666;">Kurs zabezpieczenia</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col3:
-                st.markdown(f"""
-                <div class="client-summary">
-                    <h4 style="margin: 0; color: #2e68a5;">Łączna Kwota PLN</h4>
-                    <h2 style="margin: 0; color: #2c3e50;">{total_volume_pln:,.0f}</h2>
-                    <p style="margin: 0; color: #666;">Do otrzymania</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col4:
-                # Calculate advantage vs spot
-                spot_rate = config['spot_rate']
-                if avg_hedging_rate > 0:
-                    advantage_pct = ((avg_hedging_rate - spot_rate) / spot_rate) * 100
-                    advantage_pln = (avg_hedging_rate - spot_rate) * total_volume_eur
-                    color = "#28a745" if advantage_pct > 0 else "#dc3545"
-                else:
-                    advantage_pct = 0
-                    advantage_pln = 0
-                    color = "#666"
-                
-                st.markdown(f"""
-                <div class="client-summary">
-                    <h4 style="margin: 0; color: #2e68a5;">Korzyść vs Spot</h4>
-                    <h2 style="margin: 0; color: {color};">{advantage_pct:+.2f}%</h2>
-                    <p style="margin: 0; color: #666;">{advantage_pln:+,.0f} PLN</p>
-                </div>
-                """, unsafe_allow_html=True)
-    else:
-        st.info("📋 Brak kontraktów. Dodaj pierwszy kontrakt Forward Elastyczny.")
-
-def create_binomial_model_panel():
-    st.header("📊 Drzewo Dwumianowe - 5 Dni")
-    st.markdown("*Krótkoterminowa prognoza EUR/PLN - empirycznie kalibrowany model z rzeczywistymi danymi*")
-    
-    with st.spinner("📡 Pobieranie danych..."):
-        # Direct API call instead of cached function to avoid issues
-        alpha_api = AlphaVantageAPI()
-        historical_data = alpha_api.get_historical_eur_pln(30)
-        current_forex = get_eur_pln_rate()
-    
-    # Data source info
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown(f"""
-        <div class="alpha-api">
-            <h4 style="margin: 0;">📈 Kurs Bieżący</h4>
-            <p style="margin: 0;">Rate: {current_forex['rate']:.4f}</p>
-            <p style="margin: 0;">Source: {current_forex['source']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class="alpha-api">
-            <h4 style="margin: 0;">📊 Dane Historyczne</h4>
-            <p style="margin: 0;">Points: {historical_data['count']}</p>
-            <p style="margin: 0;">Source: {historical_data['source']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Calculate ACTUAL volatility from API data
-    try:
-        if historical_data['success'] and len(historical_data['rates']) >= 20:
-            rates = historical_data['rates']
-            last_20_rates = rates[-20:] if len(rates) >= 20 else rates
-            current_spot = last_20_rates[-1]
-            
-            # Calculate daily returns from REAL data
-            daily_returns = []
-            for i in range(1, len(last_20_rates)):
-                daily_return = np.log(last_20_rates[i] / last_20_rates[i-1])
-                daily_returns.append(daily_return)
-            
-            # ACTUAL historical volatility from API data
-            if len(daily_returns) > 1:
-                raw_daily_vol = np.std(daily_returns)  # Raw daily volatility from API
-                historical_volatility = raw_daily_vol * np.sqrt(252)  # Annualized
-                
-                st.success(f"✅ Rzeczywista volatility z {historical_data['source']}: {historical_volatility*100:.2f}% rocznie")
-                st.info(f"Surowa dzienna volatility: {raw_daily_vol*100:.3f}%")
-                st.info(f"Bazuje na {len(daily_returns)} rzeczywistych zwrotach")
-            else:
-                raise Exception("Insufficient returns data")
-        else:
-            raise Exception("Insufficient historical data")
-            
-    except Exception as e:
-        raw_daily_vol = 0.0028  # Fallback only if API fails
-        historical_volatility = raw_daily_vol * np.sqrt(252)
-        current_spot = current_forex['rate']
-        st.warning(f"⚠️ API niedostępne, używam fallback volatility: {historical_volatility*100:.2f}% rocznie")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        spot_rate = st.number_input(
-            "Kurs spot:",
-            value=current_spot,
-            min_value=3.50,
-            max_value=6.00,
-            step=0.0001,
-            format="%.4f"
-        )
-    
-    with col2:
-        st.metric("Horyzont", "5 dni roboczych")
-        days = 5
-    
-    with col3:
-        use_empirical = st.checkbox("Empiryczna kalibracja", value=True, 
-                                   help="Używa rzeczywistej volatility z API, ale z empiryczną kalibracją parametrów")
-        
-        if use_empirical:
-            # EMPIRICAL CALIBRATION: Use REAL API volatility but with realistic factors
-            empirical_dampening = 0.65  # Empirical dampening factor for FX (reduces theoretical vol)
-            daily_vol_calibrated = raw_daily_vol * empirical_dampening
-            
-            st.success(f"Kalibrowana volatility: {daily_vol_calibrated*100:.3f}% dziennie")
-            st.info(f"Współczynnik empiryczny: {empirical_dampening} (typowy dla EUR/PLN)")
-        else:
-            daily_vol_calibrated = st.slider("Volatility manualna (%):", 0.1, 1.0, raw_daily_vol*100, 0.01) / 100
-            st.info(f"Manualna volatility: {daily_vol_calibrated*100:.3f}% dziennie")
-    
-    # Empirically calibrated binomial parameters using REAL volatility
-    dt = 1.0  # 1 day steps
-    
-    # Use ACTUAL calibrated volatility for up/down factors
-    u_factor = 1 + daily_vol_calibrated
-    d_factor = 1 / u_factor  # Ensures u*d = 1 (no drift condition)
-    
-    # Risk-neutral probability using ACTUAL forward curve bias
-    # Calculate from REAL interest rate differential if available
-    config = st.session_state.dealer_config
-    if config and 'pl_yield' in config and 'de_yield' in config:
-        pl_rate = config['pl_yield'] / 100
-        de_rate = config['de_yield'] / 100
-        rate_differential = (pl_rate - de_rate) / 252  # Daily
-        
-        # Empirically calibrated risk-neutral probability
-        p_theoretical = (1 + rate_differential - d_factor) / (u_factor - d_factor)
-        p_empirical = max(0.45, min(0.55, p_theoretical))  # Bound within realistic range
-        
-        st.info(f"Parametry z rzeczywistych danych: u={u_factor:.6f}, d={d_factor:.6f}, p={p_empirical:.3f}")
-        st.caption(f"Różnica stóp: PL({config['pl_yield']:.2f}%) - DE({config['de_yield']:.2f}%) = {(pl_rate-de_rate)*100:.2f}%")
-    else:
-        p_empirical = 0.51  # Neutral with slight PLN weakness
-        st.info(f"Parametry domyślne: u={u_factor:.6f}, d={d_factor:.6f}, p={p_empirical:.3f}")
-    
-    # Build binomial tree with REAL calibrated parameters
-    tree = {}
-    
-    for day in range(6):
-        tree[day] = {}
-        
-        if day == 0:
-            tree[day][0] = spot_rate
-        else:
-            for j in range(day + 1):
-                ups = j
-                downs = day - j
-                # Using ACTUAL calibrated volatility
-                rate = spot_rate * (u_factor ** ups) * (d_factor ** downs)
-                tree[day][j] = rate
-    
-    # Most probable path using calibrated probabilities
-    most_probable_path = []
-    for day in range(6):
-        if day == 0:
-            most_probable_path.append(0)
-        else:
-            best_j = 0
-            best_prob = 0
-            
-            for j in range(day + 1):
-                # Using REAL calibrated probability
-                node_prob = comb(day, j) * (p_empirical ** j) * ((1 - p_empirical) ** (day - j))
-                
-                if node_prob > best_prob:
-                    best_prob = node_prob
-                    best_j = j
-            
-            most_probable_path.append(best_j)
-    
-    st.subheader("🎯 Prognoza Finalna")
-    
-    final_day = days
-    final_j = most_probable_path[final_day]
-    final_predicted_rate = tree[final_day][final_j]
-    change_pct = ((final_predicted_rate - spot_rate) / spot_rate) * 100
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Prognoza (5 dni)", f"{final_predicted_rate:.4f}", delta=f"{change_pct:+.2f}%")
-    
-    with col2:
-        prob = comb(final_day, final_j) * (p_empirical ** final_j) * ((1 - p_empirical) ** (final_day - final_j))
-        st.metric("Prawdopodobieństwo", f"{prob*100:.1f}%")
-    
-    with col3:
-        final_rates = [tree[5][j] for j in range(6)]
-        min_rate = min(final_rates)
-        max_rate = max(final_rates)
-        st.metric("Zakres", f"{min_rate:.4f} - {max_rate:.4f}")
-        range_pips = (max_rate - min_rate) * 10000
-        st.caption(f"Zakres: {range_pips:.0f} pipsów (z rzeczywistej volatility)")
-    
-    st.subheader("🌳 Drzewo Dwumianowe - Rzeczywiste Dane + Empiryczna Kalibracja")
-    
-    fig = go.Figure()
-    
-    weekdays = ["Pon", "Wt", "Śr", "Czw", "Pt"]
-    
-    for day in range(6):
-        for j in range(day + 1):
-            rate = tree[day][j]
-            x = day
-            y = j - day/2
-            
-            is_most_probable = (j == most_probable_path[day])
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=[x],
-                    y=[y],
-                    mode='markers',
-                    marker=dict(
-                        size=20 if is_most_probable else 15,
-                        color='#ff6b35' if is_most_probable else '#2e68a5',
-                        line=dict(width=3 if is_most_probable else 2, color='white')
-                    ),
-                    showlegend=False,
-                    hovertemplate=f"Dzień {day}<br>Kurs: {rate:.4f}<br>Zmiana: {((rate-spot_rate)/spot_rate)*100:+.2f}%<extra></extra>"
-                )
-            )
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=[x],
-                    y=[y + 0.25],
-                    mode='text',
-                    text=f"{rate:.4f}",
-                    textposition="middle center",
-                    textfont=dict(
-                        color='#ff6b35' if is_most_probable else '#2e68a5',
-                        size=12 if is_most_probable else 10,
-                        family="Arial Black" if is_most_probable else "Arial"
-                    ),
-                    showlegend=False,
-                    hoverinfo='skip'
-                )
-            )
-            
-            if day < 5:
-                if j < day + 1:
-                    next_y_up = (j + 1) - (day + 1)/2
-                    is_prob_connection = (j == most_probable_path[day] and (j + 1) == most_probable_path[day + 1])
-                    
-                    fig.add_trace(
-                        go.Scatter(
-                            x=[x, x + 1],
-                            y=[y, next_y_up],
-                            mode='lines',
-                            line=dict(
-                                color='#ff6b35' if is_prob_connection else 'lightgray',
-                                width=4 if is_prob_connection else 1
-                            ),
-                            showlegend=False,
-                            hoverinfo='skip'
-                        )
-                    )
-                
-                if j >= 0:
-                    next_y_down = j - (day + 1)/2
-                    is_prob_connection = (j == most_probable_path[day] and j == most_probable_path[day + 1])
-                    
-                    fig.add_trace(
-                        go.Scatter(
-                            x=[x, x + 1],
-                            y=[y, next_y_down],
-                            mode='lines',
-                            line=dict(
-                                color='#ff6b35' if is_prob_connection else 'lightgray',
-                                width=4 if is_prob_connection else 1
-                            ),
-                            showlegend=False,
-                            hoverinfo='skip'
-                        )
-                    )
-    
-    fig.add_trace(
-        go.Scatter(
-            x=[None], y=[None],
-            mode='markers',
-            marker=dict(size=20, color='#ff6b35'),
-            name='🎯 Najczęstsza ścieżka',
-            showlegend=True
-        )
+    normal_style = ParagraphStyle(
+        'CustomNormal',
+        fontSize=9,
+        leading=12,
+        alignment=TA_JUSTIFY,
+        fontName='DejaVuSans'
     )
     
-    fig.add_trace(
-        go.Scatter(
-            x=[None], y=[None],
-            mode='markers',
-            marker=dict(size=15, color='#2e68a5'),
-            name='Inne możliwe kursy',
-            showlegend=True
-        )
-    )
+    # Title
+    story.append(Paragraph("ANALIZA KREDYTOWA - LIMIT FX FORWARD", title_style))
+    story.append(Paragraph(analyzer.data.get('company_name', 'N/A'), title_style))
+    story.append(Spacer(1, 0.5*cm))
     
-    fig.update_layout(
-        title="Empirycznie kalibrowane drzewo dwumianowe EUR/PLN - Rzeczywiste dane API",
-        xaxis_title="Dzień roboczy",
-        yaxis_title="Poziom w drzewie",
-        height=500,
-        xaxis=dict(
-            tickmode='array',
-            tickvals=list(range(6)),
-            ticktext=[f"Dzień {i}" if i == 0 else f"Dzień {i}\n{weekdays[i-1]}" for i in range(6)]
-        ),
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
-    )
+    # Company info
+    info_data = [
+        ['Data analizy:', datetime.now().strftime('%d.%m.%Y')],
+        ['NIP:', analyzer.data.get('nip', 'N/A')],
+        ['KRS:', analyzer.data.get('krs', 'N/A')],
+        ['Okres sprawozdawczy:', f"{analyzer.data.get('period_from', 'N/A')} - {analyzer.data.get('period_to', 'N/A')}"],
+    ]
+    info_table = Table(info_data, colWidths=[5*cm, 9*cm])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#ecf0f1')),
+        ('FONTNAME', (0, 0), (0, -1), 'DejaVuSans-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'DejaVuSans'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+    ]))
+    story.append(info_table)
+    story.append(Spacer(1, 0.8*cm))
     
-    st.plotly_chart(fig, use_container_width=True)
+    # Rating box
+    rating_color = colors.HexColor('#28a745') if analyzer.rating['color'] == 'green' else \
+                   colors.HexColor('#ffc107') if analyzer.rating['color'] in ['blue', 'orange'] else \
+                   colors.HexColor('#dc3545')
     
-    # Analysis based on REAL data
-    st.subheader("📈 Analiza z Rzeczywistych Danych")
+    rating_data = [
+        ['RATING KREDYTOWY', f"{analyzer.rating['rating']} - {analyzer.rating['risk_level']}"],
+        ['WYNIK PUNKTOWY', f"{analyzer.rating['score']}/100"],
+    ]
+    rating_table = Table(rating_data, colWidths=[7*cm, 7*cm])
+    rating_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), rating_color),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, -1), 'DejaVuSans-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.white),
+        ('TOPPADDING', (0, 0), (-1, -1), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+    ]))
+    story.append(rating_table)
+    story.append(Spacer(1, 0.8*cm))
     
-    col1, col2 = st.columns(2)
+    # Key indicators
+    story.append(Paragraph("KLUCZOWE WSKAŹNIKI FINANSOWE", heading_style))
     
-    with col1:
-        st.markdown("**Kluczowe poziomy (z API):**")
-        final_rates_sorted = sorted([tree[5][j] for j in range(6)])
-        for i, rate in enumerate(final_rates_sorted):
-            prob_at_rate = max([comb(5, j) * (p_empirical ** j) * ((1 - p_empirical) ** (5 - j)) 
-                              for j in range(6) if abs(tree[5][j] - rate) < 0.0001])
-            pips_from_spot = (rate - spot_rate) * 10000
-            st.write(f"• {rate:.4f} ({pips_from_spot:+.0f} pips) - {prob_at_rate*100:.1f}%")
+    ind_data = [
+        ['Wskaźnik', 'Wartość', 'Ocena'],
+        ['Wskaźnik bieżącej płynności', f"{analyzer.indicators['current_ratio']:.2f}", 
+         'DOBRA' if analyzer.indicators['current_ratio'] >= 1.5 else 'SŁ' if analyzer.indicators['current_ratio'] >= 1.0 else 'ZŁA'],
+        ['Wskaźnik szybkiej płynności', f"{analyzer.indicators['quick_ratio']:.2f}",
+         'DOBRA' if analyzer.indicators['quick_ratio'] >= 1.0 else 'SŁ' if analyzer.indicators['quick_ratio'] >= 0.7 else 'ZŁA'],
+        ['Dług / Kapitał własny', f"{analyzer.indicators['debt_to_equity']:.2f}",
+         'DOBRA' if analyzer.indicators['debt_to_equity'] < 1.0 else 'SŁ' if analyzer.indicators['debt_to_equity'] < 1.5 else 'ZŁA'],
+        ['Marża netto', f"{analyzer.indicators['net_margin']:.1f}%",
+         'DOBRA' if analyzer.indicators['net_margin'] > 5 else 'SŁ' if analyzer.indicators['net_margin'] > 0 else 'ZŁA'],
+        ['ROE', f"{analyzer.indicators['roe']:.1f}%",
+         'DOBRA' if analyzer.indicators['roe'] > 10 else 'SŁ' if analyzer.indicators['roe'] > 0 else 'ZŁA'],
+    ]
     
-    with col2:
-        st.markdown("**Metodologia:**")
-        st.write(f"• Surowa volatility z {historical_data['source']}: {raw_daily_vol*100:.3f}%")
-        st.write(f"• Współczynnik kalibracji: {empirical_dampening if use_empirical else 'manual'}")
-        st.write(f"• Rzeczywiste stopy procentowe z FRED API")
-        st.write(f"• Model dostosowany do charakterystyki EUR/PLN")
-        
-        actual_range_pct = ((max(final_rates) - min(final_rates))/spot_rate)*100
-        st.write(f"• Maksymalny rozrzut: {actual_range_pct:.2f}% w 5 dni")
-
+    ind_table = Table(ind_data, colWidths=[6*cm, 4*cm, 4*cm])
+    ind_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'DejaVuSans-Bold'),
+        ('FONTNAME', (0, 1), (-1, -1), 'DejaVuSans'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+    ]))
+    story.append(ind_table)
+    story.append(Spacer(1, 0.8*cm))
+    
+    # Recommendation
+    story.append(Paragraph("REKOMENDACJA LIMITU FX FORWARD", heading_style))
+    
+    rec_color = colors.HexColor('#28a745') if analyzer.recommendation['decision_color'] == 'success' else \
+                colors.HexColor('#ffc107') if analyzer.recommendation['decision_color'] == 'warning' else \
+                colors.HexColor('#dc3545')
+    
+    rec_data = [
+        ['DECYZJA', analyzer.recommendation['decision']],
+        ['Rekomendowany limit', f"{analyzer.recommendation['recommended_limit_mln']:.2f} mln PLN"],
+        ['Zabezpieczenie', analyzer.recommendation['collateral']],
+        ['Maksymalny tenor', analyzer.recommendation['max_tenor']],
+    ]
+    rec_table = Table(rec_data, colWidths=[5*cm, 9*cm])
+    rec_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), rec_color),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ecf0f1')),
+        ('FONTNAME', (0, 0), (0, -1), 'DejaVuSans-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'DejaVuSans'),
+        ('FONTNAME', (0, 0), (-1, 0), 'DejaVuSans-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 11),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+    ]))
+    story.append(rec_table)
+    
+    # Build PDF
+    doc.build(story)
 
 
 def main():
-    initialize_session_state()
+    # Header
+    st.markdown('<p class="main-header">📊 Analityk Kredytowy - Limity FX Forward</p>', unsafe_allow_html=True)
     
-    st.markdown("""
-    <div style="display: flex; align-items: center; margin-bottom: 2rem;">
-        <div style="background: linear-gradient(45deg, #667eea, #764ba2); width: 60px; height: 60px; border-radius: 10px; margin-right: 1rem; display: flex; align-items: center; justify-content: center;">
-            <span style="font-size: 2rem;">🚀</span>
-        </div>
-        <h1 style="margin: 0; color: #2c3e50;">Zintegrowana Platforma FX</h1>
-    </div>
-    """, unsafe_allow_html=True)
+    # Sidebar
+    with st.sidebar:
+        st.image("https://img.icons8.com/fluency/96/000000/financial-growth-analysis.png", width=80)
+        st.title("⚙️ Ustawienia")
+        
+        st.markdown("---")
+        st.subheader("📤 Wczytaj sprawozdanie")
+        
+        file_type = st.radio("Typ pliku:", ["XML", "PDF (tekstowy)"])
+        uploaded_file = st.file_uploader(
+            "Wybierz plik sprawozdania finansowego",
+            type=['xml', 'pdf'],
+            help="Wgraj sprawozdanie finansowe w formacie XML lub PDF"
+        )
+        
+        st.markdown("---")
+        st.subheader("💰 Parametry analizy")
+        
+        requested_limit = st.number_input(
+            "Wnioskowany limit (mln PLN)",
+            min_value=0.1,
+            max_value=100.0,
+            value=1.0,
+            step=0.1,
+            help="Limit na transakcje FX forward"
+        )
+        
+        st.markdown("---")
+        st.info("""
+        **Instrukcja:**
+        1. Wybierz typ pliku (XML/PDF)
+        2. Wczytaj sprawozdanie finansowe
+        3. Wprowadź wnioskowany limit
+        4. Kliknij 'Analizuj sprawozdanie'
+        5. Pobierz raport PDF
+        """)
     
-    st.markdown("*Alpha Vantage + NBP + FRED APIs | Synchronizacja dealerska ↔ klient*")
-    
-    if st.session_state.dealer_pricing_data:
-        config = st.session_state.dealer_config
-        st.success(f"✅ System zsynchronizowany | Spot: {config['spot_rate']:.4f} | Window: {config['window_days']} dni")
+    # Main content
+    if uploaded_file is None:
+        st.info("👈 Wczytaj sprawozdanie finansowe aby rozpocząć analizę")
+        
+        # Example metrics
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Przeanalizowane firmy", "47", "12 w tym miesiącu")
+        with col2:
+            st.metric("Zatwierdzone limity", "32", "68%")
+        with col3:
+            st.metric("Średni limit", "2.3 mln PLN", "+0.4")
+        with col4:
+            st.metric("Czas analizy", "< 2 min", "")
+        
+        st.markdown("---")
+        
+        # Features
+        st.subheader("🎯 Funkcjonalności systemu")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            **✅ Automatyczna analiza:**
+            - Wczytywanie XML i PDF
+            - Automatyczne obliczanie wskaźników
+            - Ocena ryzyka kredytowego
+            - Rekomendacja limitu
+            
+            **📊 Wskaźniki finansowe:**
+            - Płynność (bieżąca, szybka)
+            - Zadłużenie (D/E, D/A)
+            - Rentowność (ROE, ROA, marże)
+            - Cash flow operacyjny
+            """)
+        
+        with col2:
+            st.markdown("""
+            **🎯 Rating kredytowy:**
+            - Ocena punktowa 0-100
+            - Rating od A do C-
+            - Poziom ryzyka
+            - Czerwone flagi
+            
+            **📄 Dokumentacja:**
+            - Raport PDF z analizą
+            - Rekomendacja limitu
+            - Warunki zabezpieczenia
+            - Covenant'y finansowe
+            """)
+        
+        st.markdown("---")
+        
+        # Sample rating table
+        st.subheader("📈 Skala ratingowa")
+        
+        rating_df = pd.DataFrame({
+            'Rating': ['A', 'B+', 'B', 'C+', 'C-'],
+            'Punkty': ['80-100', '65-79', '50-64', '35-49', '0-34'],
+            'Ryzyko': ['Niskie', 'Umiarkowane', 'Podwyższone', 'Wysokie', 'Bardzo wysokie'],
+            'Limit bazowy': ['10% przychodów', '7.5% przychodów', '5% przychodów', '2.5% przychodów', 'Odmowa'],
+            'Zabezpieczenie': ['10-20%', '50%', '80%', '100%', '120%']
+        })
+        
+        st.dataframe(rating_df, use_container_width=True)
+        
     else:
-        st.info("🔄 Oczekiwanie na wycenę dealerską...")
-    
-    tab1, tab2, tab3 = st.tabs(["🔧 Panel Dealerski", "🛡️ Panel Zabezpieczeń", "📊 Model Dwumianowy"])
-    
-    with tab1:
-        create_dealer_panel()
-    
-    with tab2:
-        create_client_hedging_advisor()
-    
-    with tab3:
-        create_binomial_model_panel()
+        # Process uploaded file
+        if st.sidebar.button("🔍 Analizuj sprawozdanie", type="primary", use_container_width=True):
+            with st.spinner("Przetwarzam sprawozdanie..."):
+                analyzer = FinancialAnalyzer()
+                
+                if file_type == "XML":
+                    xml_content = uploaded_file.read()
+                    if analyzer.parse_xml(xml_content):
+                        st.success("✅ Sprawozdanie wczytane pomyślnie!")
+                    else:
+                        st.error("❌ Błąd wczytywania sprawozdania")
+                        return
+                else:
+                    st.warning("⚠️ Obsługa PDF w rozwoju - użyj pliku XML")
+                    return
+                
+                # Calculate indicators
+                analyzer.calculate_indicators()
+                
+                # Assess risk
+                analyzer.assess_credit_risk()
+                
+                # Generate recommendation
+                analyzer.generate_recommendation(requested_limit)
+                
+                # Store in session state
+                st.session_state['analyzer'] = analyzer
+        
+        # Display results if analysis done
+        if 'analyzer' in st.session_state:
+            analyzer = st.session_state['analyzer']
+            
+            # Company header
+            st.markdown(f"### 🏢 {analyzer.data.get('company_name', 'N/A')}")
+            st.markdown(f"**NIP:** {analyzer.data.get('nip', 'N/A')} | **KRS:** {analyzer.data.get('krs', 'N/A')}")
+            
+            # Rating banner
+            rating_colors = {
+                'green': '#28a745',
+                'blue': '#007bff',
+                'orange': '#fd7e14',
+                'red': '#dc3545',
+                'darkred': '#8b0000'
+            }
+            
+            rating_html = f"""
+            <div style='background: linear-gradient(135deg, {rating_colors.get(analyzer.rating['color'], '#666')} 0%, #333 100%); 
+                        padding: 2rem; border-radius: 15px; color: white; text-align: center; margin: 2rem 0;
+                        box-shadow: 0 8px 16px rgba(0,0,0,0.2);'>
+                <h1 style='margin: 0; font-size: 3rem;'>{analyzer.rating['rating']}</h1>
+                <h3 style='margin: 0.5rem 0 0 0;'>{analyzer.rating['risk_level']}</h3>
+                <p style='margin: 0.5rem 0 0 0; font-size: 1.2rem;'>Wynik: {analyzer.rating['score']}/100 punktów</p>
+            </div>
+            """
+            st.markdown(rating_html, unsafe_allow_html=True)
+            
+            # Key metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                revenue_mln = analyzer.data.get('revenue', 0) / 1_000_000
+                st.metric(
+                    "Przychody",
+                    f"{revenue_mln:.1f} mln PLN",
+                    delta=None
+                )
+            
+            with col2:
+                net_profit_mln = analyzer.data.get('net_profit', 0) / 1_000_000
+                st.metric(
+                    "Wynik netto",
+                    f"{net_profit_mln:.2f} mln PLN",
+                    delta="Zysk" if net_profit_mln > 0 else "Strata",
+                    delta_color="normal" if net_profit_mln > 0 else "inverse"
+                )
+            
+            with col3:
+                cash_mln = analyzer.data.get('cash', 0) / 1_000_000
+                st.metric(
+                    "Środki pieniężne",
+                    f"{cash_mln:.2f} mln PLN",
+                    delta=None
+                )
+            
+            with col4:
+                equity_mln = analyzer.data.get('equity', 0) / 1_000_000
+                st.metric(
+                    "Kapitał własny",
+                    f"{equity_mln:.1f} mln PLN",
+                    delta=None
+                )
+            
+            # Tabs for detailed analysis
+            tab1, tab2, tab3, tab4 = st.tabs(["📊 Wskaźniki", "⚠️ Czerwone flagi", "💰 Rekomendacja", "📄 Bilans"])
+            
+            with tab1:
+                st.subheader("Wskaźniki finansowe")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**Płynność**")
+                    liquidity_df = pd.DataFrame({
+                        'Wskaźnik': ['Bieżąca płynność', 'Szybka płynność', 'Gotówkowa płynność'],
+                        'Wartość': [
+                            f"{analyzer.indicators['current_ratio']:.2f}",
+                            f"{analyzer.indicators['quick_ratio']:.2f}",
+                            f"{analyzer.indicators['cash_ratio']:.2f}"
+                        ],
+                        'Norma': ['>1.5', '>1.0', '>0.2'],
+                        'Status': [
+                            '✅' if analyzer.indicators['current_ratio'] >= 1.5 else '⚠️' if analyzer.indicators['current_ratio'] >= 1.0 else '❌',
+                            '✅' if analyzer.indicators['quick_ratio'] >= 1.0 else '⚠️' if analyzer.indicators['quick_ratio'] >= 0.7 else '❌',
+                            '✅' if analyzer.indicators['cash_ratio'] >= 0.2 else '⚠️' if analyzer.indicators['cash_ratio'] >= 0.1 else '❌'
+                        ]
+                    })
+                    st.dataframe(liquidity_df, use_container_width=True, hide_index=True)
+                    
+                    st.markdown("**Zadłużenie**")
+                    leverage_df = pd.DataFrame({
+                        'Wskaźnik': ['Dług / Kapitał własny', 'Dług / Aktywa'],
+                        'Wartość': [
+                            f"{analyzer.indicators['debt_to_equity']:.2f}",
+                            f"{analyzer.indicators['debt_to_assets']:.2f}"
+                        ],
+                        'Norma': ['<1.0', '<0.6'],
+                        'Status': [
+                            '✅' if analyzer.indicators['debt_to_equity'] < 1.0 else '⚠️' if analyzer.indicators['debt_to_equity'] < 1.5 else '❌',
+                            '✅' if analyzer.indicators['debt_to_assets'] < 0.6 else '⚠️' if analyzer.indicators['debt_to_assets'] < 0.7 else '❌'
+                        ]
+                    })
+                    st.dataframe(leverage_df, use_container_width=True, hide_index=True)
+                
+                with col2:
+                    st.markdown("**Rentowność**")
+                    profitability_df = pd.DataFrame({
+                        'Wskaźnik': ['ROE', 'ROA', 'Marża netto', 'Marża operacyjna'],
+                        'Wartość': [
+                            f"{analyzer.indicators['roe']:.1f}%",
+                            f"{analyzer.indicators['roa']:.1f}%",
+                            f"{analyzer.indicators['net_margin']:.1f}%",
+                            f"{analyzer.indicators['operating_margin']:.1f}%"
+                        ],
+                        'Status': [
+                            '✅' if analyzer.indicators['roe'] > 10 else '⚠️' if analyzer.indicators['roe'] > 0 else '❌',
+                            '✅' if analyzer.indicators['roa'] > 5 else '⚠️' if analyzer.indicators['roa'] > 0 else '❌',
+                            '✅' if analyzer.indicators['net_margin'] > 5 else '⚠️' if analyzer.indicators['net_margin'] > 0 else '❌',
+                            '✅' if analyzer.indicators['operating_margin'] > 5 else '⚠️' if analyzer.indicators['operating_margin'] > 0 else '❌'
+                        ]
+                    })
+                    st.dataframe(profitability_df, use_container_width=True, hide_index=True)
+                    
+                    st.markdown("**Kapitał obrotowy**")
+                    wc_mln = analyzer.indicators['working_capital'] / 1_000_000
+                    st.metric("Kapitał obrotowy netto", f"{wc_mln:.2f} mln PLN")
+            
+            with tab2:
+                st.subheader("Czerwone flagi i punkty uwagi")
+                
+                if analyzer.rating['red_flags']:
+                    for flag in analyzer.rating['red_flags']:
+                        st.markdown(f"""
+                        <div class='danger-box'>
+                            ❌ <strong>{flag}</strong>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div class='success-box'>
+                        ✅ <strong>Brak krytycznych czerwonych flag</strong>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Additional warnings
+                st.markdown("### Dodatkowe uwagi:")
+                
+                if analyzer.indicators['current_ratio'] < 1.2:
+                    st.warning("⚠️ Wskaźnik płynności bieżącej poniżej rekomendowanego poziomu 1.5")
+                
+                if analyzer.data.get('net_profit', 0) < 0:
+                    st.error("🔴 Firma generuje stratę netto - wymaga szczególnej uwagi")
+                
+                if analyzer.indicators['debt_to_equity'] > 1.5:
+                    st.error("🔴 Bardzo wysokie zadłużenie względem kapitału własnego")
+                
+                cash_to_revenue = analyzer.data.get('cash', 0) / analyzer.data.get('revenue', 1) * 100 if analyzer.data.get('revenue', 0) > 0 else 0
+                if cash_to_revenue < 3:
+                    st.warning(f"⚠️ Niski poziom gotówki ({cash_to_revenue:.1f}% przychodów)")
+            
+            with tab3:
+                st.subheader("Rekomendacja limitu FX Forward")
+                
+                # Decision box
+                decision_box_class = analyzer.recommendation['decision_color'] + '-box'
+                decision_icon = '✅' if analyzer.recommendation['decision'] == 'ZATWIERDZENIE' else '⚠️' if analyzer.recommendation['decision'] == 'ZATWIERDZENIE WARUNKOWE' else '❌'
+                
+                st.markdown(f"""
+                <div class='{decision_box_class}'>
+                    <h2>{decision_icon} {analyzer.recommendation['decision']}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("### 💰 Parametry limitu")
+                    st.metric("Rekomendowany limit", f"{analyzer.recommendation['recommended_limit_mln']:.2f} mln PLN")
+                    st.metric("Wnioskowany limit", f"{analyzer.recommendation['requested_limit_mln']:.2f} mln PLN")
+                    st.metric("Stopień pokrycia", f"{analyzer.recommendation['approval_ratio']:.1f}%")
+                
+                with col2:
+                    st.markdown("### 🔒 Warunki")
+                    st.info(f"**Zabezpieczenie:** {analyzer.recommendation['collateral']}")
+                    st.info(f"**Maksymalny tenor:** {analyzer.recommendation['max_tenor']}")
+                
+                # Conditions
+                if analyzer.recommendation['conditions']:
+                    st.markdown("### 📋 Dodatkowe warunki (Covenants)")
+                    for i, condition in enumerate(analyzer.recommendation['conditions'], 1):
+                        st.markdown(f"{i}. {condition}")
+                
+                # Explanation
+                st.markdown("---")
+                st.markdown("### 📝 Uzasadnienie")
+                
+                if analyzer.recommendation['decision'] == 'ZATWIERDZENIE':
+                    st.success("""
+                    Firma spełnia kryteria przyznania limitu na transakcje FX forward. 
+                    Wskaźniki finansowe są na zadowalającym poziomie, a ryzyko kredytowe ocenione jako akceptowalne.
+                    """)
+                elif analyzer.recommendation['decision'] == 'ZATWIERDZENIE WARUNKOWE':
+                    st.warning("""
+                    Firma może otrzymać limit pod warunkiem spełnienia dodatkowych wymagań dotyczących 
+                    zabezpieczenia i monitoringu. Wskaźniki finansowe wymagają bieżącej kontroli.
+                    """)
+                else:
+                    st.error("""
+                    Firma nie spełnia minimalnych kryteriów przyznania limitu na transakcje FX forward. 
+                    Wysokie ryzyko kredytowe wymaga odmowy lub znaczącego zwiększenia zabezpieczenia.
+                    """)
+            
+            with tab4:
+                st.subheader("Bilans i rachunki wyników")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**AKTYWA**")
+                    assets_df = pd.DataFrame({
+                        'Pozycja': [
+                            'Aktywa razem',
+                            '  - Aktywa trwałe',
+                            '  - Aktywa obrotowe',
+                            '    - Zapasy',
+                            '    - Należności',
+                            '    - Środki pieniężne'
+                        ],
+                        'Wartość (mln PLN)': [
+                            f"{analyzer.data.get('total_assets', 0)/1_000_000:.2f}",
+                            f"{analyzer.data.get('fixed_assets', 0)/1_000_000:.2f}",
+                            f"{analyzer.data.get('current_assets', 0)/1_000_000:.2f}",
+                            f"{analyzer.data.get('inventory', 0)/1_000_000:.2f}",
+                            f"{analyzer.data.get('receivables', 0)/1_000_000:.2f}",
+                            f"{analyzer.data.get('cash', 0)/1_000_000:.2f}"
+                        ]
+                    })
+                    st.dataframe(assets_df, use_container_width=True, hide_index=True)
+                
+                with col2:
+                    st.markdown("**PASYWA**")
+                    liabilities_df = pd.DataFrame({
+                        'Pozycja': [
+                            'Pasywa razem',
+                            '  - Kapitał własny',
+                            '  - Zobowiązania razem',
+                            '    - Zobowiązania krótkoterm.'
+                        ],
+                        'Wartość (mln PLN)': [
+                            f"{analyzer.data.get('total_assets', 0)/1_000_000:.2f}",
+                            f"{analyzer.data.get('equity', 0)/1_000_000:.2f}",
+                            f"{analyzer.data.get('liabilities', 0)/1_000_000:.2f}",
+                            f"{analyzer.data.get('short_term_liabilities', 0)/1_000_000:.2f}"
+                        ]
+                    })
+                    st.dataframe(liabilities_df, use_container_width=True, hide_index=True)
+                
+                st.markdown("---")
+                st.markdown("**RACHUNEK ZYSKÓW I STRAT**")
+                
+                pnl_df = pd.DataFrame({
+                    'Pozycja': ['Przychody ze sprzedaży', 'Wynik operacyjny', 'Wynik netto', 'EBITDA'],
+                    'Wartość (mln PLN)': [
+                        f"{analyzer.data.get('revenue', 0)/1_000_000:.2f}",
+                        f"{analyzer.data.get('operating_profit', 0)/1_000_000:.2f}",
+                        f"{analyzer.data.get('net_profit', 0)/1_000_000:.2f}",
+                        f"{analyzer.data.get('ebitda', 0)/1_000_000:.2f}"
+                    ]
+                })
+                st.dataframe(pnl_df, use_container_width=True, hide_index=True)
+            
+            # Download PDF button
+            st.markdown("---")
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("📥 Pobierz raport PDF", type="primary", use_container_width=True):
+                    pdf_buffer = BytesIO()
+                    generate_pdf_report(analyzer, pdf_buffer)
+                    pdf_buffer.seek(0)
+                    
+                    st.download_button(
+                        label="💾 Zapisz raport PDF",
+                        data=pdf_buffer,
+                        file_name=f"Analiza_kredytowa_{analyzer.data.get('nip', 'N-A')}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+
 
 if __name__ == "__main__":
     main()
