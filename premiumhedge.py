@@ -127,7 +127,6 @@ class PivotBacktester:
             for target, source in column_mapping.items():
                 new_df[target] = df[source].copy()
             
-            # Parsuj daty
             try:
                 new_df['Date'] = pd.to_datetime(new_df['Date'], errors='coerce')
                 
@@ -150,7 +149,6 @@ class PivotBacktester:
             
             new_df = new_df.dropna(subset=['Date'])
             
-            # Konwertuj kolumny OHLC
             for col in ['Open', 'High', 'Low', 'Close']:
                 try:
                     if new_df[col].dtype == 'object':
@@ -417,7 +415,7 @@ class PivotBacktester:
         return pd.DataFrame(trades), capital
 
 def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_pct=1.5, success_fee_pct=12.0):
-    """Oblicz statystyki roczne Z FEES (management + success)"""
+    """Oblicz statystyki roczne Z FEES"""
     if len(trades_df) == 0:
         return pd.DataFrame(), pd.DataFrame()
     
@@ -432,7 +430,6 @@ def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_
     for year in sorted(trades_df['Year'].unique()):
         year_trades = trades_df[trades_df['Year'] == year]
         
-        # PRZED FEES
         if year == trades_df['Year'].min():
             start_capital_before = initial_capital
         else:
@@ -446,11 +443,8 @@ def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_
         profit_before = end_capital_before - start_capital_before
         profit_pct_before = (profit_before / start_capital_before) * 100
         
-        # OBLICZ FEES
-        # Management Fee: 1.5% od kapitału na początek roku
         management_fee = start_capital_before * (management_fee_pct / 100)
         
-        # Success Fee: 12% od zysku (tylko jeśli zysk > 0)
         if profit_before > 0:
             success_fee = profit_before * (success_fee_pct / 100)
         else:
@@ -458,7 +452,6 @@ def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_
         
         total_fees = management_fee + success_fee
         
-        # PO FEES
         start_capital_after = capital_after_fees
         end_capital_after = end_capital_before - total_fees
         capital_after_fees = end_capital_after
@@ -466,25 +459,20 @@ def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_
         profit_after = end_capital_after - start_capital_after
         profit_pct_after = (profit_after / start_capital_after) * 100
         
-        # Pozostałe statystyki (te same przed i po fees)
         total_trades = len(year_trades)
         winning_trades = len(year_trades[year_trades['Profit'] > 0])
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
         
-        # Max DD przed fees
         year_capital_series = year_trades['Portfolio Capital'].values
         running_max = np.maximum.accumulate(year_capital_series)
         drawdown = (year_capital_series - running_max) / running_max * 100
         max_dd_before = drawdown.min() if len(drawdown) > 0 else 0
         
-        # Max DD po fees (symulacja)
-        # Tworzymy series kapitału po fees dla tego roku
         year_capital_after_fees = year_capital_series - (total_fees * np.arange(1, len(year_capital_series)+1) / len(year_capital_series))
         running_max_after = np.maximum.accumulate(year_capital_after_fees)
         drawdown_after = (year_capital_after_fees - running_max_after) / running_max_after * 100
         max_dd_after = drawdown_after.min() if len(drawdown_after) > 0 else 0
         
-        # Sharpe ratio
         if len(year_trades) > 1:
             returns = year_trades['P&L %'].values / 100
             if len(returns) > 0 and returns.std() != 0:
@@ -494,7 +482,6 @@ def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_
         else:
             sharpe = 0
         
-        # PRZED FEES
         yearly_stats_before_fees.append({
             'Year': year,
             'Start Capital': start_capital_before,
@@ -508,7 +495,6 @@ def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_
             'Total Pips': year_trades['Pips'].sum()
         })
         
-        # PO FEES
         yearly_stats_after_fees.append({
             'Year': year,
             'Start Capital': start_capital_after,
@@ -528,7 +514,7 @@ def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_
     return pd.DataFrame(yearly_stats_before_fees), pd.DataFrame(yearly_stats_after_fees)
 
 def calculate_projection(trades_df, initial_capital, years_ahead=5):
-    """Prognoza na kolejne lata - PRZED FEES"""
+    """Prognoza na kolejne lata"""
     if len(trades_df) == 0:
         return None, 0, 0
     
@@ -647,8 +633,7 @@ initial_capital = st.sidebar.number_input(
     min_value=1000, 
     value=10000, 
     step=1000,
-    format="%d",
-    help="Możesz wpisać dowolną wartość, np. 100,000,000"
+    format="%d"
 )
 
 lot_size = st.sidebar.number_input("Wielkość lota (per para)", 0.01, 100.0, 1.0, 0.01)
@@ -668,8 +653,7 @@ management_fee_pct = st.sidebar.number_input(
     min_value=0.0, 
     max_value=5.0,
     value=1.5, 
-    step=0.1,
-    help="Stały % od kapitału na początek roku"
+    step=0.1
 )
 
 success_fee_pct = st.sidebar.number_input(
@@ -677,8 +661,7 @@ success_fee_pct = st.sidebar.number_input(
     min_value=0.0, 
     max_value=50.0,
     value=12.0, 
-    step=1.0,
-    help="% od wygenerowanego zysku w danym roku (tylko gdy profit > 0)"
+    step=1.0
 )
 
 st.sidebar.info(f"💡 Management: {management_fee_pct}% + Success: {success_fee_pct}%")
@@ -806,7 +789,6 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         
         final_portfolio_capital = combined_trades.iloc[-1]['Portfolio Capital']
         
-        # WYNIKI ZBIORCZE - PRZED FEES
         st.markdown("## 📊 Podsumowanie Portfolio (przed fees)")
         
         col1, col2, col3, col4 = st.columns(4)
@@ -823,7 +805,6 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         with col4:
             st.metric("Łączne transakcje", len(combined_trades))
         
-        # OBLICZ FEES
         st.markdown("## 💸 Analiza Fees")
         
         yearly_before, yearly_after = calculate_yearly_stats_with_fees(
@@ -855,7 +836,6 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             
             st.markdown('</div>', unsafe_allow_html=True)
             
-            # PORÓWNANIE PRZED/PO FEES
             st.markdown("## 📊 Kapitał: Przed vs Po Fees")
             
             col1, col2 = st.columns(2)
@@ -872,149 +852,23 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 st.metric("Zwrot", f"${total_return_after:+,.2f}")
                 st.metric("Zwrot %", f"{return_pct_after:+.2f}%")
             
-            # Różnica
             difference = final_portfolio_capital - final_capital_after_fees
             st.warning(f"💵 **Różnica (fees):** ${difference:,.2f} | **Impact:** {(difference/final_portfolio_capital)*100:.2f}% kapitału")
         
-        # WYNIKI PER PARA
-        st.markdown("## 💱 Wyniki per para")
-        
-        summary_data = []
-        
-        for symbol, result in results_per_symbol.items():
-            trades = result['trades']
-            final_cap = result['final_capital']
-            initial_cap = result['initial_capital']
-            
-            if len(trades) > 0:
-                profit = final_cap - initial_cap
-                profit_pct = (profit / initial_cap) * 100
-                win_rate = (trades['Profit'] > 0).sum() / len(trades) * 100
-                total_pips = trades['Pips'].sum()
-                avg_holding = trades['Duration'].mean()
-                
-                summary_data.append({
-                    'Symbol': symbol,
-                    'Initial Capital': initial_cap,
-                    'Final Capital': final_cap,
-                    'Profit ($)': profit,
-                    'Profit (%)': profit_pct,
-                    'Trades': len(trades),
-                    'Win Rate (%)': win_rate,
-                    'Total Pips': total_pips,
-                    'Avg Holding (days)': avg_holding
-                })
-        
-        summary_df = pd.DataFrame(summary_data)
-        
-        if len(summary_df) > 0:
-            display_summary = summary_df.copy()
-            display_summary['Initial Capital'] = display_summary['Initial Capital'].apply(lambda x: f"${x:,.2f}")
-            display_summary['Final Capital'] = display_summary['Final Capital'].apply(lambda x: f"${x:,.2f}")
-            display_summary['Profit ($)'] = display_summary['Profit ($)'].apply(lambda x: f"${x:+,.2f}")
-            display_summary['Profit (%)'] = display_summary['Profit (%)'].apply(lambda x: f"{x:+.2f}%")
-            display_summary['Win Rate (%)'] = display_summary['Win Rate (%)'].apply(lambda x: f"{x:.1f}%")
-            display_summary['Total Pips'] = display_summary['Total Pips'].apply(lambda x: f"{x:.1f}")
-            display_summary['Avg Holding (days)'] = display_summary['Avg Holding (days)'].apply(lambda x: f"{x:.1f}")
-            
-            st.dataframe(display_summary, use_container_width=True, hide_index=True)
-            
-            # Wykres porównawczy
-            st.markdown("### 📊 Porównanie zwrotów per para")
-            
-            fig_comparison = go.Figure()
-            
-            colors = ['green' if x > 0 else 'red' for x in summary_df['Profit (%)']]
-            
-            fig_comparison.add_trace(go.Bar(
-                x=summary_df['Symbol'],
-                y=summary_df['Profit (%)'],
-                marker_color=colors,
-                text=summary_df['Profit (%)'].apply(lambda x: f"{x:+.1f}%"),
-                textposition='outside'
-            ))
-            
-            fig_comparison.update_layout(
-                title="Zwrot % per para",
-                xaxis_title="Para",
-                yaxis_title="Zwrot (%)",
-                height=400,
-                showlegend=False
-            )
-            
-            st.plotly_chart(fig_comparison, use_container_width=True)
-            
-            # Krzywa kapitału
-            st.markdown("### 💹 Krzywa kapitału portfolio")
-            
-            fig_portfolio = go.Figure()
-            
-            fig_portfolio.add_trace(go.Scatter(
-                x=combined_trades['Exit Date'],
-                y=combined_trades['Portfolio Capital'],
-                mode='lines',
-                name='Portfolio',
-                line=dict(color='blue', width=2),
-                fill='tonexty',
-                fillcolor='rgba(31, 119, 180, 0.1)'
-            ))
-            
-            fig_portfolio.add_hline(y=initial_capital, line_dash='dash', line_color='gray', annotation_text='Start')
-            
-            fig_portfolio.update_layout(
-                title=f"Rozwój kapitału portfolio ({len(selected_symbols)} par)",
-                xaxis_title="Data",
-                yaxis_title="Kapitał ($)",
-                height=500,
-                hovermode='x unified'
-            )
-            
-            st.plotly_chart(fig_portfolio, use_container_width=True)
-            
-            # ANALIZA ROCZNA
-            st.markdown("## 📅 Analiza roczna portfolio")
-            
-            # Tabs dla przed/po fees
-            tab1, tab2 = st.tabs(["🟢 Przed Fees", "🔴 Po Fees"])
-            
-            with tab1:
-                st.markdown("### Statystyki roczne (przed fees)")
-                
-                if len(yearly_before) > 0:
-                    display_yearly_before = yearly_before.copy()
-                    display_yearly_before['Start Capital'] = display_yearly_before['Start Capital'].apply(lambda x: f"${x:,.2f}")
-                    display_yearly_before['End Capital'] = display_yearly_before['End Capital'].apply(lambda x: f"${x:,.2f}")
-                    display_yearly_before['Profit ($)'] = display_yearly_before['Profit ($)'].apply(lambda x: f"${x:+,.2f}")
-                    display_yearly_before['Profit (%)'] = display_yearly_before['Profit (%)'].apply(lambda x: f"{x:+.2f}%")
-                    display_yearly_before['Win Rate (%)'] = display_yearly_before['Win Rate (%)'].apply(lambda x: f"{x:.1f}%")
-                    display_yearly_before['Max DD (%)'] = display_yearly_before['Max DD (%)'].apply(lambda x: f"{x:.2f}%")
-                    display_yearly_before['Sharpe Ratio'] = display_yearly_before['Sharpe Ratio'].apply(lambda x: f"{x:.2f}")
-                    display_yearly_before['Total Pips'] = display_yearly_before['Total Pips'].apply(lambda x: f"{x:.1f}")
-                    
-                    st.dataframe(display_yearly_before, use_container_width=True, hide_index=True)
-                    
-                    # Wykres
-                    fig_yearly_before = go.Figure()
-                    colors_before = ['green' if x > 0 else 'red' for x in yearly_before['Profit (%)']]
-                    
-                    fig_yearly_before.add_trace(go.Bar(
-                        x=yearly_before['Year'],
-                        y=yearly_before['Profit (%)'],
-                        marker_color=colors_before,
-                        text=yearly_before['Profit (%)'].apply(lambda x: f"{x:+.1f}%"),
-                        textposition='outside'
-                    ))
-                    
-                    fig_yearly_before.update_layout(
-                        title="Roczne zwroty (przed fees)",
-                        xaxis_title="Rok",
-                        yaxis_title="Zwrot (%)",
-                        height=400
-                    )
-                    
-                    st.plotly_chart(fig_yearly_before, use_container_width=True)
-            
-            with tab2:
-                st.markdown("### Statystyki roczne (po fees)")
-                
-                if
+        st.markdown("## 📝 Download")
+        csv = combined_trades.to_csv(index=False)
+        st.download_button(
+            "📥 Pobierz wyniki (CSV)",
+            csv,
+            f"portfolio_{datetime.now().strftime('%Y%m%d')}.csv",
+            "text/csv"
+        )
+    
+    else:
+        st.error("❌ Nie udało się wykonać backtestingu")
+
+else:
+    st.info("👈 Wybierz źródło danych i kliknij URUCHOM BACKTEST")
+
+st.markdown("---")
+st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | 💱 Multi-Currency + Fees")
