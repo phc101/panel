@@ -3,6 +3,7 @@
 MT5 Pivot Strategy Backtester - Multi-Currency
 Strategia: Poniedziałkowe sygnały + analiza roczna + prognoza
 Multi-currency: Do 5 par jednocześnie (Yahoo Finance lub CSV)
+POPRAWIONE: Analiza roczna używa Portfolio Capital
 """
 
 import pandas as pd
@@ -409,26 +410,32 @@ class PivotBacktester:
         return pd.DataFrame(trades), capital
 
 def calculate_yearly_stats(trades_df, initial_capital):
-    """Oblicz statystyki roczne"""
+    """Oblicz statystyki roczne - POPRAWIONE dla Portfolio Capital"""
     if len(trades_df) == 0:
         return pd.DataFrame()
     
+    # Upewnij się że transakcje są posortowane chronologicznie
+    trades_df = trades_df.sort_values('Exit Date').reset_index(drop=True)
     trades_df['Year'] = trades_df['Exit Date'].dt.year
+    
     yearly_stats = []
     
     for year in sorted(trades_df['Year'].unique()):
         year_trades = trades_df[trades_df['Year'] == year]
         
+        # POPRAWKA: Kapitał na początek roku = Portfolio Capital z końca poprzedniego roku
         if year == trades_df['Year'].min():
             start_capital = initial_capital
         else:
             prev_year_trades = trades_df[trades_df['Year'] < year]
             if len(prev_year_trades) > 0:
-                start_capital = prev_year_trades.iloc[-1]['Capital']
+                start_capital = prev_year_trades.iloc[-1]['Portfolio Capital']
             else:
                 start_capital = initial_capital
         
-        end_capital = year_trades.iloc[-1]['Capital']
+        # POPRAWKA: Kapitał na koniec roku = Portfolio Capital
+        end_capital = year_trades.iloc[-1]['Portfolio Capital']
+        
         profit_nominal = end_capital - start_capital
         profit_pct = (profit_nominal / start_capital) * 100
         
@@ -436,15 +443,17 @@ def calculate_yearly_stats(trades_df, initial_capital):
         winning_trades = len(year_trades[year_trades['Profit'] > 0])
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
         
-        year_capital = year_trades['Capital'].values
-        running_max = np.maximum.accumulate(year_capital)
-        drawdown = (year_capital - running_max) / running_max * 100
-        max_dd = drawdown.min()
+        # POPRAWKA: Max drawdown używa Portfolio Capital
+        year_capital_series = year_trades['Portfolio Capital'].values
+        running_max = np.maximum.accumulate(year_capital_series)
+        drawdown = (year_capital_series - running_max) / running_max * 100
+        max_dd = drawdown.min() if len(drawdown) > 0 else 0
         
+        # POPRAWKA: Sharpe ratio używa P&L % z transakcji
         if len(year_trades) > 1:
-            daily_returns = year_trades['Profit'].pct_change().dropna()
-            if len(daily_returns) > 0 and daily_returns.std() != 0:
-                sharpe = (daily_returns.mean() / daily_returns.std()) * np.sqrt(252)
+            returns = year_trades['P&L %'].values / 100
+            if len(returns) > 0 and returns.std() != 0:
+                sharpe = (returns.mean() / returns.std()) * np.sqrt(len(returns))
             else:
                 sharpe = 0
         else:
@@ -466,30 +475,35 @@ def calculate_yearly_stats(trades_df, initial_capital):
     return pd.DataFrame(yearly_stats)
 
 def calculate_projection(trades_df, initial_capital, years_ahead=5):
-    """Prognoza na kolejne lata"""
+    """Prognoza na kolejne lata - POPRAWIONE dla Portfolio Capital"""
     if len(trades_df) == 0:
-        return None
+        return None, 0, 0
     
+    # Upewnij się że transakcje są posortowane
+    trades_df = trades_df.sort_values('Exit Date').reset_index(drop=True)
     trades_df['Year'] = trades_df['Exit Date'].dt.year
+    
     yearly_returns = []
     
     for year in sorted(trades_df['Year'].unique()):
         year_trades = trades_df[trades_df['Year'] == year]
         
+        # POPRAWKA: używamy Portfolio Capital
         if year == trades_df['Year'].min():
             start_cap = initial_capital
         else:
             prev_trades = trades_df[trades_df['Year'] < year]
-            start_cap = prev_trades.iloc[-1]['Capital'] if len(prev_trades) > 0 else initial_capital
+            start_cap = prev_trades.iloc[-1]['Portfolio Capital'] if len(prev_trades) > 0 else initial_capital
         
-        end_cap = year_trades.iloc[-1]['Capital']
+        end_cap = year_trades.iloc[-1]['Portfolio Capital']
         annual_return = (end_cap - start_cap) / start_cap
         yearly_returns.append(annual_return)
     
     avg_annual_return = np.mean(yearly_returns)
-    std_annual_return = np.std(yearly_returns)
+    std_annual_return = np.std(yearly_returns) if len(yearly_returns) > 1 else 0
     
-    current_capital = trades_df.iloc[-1]['Capital']
+    # POPRAWKA: aktualny kapitał to ostatnia wartość Portfolio Capital
+    current_capital = trades_df.iloc[-1]['Portfolio Capital']
     projections = []
     
     for year in range(1, years_ahead + 1):
@@ -832,7 +846,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             
             st.plotly_chart(fig_portfolio, use_container_width=True)
             
-            # ANALIZA ROCZNA
+            # ANALIZA ROCZNA - POPRAWIONA
             st.markdown("## 📅 Analiza roczna portfolio")
             
             yearly_stats = calculate_yearly_stats(combined_trades, initial_capital)
@@ -872,7 +886,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 
                 st.plotly_chart(fig_yearly, use_container_width=True)
             
-            # PROGNOZA
+            # PROGNOZA - POPRAWIONA
             st.markdown("## 🔮 Prognoza 5-letnia portfolio")
             
             projection_df, avg_return, std_return = calculate_projection(combined_trades, initial_capital, 5)
@@ -1008,28 +1022,26 @@ else:
     - Automatyczne pobieranie danych
     - Pary major, cross, exotic
     
-    ### 📥 CSV Upload (NOWE!)
+    ### 📥 CSV Upload
     - Wgraj do 5 plików CSV jednocześnie
     - Każdy plik = osobna para
     - Własne nazwy par
     - Format: Date, Open, High, Low, Close
-    - Obsługa różnych separatorów i formatów
     
     **Funkcje:**
     - ✅ Podział kapitału na pary
     - ✅ Niezależne transakcje per para
     - ✅ Zbiorcze statystyki portfolio
-    - ✅ Porównanie wyników per para
-    - ✅ Analiza roczna portfolio
+    - ✅ Analiza roczna (POPRAWIONA)
     - ✅ Prognoza 5-letnia
-    - ✅ Dywersyfikacja ryzyka
+    - ✅ Max Drawdown per rok
+    - ✅ Sharpe Ratio
     
-    **Przykład CSV Upload:**
-    1. Wgraj 3 pliki: EURUSD.csv, GBPUSD.csv, USDJPY.csv
-    2. Nazwij pary: EURUSD, GBPUSD, USDJPY
-    3. Kapitał $10,000 → $3,333 per para
-    4. Wynik: portfolio z 3 par
+    **POPRAWKI:**
+    - ✅ Max DD używa Portfolio Capital (całe portfolio)
+    - ✅ Zwroty roczne poprawnie obliczone
+    - ✅ Sharpe Ratio z P&L % transakcji
     """)
 
 st.markdown("---")
-st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | ⚠️ Tylko edukacyjnie | 💱 Multi-Currency + CSV Upload")
+st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | ⚠️ Tylko edukacyjnie | 💱 Multi-Currency + Poprawione obliczenia")
