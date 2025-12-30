@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 MT5 Pivot Strategy Backtester
-Strategia: Poniedziałkowe sygnały (wybór poziomów + kierunku) + holding period + stop loss
+Strategia: Poniedziałkowe sygnały (wybór kierunku i poziomów) + holding period + stop loss
+Spread: Realistyczny (LONG: entry+spread, exit-spread | SHORT: entry-spread, exit+spread)
 """
 
 import pandas as pd
@@ -309,15 +310,22 @@ class PivotBacktester:
         """
         Uruchom backtest strategii TYGODNIOWEJ
         
-        Parametry:
-        - trade_direction: 'Both' (oba), 'Long Only' (tylko kupno), 'Short Only' (tylko sprzedaż)
-        - support_level: 'S2' lub 'S3' dla LONG
-        - resistance_level: 'R2' lub 'R3' dla SHORT
+        Spread w pipsach (np. 2 pips = 0.0002 dla większości par, 0.02 dla JPY)
+        - LONG: entry = price + spread, exit = price - spread
+        - SHORT: entry = price - spread, exit = price + spread
         """
         
         trades = []
         capital = initial_capital
         open_positions = []
+        
+        # Określ wartość pipsa dla danej pary
+        pip_value = 0.0001  # standardowo dla większości par
+        if 'JPY' in df.attrs.get('symbol', ''):
+            pip_value = 0.01  # dla par z JPY
+        
+        # Spread w jednostkach ceny
+        spread_value = spread_pips * pip_value
         
         for i in range(len(df)):
             row = df.iloc[i]
@@ -361,16 +369,14 @@ class PivotBacktester:
             for pos_idx, exit_reason, exit_price_raw in sorted(positions_to_close, reverse=True, key=lambda x: x[0]):
                 pos = open_positions.pop(pos_idx)
                 
-                pip_value = 0.0001
-                if 'JPY' in df.attrs.get('symbol', ''):
-                    pip_value = 0.01
-                
                 if pos['type'] == 'long':
-                    exit_price = exit_price_raw - (spread_pips * 0.0001)
+                    # LONG: zamykamy po BID (odejmujemy spread)
+                    exit_price = exit_price_raw - spread_value
                     pips_gained = (exit_price - pos['entry_price']) / pip_value
                     pnl_pct = ((exit_price - pos['entry_price']) / pos['entry_price']) * 100
                 else:  # short
-                    exit_price = exit_price_raw + (spread_pips * 0.0001)
+                    # SHORT: zamykamy po ASK (dodajemy spread)
+                    exit_price = exit_price_raw + spread_value
                     pips_gained = (pos['entry_price'] - exit_price) / pip_value
                     pnl_pct = ((pos['entry_price'] - exit_price) / pos['entry_price']) * 100
                 
@@ -405,7 +411,8 @@ class PivotBacktester:
                 # Sygnał BUY (tylko jeśli trade_direction pozwala)
                 if trade_direction in ['Both', 'Long Only']:
                     if current_price < support_value:
-                        entry_price = current_price + (spread_pips * 0.0001)
+                        # LONG: kupujemy po ASK (dodajemy spread)
+                        entry_price = current_price + spread_value
                         exit_date = current_date + timedelta(days=holding_days)
                         
                         open_positions.append({
@@ -421,7 +428,8 @@ class PivotBacktester:
                 # Sygnał SELL (tylko jeśli trade_direction pozwala)
                 if trade_direction in ['Both', 'Short Only']:
                     if current_price > resistance_value:
-                        entry_price = current_price - (spread_pips * 0.0001)
+                        # SHORT: sprzedajemy po BID (odejmujemy spread)
+                        entry_price = current_price - spread_value
                         exit_date = current_date + timedelta(days=holding_days)
                         
                         open_positions.append({
@@ -437,16 +445,15 @@ class PivotBacktester:
         # Zamknij pozostałe pozycje na końcu
         last_row = df.iloc[-1]
         for pos in open_positions:
-            pip_value = 0.0001
-            if 'JPY' in df.attrs.get('symbol', ''):
-                pip_value = 0.01
             
             if pos['type'] == 'long':
-                exit_price = last_row['Close'] - (spread_pips * 0.0001)
+                # LONG: zamykamy po BID (odejmujemy spread)
+                exit_price = last_row['Close'] - spread_value
                 pips_gained = (exit_price - pos['entry_price']) / pip_value
                 pnl_pct = ((exit_price - pos['entry_price']) / pos['entry_price']) * 100
             else:
-                exit_price = last_row['Close'] + (spread_pips * 0.0001)
+                # SHORT: zamykamy po ASK (dodajemy spread)
+                exit_price = last_row['Close'] + spread_value
                 pips_gained = (pos['entry_price'] - exit_price) / pip_value
                 pnl_pct = ((pos['entry_price'] - exit_price) / pos['entry_price']) * 100
             
@@ -501,7 +508,32 @@ else:
 st.sidebar.markdown("### 💰 Parametry Backtestu")
 initial_capital = st.sidebar.number_input("Kapitał początkowy ($)", 1000, 100000, 10000, 1000)
 lot_size = st.sidebar.number_input("Wielkość lota", 0.01, 10.0, 1.0, 0.01)
-spread_pips = st.sidebar.number_input("Spread (pips)", 0.0, 10.0, 2.0, 0.1)
+spread_pips = st.sidebar.number_input(
+    "Spread (pips)", 
+    0.0, 10.0, 2.0, 0.1,
+    help="Spread w pipsach (np. 2 = 0.0002 dla większości par, 0.02 dla JPY)"
+)
+
+# Info o spreadzie
+with st.sidebar.expander("ℹ️ Jak działa spread?"):
+    pip_val = 0.0001
+    if selected_symbol and 'JPY' in selected_symbol:
+        pip_val = 0.01
+    spread_val = spread_pips * pip_val
+    
+    st.markdown(f"""
+    **Spread: {spread_pips} pips = {spread_val:.5f}**
+    
+    **LONG (kupno):**
+    - Entry: Cena + {spread_val:.5f} (ASK)
+    - Exit: Cena - {spread_val:.5f} (BID)
+    
+    **SHORT (sprzedaż):**
+    - Entry: Cena - {spread_val:.5f} (BID)
+    - Exit: Cena + {spread_val:.5f} (ASK)
+    
+    💡 Spread zawsze działa **przeciwko** traderowi (koszt transakcji).
+    """)
 
 st.sidebar.markdown("### 📅 Parametry Strategii")
 if data_source == "🌐 Yahoo Finance":
@@ -544,7 +576,7 @@ if trade_direction_value in ["Both", "Long Only"]:
         help="S3 = agresywne, S2 = konserwatywne"
     )
 else:
-    support_level = "S3"  # Default (nieużywane)
+    support_level = "S3"
 
 if trade_direction_value in ["Both", "Short Only"]:
     resistance_level = st.sidebar.radio(
@@ -554,7 +586,7 @@ if trade_direction_value in ["Both", "Short Only"]:
         help="R3 = agresywne, R2 = konserwatywne"
     )
 else:
-    resistance_level = "R3"  # Default (nieużywane)
+    resistance_level = "R3"
 
 # STOP LOSS
 st.sidebar.markdown("### 🛡️ Stop Loss")
@@ -603,11 +635,11 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             
             # Info o strategii
             if trade_direction_value == "Both":
-                st.info(f"📊 **Strategia:** LONG przy {support_level} | SHORT przy {resistance_level}")
+                st.info(f"📊 **Strategia:** LONG przy {support_level} | SHORT przy {resistance_level} | Spread: {spread_pips} pips")
             elif trade_direction_value == "Long Only":
-                st.info(f"📈 **Strategia:** Tylko LONG przy {support_level}")
+                st.info(f"📈 **Strategia:** Tylko LONG przy {support_level} | Spread: {spread_pips} pips")
             else:
-                st.info(f"📉 **Strategia:** Tylko SHORT przy {resistance_level}")
+                st.info(f"📉 **Strategia:** Tylko SHORT przy {resistance_level} | Spread: {spread_pips} pips")
             
             with st.spinner("Wykonywanie backtestu..."):
                 trades_df, final_capital = backtester.run_backtest(
@@ -656,6 +688,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                         st.write(f"Win rate: {long_wins / len(long_trades) * 100:.1f}%")
                         st.write(f"Avg profit: ${long_trades['Profit'].mean():.2f}")
                         st.write(f"Total profit: ${long_trades['Profit'].sum():.2f}")
+                        st.write(f"Avg pips: {long_trades['Pips'].mean():.1f}")
                         sl_hits = len(long_trades[long_trades['Exit Reason'] == 'Stop Loss'])
                         if sl_hits > 0:
                             st.write(f"⚠️ SL: {sl_hits} ({sl_hits/len(long_trades)*100:.1f}%)")
@@ -668,6 +701,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                         st.write(f"Win rate: {short_wins / len(short_trades) * 100:.1f}%")
                         st.write(f"Avg profit: ${short_trades['Profit'].mean():.2f}")
                         st.write(f"Total profit: ${short_trades['Profit'].sum():.2f}")
+                        st.write(f"Avg pips: {short_trades['Pips'].mean():.1f}")
                         sl_hits = len(short_trades[short_trades['Exit Reason'] == 'Stop Loss'])
                         if sl_hits > 0:
                             st.write(f"⚠️ SL: {sl_hits} ({sl_hits/len(short_trades)*100:.1f}%)")
@@ -681,10 +715,17 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                     st.write(f"Time exit: {time_exits}")
                     if len(trades_df) > 0:
                         st.write(f"SL rate: {total_sl/len(trades_df)*100:.1f}%")
+                    
+                    # Spread cost
+                    pip_val = 0.0001
+                    if 'JPY' in selected_symbol:
+                        pip_val = 0.01
+                    total_spread_cost = len(trades_df) * 2 * spread_pips * pip_val * lot_size * 100000
+                    st.write(f"💸 Spread cost: ${total_spread_cost:.2f}")
                 
                 # Dodatkowe statystyki
                 st.markdown("### 📉 Rozkład P&L")
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
                     avg_win = trades_df[trades_df['Profit'] > 0]['Profit'].mean() if len(trades_df[trades_df['Profit'] > 0]) > 0 else 0
@@ -697,6 +738,10 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 with col3:
                     max_dd = (trades_df['Capital'] - trades_df['Capital'].cummax()).min()
                     st.metric("Max Drawdown", f"${max_dd:.2f}")
+                
+                with col4:
+                    total_pips = trades_df['Pips'].sum()
+                    st.metric("Total Pips", f"{total_pips:.1f}")
                 
                 # Krzywa kapitału
                 st.markdown("### 💹 Krzywa kapitału")
@@ -793,36 +838,47 @@ else:
     st.markdown("""
     ## 📖 Strategia
     
-    **Tygodniowy system sygnałów z wyborem kierunku, poziomów i zarządzaniem ryzykiem:**
+    **Tygodniowy system sygnałów z realistycznym spreadem:**
+    
+    ### 💸 Spread (koszt transakcji):
+    - **LONG:** Entry po ASK (+spread), Exit po BID (-spread)
+    - **SHORT:** Entry po BID (-spread), Exit po ASK (+spread)
+    - Spread zawsze działa **przeciwko** traderowi
+    - Typowe spready: 1-3 pips (major pairs), 3-10 pips (cross/exotic)
     
     ### 🎲 Kierunek Tradingu:
-    - **Both (Long + Short)** - Pełna strategia dwukierunkowa
-    - **Long Only** - Tylko pozycje kupna (bullish bias)
-    - **Short Only** - Tylko pozycje sprzedaży (bearish bias)
+    - **Both** - Pełna strategia dwukierunkowa
+    - **Long Only** - Tylko kupno (bullish bias)
+    - **Short Only** - Tylko sprzedaż (bearish bias)
     
-    ### 🎯 Wybór poziomów wejścia:
-    
-    **LONG (Buy):**
-    - **S3** = Agresywne (dalej, rzadsze sygnały)
-    - **S2** = Konserwatywne (bliżej, częstsze sygnały)
-    
-    **SHORT (Sell):**
-    - **R3** = Agresywne (dalej, rzadsze sygnały)
-    - **R2** = Konserwatywne (bliżej, częstsze sygnały)
+    ### 🎯 Poziomy wejścia:
+    - **S3/R3** = Agresywne (dalej, rzadsze sygnały)
+    - **S2/R2** = Konserwatywne (bliżej, częstsze sygnały)
     
     ### 📅 Sygnały (każdy poniedziałek):
     - **LONG:** Cena < Support Level
     - **SHORT:** Cena > Resistance Level
     
     ### ⏱️ Zamknięcie:
-    - **Holding period:** Auto zamknięcie po X dniach
+    - **Holding period:** Auto po X dniach
     - **Stop Loss:** Opcjonalnie 0.5% - 3.0%
     
-    ### 💡 Przykłady użycia:
-    - **Bullish market:** Long Only + S3 (agresywne kupno)
-    - **Bearish market:** Short Only + R3 (agresywna sprzedaż)
-    - **Range trading:** Both + S2/R2 (konserwatywne oba kierunki)
-    - **Trend following:** Both + S3/R3 (agresywne breakouty)
+    ### 💡 Przykład spreadu:
+```
+    EURUSD, spread 2 pips = 0.0002
+    
+    LONG:
+    - Cena: 1.1000
+    - Entry: 1.1002 (ASK)
+    - Exit: 1.1098 (BID)
+    - Profit: 96 pips
+    
+    SHORT:
+    - Cena: 1.1000
+    - Entry: 1.0998 (BID)
+    - Exit: 1.0902 (ASK)
+    - Profit: 96 pips
+```
     """)
 
 # Footer
@@ -830,5 +886,6 @@ st.markdown("---")
 st.markdown(f"""
 **🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | 
 ⚠️ Tylko do celów edukacyjnych | 
-📊 Yahoo Finance + CSV
+📊 Yahoo Finance + CSV | 
+💸 Spread: Realistyczny (ASK/BID)
 """)
