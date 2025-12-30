@@ -2,7 +2,7 @@
 """
 MT5 Pivot Strategy Backtester - Multi-Currency
 Strategia: Poniedziałkowe sygnały + analiza roczna + prognoza
-Multi-currency: Do 5 par jednocześnie
+Multi-currency: Do 5 par jednocześnie (Yahoo Finance lub CSV)
 """
 
 import pandas as pd
@@ -76,7 +76,7 @@ class PivotBacktester:
                         uploaded_file.seek(0)
                         df = pd.read_csv(uploaded_file, sep=sep, encoding=encoding, thousands=',')
                         if len(df.columns) >= 5:
-                            successful_config = f"{encoding} + separator '{sep}'"
+                            successful_config = f"{encoding} + sep '{sep}'"
                             break
                     except:
                         continue
@@ -84,16 +84,13 @@ class PivotBacktester:
                     break
             
             if df is None or len(df.columns) < 5:
-                st.error("❌ Nie można odczytać pliku CSV.")
-                return None
-            
-            st.info(f"✅ Odczytano plik: {successful_config}")
+                return None, "Nie można odczytać pliku"
             
             df.columns = df.columns.str.strip().str.lower().str.replace('"', '')
             
             column_mapping = {}
             
-            date_cols = ['date', 'datetime', 'time', 'timestamp']
+            date_cols = ['date', 'datetime', 'time', 'timestamp', 'data', 'datum']
             for col in df.columns:
                 if col in date_cols or any(d in col for d in date_cols):
                     column_mapping['Date'] = col
@@ -101,8 +98,8 @@ class PivotBacktester:
             
             ohlc_mapping = {
                 'Open': ['open', 'o', 'opening'],
-                'High': ['high', 'h', 'max'],
-                'Low': ['low', 'l', 'min'],
+                'High': ['high', 'h', 'max', 'hi'],
+                'Low': ['low', 'l', 'min', 'lo'],
                 'Close': ['close', 'c', 'last', 'price', 'closing']
             }
             
@@ -116,30 +113,72 @@ class PivotBacktester:
             missing = [col for col in required if col not in column_mapping]
             
             if missing:
-                st.error(f"❌ Brakujące kolumny: {', '.join(missing)}")
-                return None
+                return None, f"Brakujące kolumny: {', '.join(missing)}"
             
             new_df = pd.DataFrame()
             for target, source in column_mapping.items():
                 new_df[target] = df[source].copy()
             
-            new_df['Date'] = pd.to_datetime(new_df['Date'], errors='coerce')
+            # Parsuj daty
+            try:
+                new_df['Date'] = pd.to_datetime(new_df['Date'], errors='coerce')
+                
+                if new_df['Date'].isna().sum() > len(new_df) * 0.5:
+                    date_formats = [
+                        '%m/%d/%Y', '%d/%m/%Y', '%b %d, %Y', '%B %d, %Y',
+                        '%Y-%m-%d', '%d.%m.%Y', '%Y/%m/%d', '%d-%m-%Y'
+                    ]
+                    
+                    for date_format in date_formats:
+                        try:
+                            clean_dates = df[column_mapping['Date']].astype(str).str.strip()
+                            new_df['Date'] = pd.to_datetime(clean_dates, format=date_format, errors='coerce')
+                            if new_df['Date'].notna().sum() > len(new_df) * 0.5:
+                                break
+                        except:
+                            continue
+            except:
+                pass
+            
             new_df = new_df.dropna(subset=['Date'])
             
+            # Konwertuj kolumny OHLC
             for col in ['Open', 'High', 'Low', 'Close']:
-                if new_df[col].dtype == 'object':
-                    new_df[col] = new_df[col].astype(str).str.replace(',', '.')
-                new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
+                try:
+                    if new_df[col].dtype == 'object':
+                        new_df[col] = new_df[col].astype(str).str.strip().str.replace('"', '').str.replace("'", '')
+                        
+                        sample_val = str(new_df[col].iloc[0]) if len(new_df) > 0 else "0"
+                        comma_count = sample_val.count(',')
+                        dot_count = sample_val.count('.')
+                        
+                        if comma_count > 0 and dot_count > 0:
+                            last_comma_pos = sample_val.rfind(',')
+                            last_dot_pos = sample_val.rfind('.')
+                            
+                            if last_comma_pos > last_dot_pos:
+                                new_df[col] = new_df[col].str.replace('.', '').str.replace(',', '.')
+                            else:
+                                new_df[col] = new_df[col].str.replace(',', '')
+                        elif comma_count > 0 and dot_count == 0:
+                            new_df[col] = new_df[col].str.replace(',', '.')
+                        
+                        new_df[col] = new_df[col].str.replace('%', '').str.replace(' ', '')
+                    
+                    new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
+                except Exception as e:
+                    return None, f"Błąd konwersji kolumny {col}"
             
             new_df = new_df.dropna(subset=['Open', 'High', 'Low', 'Close'])
             new_df = new_df.sort_values('Date').reset_index(drop=True)
             
-            st.success(f"✅ Załadowano {len(new_df)} wierszy")
-            return new_df
+            if len(new_df) == 0:
+                return None, "Brak prawidłowych danych"
+            
+            return new_df, f"OK: {len(new_df)} wierszy"
             
         except Exception as e:
-            st.error(f"❌ Błąd: {str(e)}")
-            return None
+            return None, f"Błąd: {str(e)}"
     
     def get_forex_data(self, symbol, days=365):
         """Pobierz dane forex"""
@@ -473,7 +512,7 @@ def calculate_projection(trades_df, initial_capital, years_ahead=5):
 
 # TYTUŁ
 st.title("📊 Forex Pivot Strategy Backtester - Multi-Currency")
-st.markdown("**Strategia: Do 5 par walutowych jednocześnie + analiza zbiorcza**")
+st.markdown("**Strategia: Do 5 par jednocześnie (Yahoo Finance lub CSV Upload)**")
 
 # SIDEBAR
 st.sidebar.header("⚙️ Konfiguracja")
@@ -481,19 +520,48 @@ st.sidebar.header("⚙️ Konfiguracja")
 # Wybór źródła danych
 data_source = st.sidebar.radio(
     "📂 Źródło danych:",
-    ["🌐 Yahoo Finance", "📥 Upload CSV"]
+    ["🌐 Yahoo Finance", "📥 Upload CSV (do 5 plików)"]
 )
 
 selected_symbols = []
-uploaded_file = None
+csv_files = {}
 
-if data_source == "📥 Upload CSV":
-    uploaded_file = st.sidebar.file_uploader("Wybierz plik CSV", type=['csv'])
-    if uploaded_file:
-        custom_symbol = st.sidebar.text_input("Nazwa pary:", "CUSTOM_PAIR")
-        selected_symbols = [custom_symbol]
+if data_source == "📥 Upload CSV (do 5 plików)":
+    st.sidebar.markdown("### 📤 Upload plików CSV")
+    
+    num_files = st.sidebar.number_input("Liczba par", min_value=1, max_value=5, value=1, step=1)
+    
+    for i in range(num_files):
+        st.sidebar.markdown(f"**Para #{i+1}:**")
+        
+        col1, col2 = st.sidebar.columns([2, 1])
+        
+        with col1:
+            uploaded_file = st.file_uploader(
+                f"Plik CSV #{i+1}", 
+                type=['csv'], 
+                key=f"csv_upload_{i}"
+            )
+        
+        with col2:
+            symbol_name = st.text_input(
+                f"Nazwa", 
+                value=f"PAIR{i+1}",
+                key=f"symbol_name_{i}"
+            )
+        
+        if uploaded_file is not None:
+            csv_files[symbol_name] = uploaded_file
+            if symbol_name not in selected_symbols:
+                selected_symbols.append(symbol_name)
+    
+    if len(csv_files) > 0:
+        st.sidebar.success(f"✅ Załadowano: {len(csv_files)} plików CSV")
+    else:
+        st.sidebar.warning("⚠️ Wgraj co najmniej 1 plik CSV")
+
 else:
-    # Multi-select dla wielu par
+    # Yahoo Finance - multi-select
     st.sidebar.markdown("### 💱 Wybór par walutowych")
     
     available_pairs = list(FOREX_SYMBOLS.keys())
@@ -558,7 +626,7 @@ if use_stop_loss:
 else:
     stop_loss_pct = None
 
-can_run = (uploaded_file is not None) if data_source == "📥 Upload CSV" else (len(selected_symbols) > 0)
+can_run = len(selected_symbols) > 0
 
 if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_run):
     
@@ -570,27 +638,42 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
     all_trades = []
     results_per_symbol = {}
     
-    if data_source == "📥 Upload CSV":
-        with st.spinner("Wczytywanie CSV..."):
-            df = backtester.load_csv_data(uploaded_file)
+    if data_source == "📥 Upload CSV (do 5 plików)":
+        # CSV Upload Mode
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for idx, (symbol, uploaded_file) in enumerate(csv_files.items()):
+            status_text.text(f"Przetwarzam {symbol}... ({idx+1}/{len(csv_files)})")
+            
+            df, load_status = backtester.load_csv_data(uploaded_file)
             
             if df is not None and len(df) > 0:
+                st.info(f"✅ {symbol}: {load_status}")
+                
                 df = backtester.calculate_pivot_points(df)
                 
                 trades_df, final_cap = backtester.run_backtest(
-                    df, selected_symbols[0], capital_per_pair, lot_size, spread_value,
+                    df, symbol, capital_per_pair, lot_size, spread_value,
                     holding_days, stop_loss_pct, support_level, resistance_level, trade_direction_value
                 )
                 
                 all_trades.append(trades_df)
-                results_per_symbol[selected_symbols[0]] = {
+                results_per_symbol[symbol] = {
                     'trades': trades_df,
                     'final_capital': final_cap,
                     'initial_capital': capital_per_pair
                 }
+            else:
+                st.error(f"❌ {symbol}: {load_status}")
+            
+            progress_bar.progress((idx + 1) / len(csv_files))
+        
+        status_text.empty()
+        progress_bar.empty()
     
     else:
-        # Multi-currency backtest
+        # Yahoo Finance Mode
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -654,7 +737,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             st.metric("Łączne transakcje", len(combined_trades))
         
         # WYNIKI PER PARA
-        st.markdown("## 💱 Wyniki per para walutowa")
+        st.markdown("## 💱 Wyniki per para")
         
         summary_data = []
         
@@ -713,7 +796,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             ))
             
             fig_comparison.update_layout(
-                title="Zwrot % per para walutowa",
+                title="Zwrot % per para",
                 xaxis_title="Para",
                 yaxis_title="Zwrot (%)",
                 height=400,
@@ -749,7 +832,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             
             st.plotly_chart(fig_portfolio, use_container_width=True)
             
-            # ANALIZA ROCZNA PORTFOLIO
+            # ANALIZA ROCZNA
             st.markdown("## 📅 Analiza roczna portfolio")
             
             yearly_stats = calculate_yearly_stats(combined_trades, initial_capital)
@@ -789,7 +872,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 
                 st.plotly_chart(fig_yearly, use_container_width=True)
             
-            # PROGNOZA PORTFOLIO
+            # PROGNOZA
             st.markdown("## 🔮 Prognoza 5-letnia portfolio")
             
             projection_df, avg_return, std_return = calculate_projection(combined_trades, initial_capital, 5)
@@ -898,9 +981,9 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             
             # Download
             csv = combined_trades.to_csv(index=False)
-            symbols_str = "_".join(selected_symbols[:3])
-            if len(selected_symbols) > 3:
-                symbols_str += f"_plus{len(selected_symbols)-3}"
+            symbols_str = "_".join(list(results_per_symbol.keys())[:3])
+            if len(results_per_symbol) > 3:
+                symbols_str += f"_plus{len(results_per_symbol)-3}"
             
             st.download_button(
                 "📥 Pobierz wyniki portfolio (CSV)",
@@ -910,35 +993,43 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             )
     
     else:
-        st.error("❌ Nie udało się wykonać backtestingu dla żadnej pary")
+        st.error("❌ Nie udało się wykonać backtestingu")
 
 else:
-    st.info("👈 Wybierz pary walutowe i kliknij URUCHOM BACKTEST")
+    st.info("👈 Wybierz źródło danych i kliknij URUCHOM BACKTEST")
     
     st.markdown("""
     ## 📖 Multi-Currency Backtesting
     
-    **Nowe funkcje:**
-    - ✅ **Do 5 par jednocześnie** - dywersyfikacja portfolio
-    - ✅ **Podział kapitału** - automatyczny na wybrane pary
-    - ✅ **Zbiorcze statystyki** - portfolio jako całość
-    - ✅ **Porównanie par** - która para najlepsza?
-    - ✅ **Krzywa portfolio** - skumulowany kapitał wszystkich par
-    - ✅ **Prognoza portfolio** - na podstawie wszystkich transakcji
+    **Dwa tryby:**
     
-    **Przykład:**
-    - Kapitał: $10,000
-    - Wybrane pary: EURUSD, GBPUSD, USDJPY
-    - Alokacja: $3,333 per para
-    - Transakcje: niezależne per para
-    - Kapitał końcowy: suma ze wszystkich par
+    ### 🌐 Yahoo Finance
+    - Wybierz do 5 par z listy
+    - Automatyczne pobieranie danych
+    - Pary major, cross, exotic
     
-    **Korzyści:**
-    - 📊 Dywersyfikacja ryzyka
-    - 💹 Większa liczba okazji
-    - 🎯 Lepszy profil risk/reward
-    - 📈 Stabilniejsze zwroty
+    ### 📥 CSV Upload (NOWE!)
+    - Wgraj do 5 plików CSV jednocześnie
+    - Każdy plik = osobna para
+    - Własne nazwy par
+    - Format: Date, Open, High, Low, Close
+    - Obsługa różnych separatorów i formatów
+    
+    **Funkcje:**
+    - ✅ Podział kapitału na pary
+    - ✅ Niezależne transakcje per para
+    - ✅ Zbiorcze statystyki portfolio
+    - ✅ Porównanie wyników per para
+    - ✅ Analiza roczna portfolio
+    - ✅ Prognoza 5-letnia
+    - ✅ Dywersyfikacja ryzyka
+    
+    **Przykład CSV Upload:**
+    1. Wgraj 3 pliki: EURUSD.csv, GBPUSD.csv, USDJPY.csv
+    2. Nazwij pary: EURUSD, GBPUSD, USDJPY
+    3. Kapitał $10,000 → $3,333 per para
+    4. Wynik: portfolio z 3 par
     """)
 
 st.markdown("---")
-st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | ⚠️ Tylko edukacyjnie | 💱 Multi-Currency Support")
+st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | ⚠️ Tylko edukacyjnie | 💱 Multi-Currency + CSV Upload")
