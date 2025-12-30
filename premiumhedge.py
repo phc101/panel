@@ -3,7 +3,7 @@
 MT5 Pivot Strategy Backtester - Multi-Currency
 Strategia: Poniedziałkowe sygnały + analiza roczna + prognoza
 Multi-currency: Do 5 par jednocześnie (Yahoo Finance lub CSV)
-POPRAWIONE: Analiza roczna używa Portfolio Capital
+POPRAWIONE: Analiza roczna używa Portfolio Capital + Bez limitu kapitału
 """
 
 import pandas as pd
@@ -259,7 +259,7 @@ class PivotBacktester:
         
         return df
     
-    def run_backtest(self, df, symbol, initial_capital=1000000, lot_size=1.0, spread_value=0.0002, 
+    def run_backtest(self, df, symbol, initial_capital=10000, lot_size=1.0, spread_value=0.0002, 
                     holding_days=5, stop_loss_pct=None, support_level='S3', resistance_level='R3',
                     trade_direction='Both'):
         """Uruchom backtest strategii"""
@@ -414,7 +414,6 @@ def calculate_yearly_stats(trades_df, initial_capital):
     if len(trades_df) == 0:
         return pd.DataFrame()
     
-    # Upewnij się że transakcje są posortowane chronologicznie
     trades_df = trades_df.sort_values('Exit Date').reset_index(drop=True)
     trades_df['Year'] = trades_df['Exit Date'].dt.year
     
@@ -423,7 +422,6 @@ def calculate_yearly_stats(trades_df, initial_capital):
     for year in sorted(trades_df['Year'].unique()):
         year_trades = trades_df[trades_df['Year'] == year]
         
-        # POPRAWKA: Kapitał na początek roku = Portfolio Capital z końca poprzedniego roku
         if year == trades_df['Year'].min():
             start_capital = initial_capital
         else:
@@ -433,7 +431,6 @@ def calculate_yearly_stats(trades_df, initial_capital):
             else:
                 start_capital = initial_capital
         
-        # POPRAWKA: Kapitał na koniec roku = Portfolio Capital
         end_capital = year_trades.iloc[-1]['Portfolio Capital']
         
         profit_nominal = end_capital - start_capital
@@ -443,13 +440,11 @@ def calculate_yearly_stats(trades_df, initial_capital):
         winning_trades = len(year_trades[year_trades['Profit'] > 0])
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
         
-        # POPRAWKA: Max drawdown używa Portfolio Capital
         year_capital_series = year_trades['Portfolio Capital'].values
         running_max = np.maximum.accumulate(year_capital_series)
         drawdown = (year_capital_series - running_max) / running_max * 100
         max_dd = drawdown.min() if len(drawdown) > 0 else 0
         
-        # POPRAWKA: Sharpe ratio używa P&L % z transakcji
         if len(year_trades) > 1:
             returns = year_trades['P&L %'].values / 100
             if len(returns) > 0 and returns.std() != 0:
@@ -479,7 +474,6 @@ def calculate_projection(trades_df, initial_capital, years_ahead=5):
     if len(trades_df) == 0:
         return None, 0, 0
     
-    # Upewnij się że transakcje są posortowane
     trades_df = trades_df.sort_values('Exit Date').reset_index(drop=True)
     trades_df['Year'] = trades_df['Exit Date'].dt.year
     
@@ -488,7 +482,6 @@ def calculate_projection(trades_df, initial_capital, years_ahead=5):
     for year in sorted(trades_df['Year'].unique()):
         year_trades = trades_df[trades_df['Year'] == year]
         
-        # POPRAWKA: używamy Portfolio Capital
         if year == trades_df['Year'].min():
             start_cap = initial_capital
         else:
@@ -502,7 +495,6 @@ def calculate_projection(trades_df, initial_capital, years_ahead=5):
     avg_annual_return = np.mean(yearly_returns)
     std_annual_return = np.std(yearly_returns) if len(yearly_returns) > 1 else 0
     
-    # POPRAWKA: aktualny kapitał to ostatnia wartość Portfolio Capital
     current_capital = trades_df.iloc[-1]['Portfolio Capital']
     projections = []
     
@@ -575,7 +567,6 @@ if data_source == "📥 Upload CSV (do 5 plików)":
         st.sidebar.warning("⚠️ Wgraj co najmniej 1 plik CSV")
 
 else:
-    # Yahoo Finance - multi-select
     st.sidebar.markdown("### 💱 Wybór par walutowych")
     
     available_pairs = list(FOREX_SYMBOLS.keys())
@@ -593,8 +584,18 @@ else:
         st.sidebar.warning("⚠️ Wybierz co najmniej 1 parę")
 
 st.sidebar.markdown("### 💰 Parametry")
-initial_capital = st.sidebar.number_input("Kapitał początkowy ($)", 1000, 100000, 10000, 1000)
-lot_size = st.sidebar.number_input("Wielkość lota (per para)", 0.01, 10.0, 1.0, 0.01)
+
+# ZMIENIONE: Usunięto max_value, dodano format z tysiącami
+initial_capital = st.sidebar.number_input(
+    "Kapitał początkowy ($)", 
+    min_value=1000, 
+    value=10000, 
+    step=1000,
+    format="%d",
+    help="Możesz wpisać dowolną wartość, np. 100,000,000"
+)
+
+lot_size = st.sidebar.number_input("Wielkość lota (per para)", 0.01, 100.0, 1.0, 0.01)
 
 spread_value = st.sidebar.number_input(
     "Spread (format 0.0000)", 
@@ -646,14 +647,12 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
     
     backtester = PivotBacktester(lookback_days=lookback_days)
     
-    # Dla multi-currency dzielimy kapitał na pary
     capital_per_pair = initial_capital / len(selected_symbols)
     
     all_trades = []
     results_per_symbol = {}
     
     if data_source == "📥 Upload CSV (do 5 plików)":
-        # CSV Upload Mode
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -687,7 +686,6 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         progress_bar.empty()
     
     else:
-        # Yahoo Finance Mode
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -719,11 +717,9 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         progress_bar.empty()
     
     if len(all_trades) > 0:
-        # Połącz wszystkie transakcje
         combined_trades = pd.concat(all_trades, ignore_index=True)
         combined_trades = combined_trades.sort_values('Exit Date').reset_index(drop=True)
         
-        # Przelicz kapitał skumulowany dla połączonego portfolio
         combined_trades['Portfolio Capital'] = initial_capital
         for i in range(len(combined_trades)):
             if i > 0:
@@ -782,7 +778,6 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         summary_df = pd.DataFrame(summary_data)
         
         if len(summary_df) > 0:
-            # Formatuj tabelę
             display_summary = summary_df.copy()
             display_summary['Initial Capital'] = display_summary['Initial Capital'].apply(lambda x: f"${x:,.2f}")
             display_summary['Final Capital'] = display_summary['Final Capital'].apply(lambda x: f"${x:,.2f}")
@@ -846,7 +841,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             
             st.plotly_chart(fig_portfolio, use_container_width=True)
             
-            # ANALIZA ROCZNA - POPRAWIONA
+            # ANALIZA ROCZNA
             st.markdown("## 📅 Analiza roczna portfolio")
             
             yearly_stats = calculate_yearly_stats(combined_trades, initial_capital)
@@ -886,7 +881,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 
                 st.plotly_chart(fig_yearly, use_container_width=True)
             
-            # PROGNOZA - POPRAWIONA
+            # PROGNOZA
             st.markdown("## 🔮 Prognoza 5-letnia portfolio")
             
             projection_df, avg_return, std_return = calculate_projection(combined_trades, initial_capital, 5)
@@ -962,7 +957,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 if len(long_trades) > 0:
                     st.write(f"Liczba: {len(long_trades)}")
                     st.write(f"Win rate: {(long_trades['Profit'] > 0).sum() / len(long_trades) * 100:.1f}%")
-                    st.write(f"Total profit: ${long_trades['Profit'].sum():.2f}")
+                    st.write(f"Total profit: ${long_trades['Profit'].sum():,.2f}")
             
             with col2:
                 st.markdown("**📉 SHORT**")
@@ -970,7 +965,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 if len(short_trades) > 0:
                     st.write(f"Liczba: {len(short_trades)}")
                     st.write(f"Win rate: {(short_trades['Profit'] > 0).sum() / len(short_trades) * 100:.1f}%")
-                    st.write(f"Total profit: ${short_trades['Profit'].sum():.2f}")
+                    st.write(f"Total profit: ${short_trades['Profit'].sum():,.2f}")
             
             with col3:
                 st.markdown("**🛡️ EXIT**")
@@ -1015,33 +1010,28 @@ else:
     st.markdown("""
     ## 📖 Multi-Currency Backtesting
     
+    **Parametry:**
+    - ✅ **Kapitał początkowy:** BEZ LIMITU (możesz wpisać 100,000,000+)
+    - ✅ **Wielkość lota:** 0.01 - 100.0
+    - ✅ **Do 5 par jednocześnie**
+    
     **Dwa tryby:**
     
     ### 🌐 Yahoo Finance
     - Wybierz do 5 par z listy
     - Automatyczne pobieranie danych
-    - Pary major, cross, exotic
     
     ### 📥 CSV Upload
-    - Wgraj do 5 plików CSV jednocześnie
-    - Każdy plik = osobna para
+    - Wgraj do 5 plików CSV
     - Własne nazwy par
     - Format: Date, Open, High, Low, Close
     
-    **Funkcje:**
-    - ✅ Podział kapitału na pary
-    - ✅ Niezależne transakcje per para
-    - ✅ Zbiorcze statystyki portfolio
-    - ✅ Analiza roczna (POPRAWIONA)
-    - ✅ Prognoza 5-letnia
-    - ✅ Max Drawdown per rok
-    - ✅ Sharpe Ratio
-    
-    **POPRAWKI:**
-    - ✅ Max DD używa Portfolio Capital (całe portfolio)
-    - ✅ Zwroty roczne poprawnie obliczone
-    - ✅ Sharpe Ratio z P&L % transakcji
+    **Przykład kapitału:**
+    - $10,000 - typowy retail
+    - $100,000 - mały fund
+    - $1,000,000 - średni fund
+    - $100,000,000 - duży fund/instytucja
     """)
 
 st.markdown("---")
-st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | ⚠️ Tylko edukacyjnie | 💱 Multi-Currency + Poprawione obliczenia")
+st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | ⚠️ Tylko edukacyjnie | 💱 Multi-Currency + Unlimited Capital")
