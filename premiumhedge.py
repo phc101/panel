@@ -2,6 +2,7 @@
 """
 MT5 Pivot Strategy Backtester
 Strategia: Poniedziałkowe sygnały + analiza roczna + prognoza
+Holding period: 1-90 dni
 """
 
 import pandas as pd
@@ -453,7 +454,6 @@ def calculate_yearly_stats(trades_df, initial_capital):
     for year in sorted(trades_df['Year'].unique()):
         year_trades = trades_df[trades_df['Year'] == year]
         
-        # Kapitał na początek i koniec roku
         if year == trades_df['Year'].min():
             start_capital = initial_capital
         else:
@@ -465,23 +465,19 @@ def calculate_yearly_stats(trades_df, initial_capital):
         
         end_capital = year_trades.iloc[-1]['Capital']
         
-        # Zysk nominalny i %
         profit_nominal = end_capital - start_capital
         profit_pct = (profit_nominal / start_capital) * 100
         
-        # Statystyki transakcji
         total_trades = len(year_trades)
         winning_trades = len(year_trades[year_trades['Profit'] > 0])
         losing_trades = len(year_trades[year_trades['Profit'] < 0])
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
         
-        # Max drawdown w roku
         year_capital = year_trades['Capital'].values
         running_max = np.maximum.accumulate(year_capital)
         drawdown = (year_capital - running_max) / running_max * 100
         max_dd = drawdown.min()
         
-        # Sharpe ratio (uproszczony - dzienne zwroty)
         if len(year_trades) > 1:
             daily_returns = year_trades['Profit'].pct_change().dropna()
             if len(daily_returns) > 0 and daily_returns.std() != 0:
@@ -511,7 +507,6 @@ def calculate_projection(trades_df, initial_capital, years_ahead=5):
     if len(trades_df) == 0:
         return None
     
-    # Oblicz średnie roczne zwroty
     trades_df['Year'] = trades_df['Exit Date'].dt.year
     yearly_returns = []
     
@@ -528,23 +523,18 @@ def calculate_projection(trades_df, initial_capital, years_ahead=5):
         annual_return = (end_cap - start_cap) / start_cap
         yearly_returns.append(annual_return)
     
-    # Średni roczny zwrot
     avg_annual_return = np.mean(yearly_returns)
     std_annual_return = np.std(yearly_returns)
     
-    # Prognoza
     current_capital = trades_df.iloc[-1]['Capital']
     projections = []
     
     for year in range(1, years_ahead + 1):
-        # Scenariusz pesymistyczny (avg - 1 std)
         pessimistic_return = avg_annual_return - std_annual_return
         pessimistic_capital = current_capital * ((1 + pessimistic_return) ** year)
         
-        # Scenariusz bazowy (avg)
         base_capital = current_capital * ((1 + avg_annual_return) ** year)
         
-        # Scenariusz optymistyczny (avg + 1 std)
         optimistic_return = avg_annual_return + std_annual_return
         optimistic_capital = current_capital * ((1 + optimistic_return) ** year)
         
@@ -559,7 +549,7 @@ def calculate_projection(trades_df, initial_capital, years_ahead=5):
 
 # TYTUŁ
 st.title("📊 Forex Pivot Strategy Backtester")
-st.markdown("**Strategia: Analiza roczna + Prognoza**")
+st.markdown("**Strategia: Analiza roczna + Prognoza 5-letnia**")
 
 # SIDEBAR
 st.sidebar.header("⚙️ Konfiguracja")
@@ -593,11 +583,24 @@ spread_value = st.sidebar.number_input(
     format="%.4f"
 )
 
+with st.sidebar.expander("ℹ️ Jak działa spread?"):
+    pip_val = 0.01 if (selected_symbol and 'JPY' in selected_symbol) else 0.0001
+    spread_pips_display = spread_value / pip_val
+    
+    st.markdown(f"""
+    **Spread: {spread_value:.4f} = {spread_pips_display:.1f} pips**
+    
+    **LONG:** Entry +{spread_value:.4f}, Exit -{spread_value:.4f}
+    **SHORT:** Entry -{spread_value:.4f}, Exit +{spread_value:.4f}
+    
+    💡 Spread zawsze przeciwko traderowi
+    """)
+
 st.sidebar.markdown("### 📅 Strategia")
 if data_source == "🌐 Yahoo Finance":
-    backtest_days = st.sidebar.slider("Dni historii", 365, 3650, 1825)  # do 10 lat
+    backtest_days = st.sidebar.slider("Dni historii", 365, 3650, 1825)
 lookback_days = st.sidebar.slider("Okres pivot (dni)", 3, 14, 7)
-holding_days = st.sidebar.slider("Holding period (dni)", 1, 30, 5)
+holding_days = st.sidebar.slider("Holding period (dni)", 1, 90, 5)  # ZMIENIONE: max 90 dni
 
 trade_direction = st.sidebar.radio(
     "Kierunek:",
@@ -611,6 +614,13 @@ direction_map = {
     "Short Only (Sell)": "Short Only"
 }
 trade_direction_value = direction_map[trade_direction]
+
+if trade_direction_value == "Both":
+    st.sidebar.success("📊 Dwukierunkowa")
+elif trade_direction_value == "Long Only":
+    st.sidebar.info("📈 Tylko LONG")
+else:
+    st.sidebar.info("📉 Tylko SHORT")
 
 if trade_direction_value in ["Both", "Long Only"]:
     support_level = st.sidebar.radio("📉 Support:", ["S3", "S2"], index=0)
@@ -655,6 +665,16 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         if len(pivot_data) > 0:
             st.success(f"✅ Pivot dla {len(pivot_data)} dni")
             
+            pip_val = 0.01 if 'JPY' in selected_symbol else 0.0001
+            spread_pips_display = spread_value / pip_val
+            
+            if trade_direction_value == "Both":
+                st.info(f"📊 **Strategia:** LONG przy {support_level} | SHORT przy {resistance_level} | Spread: {spread_value:.4f} ({spread_pips_display:.1f} pips) | Holding: {holding_days} dni")
+            elif trade_direction_value == "Long Only":
+                st.info(f"📈 **Strategia:** Tylko LONG przy {support_level} | Spread: {spread_value:.4f} ({spread_pips_display:.1f} pips) | Holding: {holding_days} dni")
+            else:
+                st.info(f"📉 **Strategia:** Tylko SHORT przy {resistance_level} | Spread: {spread_value:.4f} ({spread_pips_display:.1f} pips) | Holding: {holding_days} dni")
+            
             with st.spinner("Wykonywanie backtestu..."):
                 trades_df, final_capital = backtester.run_backtest(
                     df, initial_capital, lot_size, spread_value, holding_days, 
@@ -687,7 +707,6 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 yearly_stats = calculate_yearly_stats(trades_df, initial_capital)
                 
                 if len(yearly_stats) > 0:
-                    # Tabela roczna
                     st.markdown("### 📅 Statystyki per rok")
                     
                     display_yearly = yearly_stats.copy()
@@ -780,7 +799,6 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                     display_proj['Base'] = display_proj['Base'].apply(lambda x: f"${x:,.0f}")
                     display_proj['Optimistic'] = display_proj['Optimistic'].apply(lambda x: f"${x:,.0f}")
                     
-                    # Dodaj % zmiany
                     for idx in range(len(projection_df)):
                         if idx == 0:
                             base_val = final_capital
@@ -802,7 +820,6 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                     
                     fig_proj = go.Figure()
                     
-                    # Linia historyczna
                     if len(yearly_stats) > 0:
                         fig_proj.add_trace(go.Scatter(
                             x=yearly_stats['Year'],
@@ -813,7 +830,6 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                             marker=dict(size=8)
                         ))
                     
-                    # Dodaj aktualny punkt
                     current_year = datetime.now().year
                     fig_proj.add_trace(go.Scatter(
                         x=[current_year],
@@ -823,7 +839,6 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                         marker=dict(size=15, color='gold', symbol='star')
                     ))
                     
-                    # Prognoza - scenariusze
                     proj_years = [current_year] + projection_df['Year'].tolist()
                     proj_base = [final_capital] + projection_df['Base'].tolist()
                     proj_pess = [final_capital] + projection_df['Pessimistic'].tolist()
@@ -865,7 +880,6 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                     
                     st.plotly_chart(fig_proj, use_container_width=True)
                     
-                    # Założenia prognozy
                     with st.expander("ℹ️ Założenia prognozy"):
                         st.markdown(f"""
                         **Metodologia:**
@@ -874,15 +888,14 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                         - **Odchylenie standardowe:** {std_return*100:.2f}%
                         
                         **Scenariusze:**
-                        - **Pesymistyczny:** Średnia - 1 odchylenie std ({(avg_return - std_return)*100:.2f}% rocznie)
-                        - **Bazowy:** Średnia historyczna ({avg_return*100:.2f}% rocznie)
-                        - **Optymistyczny:** Średnia + 1 odchylenie std ({(avg_return + std_return)*100:.2f}% rocznie)
+                        - **Pesymistyczny:** {(avg_return - std_return)*100:.2f}% rocznie
+                        - **Bazowy:** {avg_return*100:.2f}% rocznie
+                        - **Optymistyczny:** {(avg_return + std_return)*100:.2f}% rocznie
                         
-                        ⚠️ **Uwaga:** Prognoza zakłada kontynuację historycznych wzorców. 
-                        Rzeczywiste wyniki mogą się znacząco różnić.
+                        ⚠️ **Uwaga:** Prognoza zakłada kontynuację historycznych wzorców.
                         """)
                 
-                # Szczegółowe statystyki (jak poprzednio)
+                # Szczegółowe statystyki
                 st.markdown("## 📊 Statystyki szczegółowe")
                 
                 long_trades = trades_df[trades_df['Type'] == 'LONG']
@@ -903,6 +916,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                         st.write(f"Win rate: {long_wins / len(long_trades) * 100:.1f}%")
                         st.write(f"Avg profit: ${long_trades['Profit'].mean():.2f}")
                         st.write(f"Total profit: ${long_trades['Profit'].sum():.2f}")
+                        st.write(f"Avg holding: {long_trades['Duration'].mean():.1f} dni")
                 
                 if trade_direction_value in ["Both", "Short Only"] and len(short_trades) > 0:
                     with col2:
@@ -912,13 +926,18 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                         st.write(f"Win rate: {short_wins / len(short_trades) * 100:.1f}%")
                         st.write(f"Avg profit: ${short_trades['Profit'].mean():.2f}")
                         st.write(f"Total profit: ${short_trades['Profit'].sum():.2f}")
+                        st.write(f"Avg holding: {short_trades['Duration'].mean():.1f} dni")
                 
                 with col3:
-                    st.markdown("**🛡️ EXIT**")
+                    st.markdown("**🛡️ EXIT & COSTS**")
                     total_sl = len(trades_df[trades_df['Exit Reason'] == 'Stop Loss'])
                     time_exits = len(trades_df[trades_df['Exit Reason'] == 'Time exit'])
                     st.write(f"Stop Loss: {total_sl}")
                     st.write(f"Time exit: {time_exits}")
+                    
+                    total_spread_cost = len(trades_df) * 2 * spread_value * lot_size * 100000
+                    st.write(f"💸 Spread cost: ${total_spread_cost:.2f}")
+                    st.write(f"Avg holding: {trades_df['Duration'].mean():.1f} dni")
                 
                 # Tabela transakcji
                 st.markdown("### 📝 Historia transakcji")
@@ -932,14 +951,22 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 display['Profit'] = display['Profit'].round(2)
                 display['P&L %'] = display['P&L %'].round(2)
                 
-                st.dataframe(display, use_container_width=True)
+                def highlight_exit(row):
+                    if row['Exit Reason'] == 'Stop Loss':
+                        return ['background-color: #ffcccc'] * len(row)
+                    elif row['Exit Reason'] == 'Time exit':
+                        return ['background-color: #ccffcc'] * len(row)
+                    return [''] * len(row)
                 
-                # Download
+                styled = display.style.apply(highlight_exit, axis=1)
+                st.dataframe(styled, use_container_width=True)
+                
                 csv = trades_df.to_csv(index=False)
+                direction_short = trade_direction_value.replace(' Only', '').replace('Both', 'LongShort')
                 st.download_button(
                     "📥 Pobierz CSV",
                     csv,
-                    f"backtest_{selected_symbol}_{datetime.now().strftime('%Y%m%d')}.csv",
+                    f"backtest_{selected_symbol}_{direction_short}_H{holding_days}_{datetime.now().strftime('%Y%m%d')}.csv",
                     "text/csv"
                 )
             else:
@@ -951,6 +978,27 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
 
 else:
     st.info("👈 Kliknij URUCHOM BACKTEST")
+    
+    st.markdown("""
+    ## 📖 O strategii
+    
+    **Holding period: 1-90 dni**
+    - **1-5 dni:** Scalping/swing
+    - **5-10 dni:** Krótkoterminowe
+    - **10-30 dni:** Średnioterminowe
+    - **30-90 dni:** Długoterminowe (quarterly)
+    
+    **Analiza roczna:**
+    - Zwroty per rok ($ i %)
+    - Win rate roczny
+    - Max drawdown
+    - Sharpe ratio
+    
+    **Prognoza 5-letnia:**
+    - 3 scenariusze (pesymistyczny/bazowy/optymistyczny)
+    - Oparta na historycznych zwrotach
+    - Zakłada kontynuację wzorców
+    """)
 
 st.markdown("---")
 st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | ⚠️ Tylko edukacyjnie")
