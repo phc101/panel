@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 MT5 Pivot Strategy Backtester
-Strategia: Poniedziałkowe sygnały (wybór poziomów) + holding period + stop loss
+Strategia: Poniedziałkowe sygnały (wybór poziomów + kierunku) + holding period + stop loss
 """
 
 import pandas as pd
@@ -304,18 +304,15 @@ class PivotBacktester:
         return df
     
     def run_backtest(self, df, initial_capital=10000, lot_size=1.0, spread_pips=2, 
-                    holding_days=5, stop_loss_pct=None, support_level='S3', resistance_level='R3'):
+                    holding_days=5, stop_loss_pct=None, support_level='S3', resistance_level='R3',
+                    trade_direction='Both'):
         """
         Uruchom backtest strategii TYGODNIOWEJ
-        Strategia: 
-        - Każdy PONIEDZIAŁEK sprawdź sygnał:
-          * Jeśli cena < support_level → KUP i trzymaj X dni
-          * Jeśli cena > resistance_level → SPRZEDAJ i trzymaj X dni
-        - Stop loss: zamknij pozycję jeśli strata >= X%
         
         Parametry:
-        - support_level: 'S2' (konserwatywne) lub 'S3' (agresywne) dla LONG
-        - resistance_level: 'R2' (konserwatywne) lub 'R3' (agresywne) dla SHORT
+        - trade_direction: 'Both' (oba), 'Long Only' (tylko kupno), 'Short Only' (tylko sprzedaż)
+        - support_level: 'S2' lub 'S3' dla LONG
+        - resistance_level: 'R2' lub 'R3' dla SHORT
         """
         
         trades = []
@@ -347,7 +344,6 @@ class PivotBacktester:
                 if stop_loss_pct is not None and stop_loss_pct > 0:
                     
                     if pos['type'] == 'long':
-                        # Dla LONG: sprawdź czy Low dotknęło stop loss
                         stop_loss_price = pos['entry_price'] * (1 - stop_loss_pct / 100)
                         
                         if current_low <= stop_loss_price:
@@ -355,14 +351,13 @@ class PivotBacktester:
                             continue
                     
                     else:  # short
-                        # Dla SHORT: sprawdź czy High dotknęło stop loss
                         stop_loss_price = pos['entry_price'] * (1 + stop_loss_pct / 100)
                         
                         if current_high >= stop_loss_price:
                             positions_to_close.append((pos_idx, 'Stop Loss', stop_loss_price))
                             continue
             
-            # Zamknij pozycje (od końca żeby nie zepsuć indeksów)
+            # Zamknij pozycje
             for pos_idx, exit_reason, exit_price_raw in sorted(positions_to_close, reverse=True, key=lambda x: x[0]):
                 pos = open_positions.pop(pos_idx)
                 
@@ -407,35 +402,37 @@ class PivotBacktester:
                 support_value = row[support_level]
                 resistance_value = row[resistance_level]
                 
-                # Sygnał BUY: cena < support_level
-                if current_price < support_value:
-                    entry_price = current_price + (spread_pips * 0.0001)
-                    exit_date = current_date + timedelta(days=holding_days)
-                    
-                    open_positions.append({
-                        'type': 'long',
-                        'entry_date': current_date,
-                        'exit_date': exit_date,
-                        'entry_price': entry_price,
-                        'entry_level_name': support_level,
-                        'entry_level_value': support_value,
-                        'lot_size': lot_size
-                    })
+                # Sygnał BUY (tylko jeśli trade_direction pozwala)
+                if trade_direction in ['Both', 'Long Only']:
+                    if current_price < support_value:
+                        entry_price = current_price + (spread_pips * 0.0001)
+                        exit_date = current_date + timedelta(days=holding_days)
+                        
+                        open_positions.append({
+                            'type': 'long',
+                            'entry_date': current_date,
+                            'exit_date': exit_date,
+                            'entry_price': entry_price,
+                            'entry_level_name': support_level,
+                            'entry_level_value': support_value,
+                            'lot_size': lot_size
+                        })
                 
-                # Sygnał SELL: cena > resistance_level
-                if current_price > resistance_value:
-                    entry_price = current_price - (spread_pips * 0.0001)
-                    exit_date = current_date + timedelta(days=holding_days)
-                    
-                    open_positions.append({
-                        'type': 'short',
-                        'entry_date': current_date,
-                        'exit_date': exit_date,
-                        'entry_price': entry_price,
-                        'entry_level_name': resistance_level,
-                        'entry_level_value': resistance_value,
-                        'lot_size': lot_size
-                    })
+                # Sygnał SELL (tylko jeśli trade_direction pozwala)
+                if trade_direction in ['Both', 'Short Only']:
+                    if current_price > resistance_value:
+                        entry_price = current_price - (spread_pips * 0.0001)
+                        exit_date = current_date + timedelta(days=holding_days)
+                        
+                        open_positions.append({
+                            'type': 'short',
+                            'entry_date': current_date,
+                            'exit_date': exit_date,
+                            'entry_price': entry_price,
+                            'entry_level_name': resistance_level,
+                            'entry_level_value': resistance_value,
+                            'lot_size': lot_size
+                        })
         
         # Zamknij pozostałe pozycje na końcu
         last_row = df.iloc[-1]
@@ -478,7 +475,7 @@ class PivotBacktester:
 
 # TYTUŁ
 st.title("📊 Forex Pivot Strategy Backtester")
-st.markdown("**Strategia: Sygnały poniedziałkowe (wybór poziomów) + holding period + stop loss**")
+st.markdown("**Strategia: Sygnały poniedziałkowe (wybór kierunku i poziomów) + holding period + stop loss**")
 
 # SIDEBAR
 st.sidebar.header("⚙️ Konfiguracja")
@@ -512,36 +509,52 @@ if data_source == "🌐 Yahoo Finance":
 lookback_days = st.sidebar.slider("Okres pivot (dni)", 3, 14, 7)
 holding_days = st.sidebar.slider("Holding period (dni)", 1, 30, 5)
 
+# WYBÓR KIERUNKU TRADINGU
+st.sidebar.markdown("### 🎲 Kierunek Tradingu")
+trade_direction = st.sidebar.radio(
+    "Wybierz kierunek:",
+    ["Both (Long + Short)", "Long Only (Buy)", "Short Only (Sell)"],
+    index=0
+)
+
+# Mapowanie nazwy na wartość
+direction_map = {
+    "Both (Long + Short)": "Both",
+    "Long Only (Buy)": "Long Only",
+    "Short Only (Sell)": "Short Only"
+}
+trade_direction_value = direction_map[trade_direction]
+
+# Info o kierunku
+if trade_direction_value == "Both":
+    st.sidebar.success("📊 Strategia dwukierunkowa")
+elif trade_direction_value == "Long Only":
+    st.sidebar.info("📈 Tylko pozycje LONG (kupno)")
+else:
+    st.sidebar.info("📉 Tylko pozycje SHORT (sprzedaż)")
+
 # WYBÓR POZIOMÓW WEJŚCIA
 st.sidebar.markdown("### 🎯 Poziomy Wejścia")
 
-col1, col2 = st.sidebar.columns(2)
-
-with col1:
-    st.markdown("**📉 LONG (Buy)**")
-    support_level = st.radio(
-        "Support level:",
+if trade_direction_value in ["Both", "Long Only"]:
+    support_level = st.sidebar.radio(
+        "📉 Support (LONG):",
         ["S3", "S2"],
         index=0,
-        help="S3 = agresywne (dalej od ceny), S2 = konserwatywne (bliżej ceny)"
+        help="S3 = agresywne, S2 = konserwatywne"
     )
+else:
+    support_level = "S3"  # Default (nieużywane)
 
-with col2:
-    st.markdown("**📈 SHORT (Sell)**")
-    resistance_level = st.radio(
-        "Resistance level:",
+if trade_direction_value in ["Both", "Short Only"]:
+    resistance_level = st.sidebar.radio(
+        "📈 Resistance (SHORT):",
         ["R3", "R2"],
         index=0,
-        help="R3 = agresywne (dalej od ceny), R2 = konserwatywne (bliżej ceny)"
+        help="R3 = agresywne, R2 = konserwatywne"
     )
-
-# Info o wybranych poziomach
-if support_level == 'S3' and resistance_level == 'R3':
-    st.sidebar.success("🚀 Agresywna strategia (S3/R3)")
-elif support_level == 'S2' and resistance_level == 'R2':
-    st.sidebar.info("🛡️ Konserwatywna strategia (S2/R2)")
 else:
-    st.sidebar.warning("⚖️ Strategia mieszana")
+    resistance_level = "R3"  # Default (nieużywane)
 
 # STOP LOSS
 st.sidebar.markdown("### 🛡️ Stop Loss")
@@ -555,11 +568,10 @@ if use_stop_loss:
 else:
     stop_loss_pct = None
 
-# Info o stop lossie
 if use_stop_loss:
-    st.sidebar.info(f"🛡️ Stop Loss aktywny: {stop_loss_pct}%")
+    st.sidebar.info(f"🛡️ SL aktywny: {stop_loss_pct}%")
 else:
-    st.sidebar.warning("⚠️ Stop Loss wyłączony")
+    st.sidebar.warning("⚠️ SL wyłączony")
 
 # Przycisk
 can_run = (uploaded_file is not None) if data_source == "📥 Upload CSV" else (selected_symbol is not None)
@@ -589,13 +601,18 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         if len(pivot_data) > 0:
             st.success(f"✅ Pivot dla {len(pivot_data)} dni")
             
-            # Info o wybranych poziomach
-            st.info(f"📊 **Poziomy:** LONG przy {support_level} | SHORT przy {resistance_level}")
+            # Info o strategii
+            if trade_direction_value == "Both":
+                st.info(f"📊 **Strategia:** LONG przy {support_level} | SHORT przy {resistance_level}")
+            elif trade_direction_value == "Long Only":
+                st.info(f"📈 **Strategia:** Tylko LONG przy {support_level}")
+            else:
+                st.info(f"📉 **Strategia:** Tylko SHORT przy {resistance_level}")
             
             with st.spinner("Wykonywanie backtestu..."):
                 trades_df, final_capital = backtester.run_backtest(
                     df, initial_capital, lot_size, spread_pips, holding_days, 
-                    stop_loss_pct, support_level, resistance_level
+                    stop_loss_pct, support_level, resistance_level, trade_direction_value
                 )
             
             # WYNIKI
@@ -620,44 +637,48 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 
                 # Statystyki per typ
                 st.markdown("### 📊 Statystyki szczegółowe")
-                col1, col2, col3 = st.columns(3)
                 
-                with col1:
-                    long_trades = trades_df[trades_df['Type'] == 'LONG']
-                    st.markdown(f"**📈 LONG ({support_level})**")
-                    st.write(f"Liczba: {len(long_trades)}")
-                    if len(long_trades) > 0:
+                long_trades = trades_df[trades_df['Type'] == 'LONG']
+                short_trades = trades_df[trades_df['Type'] == 'SHORT']
+                
+                if trade_direction_value == "Both":
+                    col1, col2, col3 = st.columns(3)
+                elif trade_direction_value == "Long Only":
+                    col1, col3 = st.columns(2)
+                else:
+                    col2, col3 = st.columns(2)
+                
+                if trade_direction_value in ["Both", "Long Only"] and len(long_trades) > 0:
+                    with col1:
+                        st.markdown(f"**📈 LONG ({support_level})**")
+                        st.write(f"Liczba: {len(long_trades)}")
                         long_wins = (long_trades['Profit'] > 0).sum()
                         st.write(f"Win rate: {long_wins / len(long_trades) * 100:.1f}%")
                         st.write(f"Avg profit: ${long_trades['Profit'].mean():.2f}")
                         st.write(f"Total profit: ${long_trades['Profit'].sum():.2f}")
                         sl_hits = len(long_trades[long_trades['Exit Reason'] == 'Stop Loss'])
                         if sl_hits > 0:
-                            st.write(f"⚠️ SL hits: {sl_hits} ({sl_hits/len(long_trades)*100:.1f}%)")
+                            st.write(f"⚠️ SL: {sl_hits} ({sl_hits/len(long_trades)*100:.1f}%)")
                 
-                with col2:
-                    short_trades = trades_df[trades_df['Type'] == 'SHORT']
-                    st.markdown(f"**📉 SHORT ({resistance_level})**")
-                    st.write(f"Liczba: {len(short_trades)}")
-                    if len(short_trades) > 0:
+                if trade_direction_value in ["Both", "Short Only"] and len(short_trades) > 0:
+                    with col2:
+                        st.markdown(f"**📉 SHORT ({resistance_level})**")
+                        st.write(f"Liczba: {len(short_trades)}")
                         short_wins = (short_trades['Profit'] > 0).sum()
                         st.write(f"Win rate: {short_wins / len(short_trades) * 100:.1f}%")
                         st.write(f"Avg profit: ${short_trades['Profit'].mean():.2f}")
                         st.write(f"Total profit: ${short_trades['Profit'].sum():.2f}")
                         sl_hits = len(short_trades[short_trades['Exit Reason'] == 'Stop Loss'])
                         if sl_hits > 0:
-                            st.write(f"⚠️ SL hits: {sl_hits} ({sl_hits/len(short_trades)*100:.1f}%)")
+                            st.write(f"⚠️ SL: {sl_hits} ({sl_hits/len(short_trades)*100:.1f}%)")
                 
                 with col3:
                     st.markdown("**🛡️ EXIT REASONS**")
                     total_sl = len(trades_df[trades_df['Exit Reason'] == 'Stop Loss'])
                     time_exits = len(trades_df[trades_df['Exit Reason'] == 'Time exit'])
-                    end_exits = len(trades_df[trades_df['Exit Reason'] == 'End of data'])
                     
                     st.write(f"Stop Loss: {total_sl}")
                     st.write(f"Time exit: {time_exits}")
-                    st.write(f"End of data: {end_exits}")
-                    
                     if len(trades_df) > 0:
                         st.write(f"SL rate: {total_sl/len(trades_df)*100:.1f}%")
                 
@@ -694,8 +715,9 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 
                 fig.add_hline(y=initial_capital, line_dash='dash', line_color='gray', annotation_text='Start')
                 
+                direction_label = trade_direction_value.replace(' Only', '').replace('Both', 'Long+Short')
                 fig.update_layout(
-                    title=f"Rozwój kapitału - {selected_symbol} ({support_level}/{resistance_level})",
+                    title=f"Rozwój kapitału - {selected_symbol} ({direction_label})",
                     xaxis_title="Data",
                     yaxis_title="Kapitał ($)",
                     height=400, 
@@ -721,8 +743,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                     title="Rozkład profitów z transakcji",
                     xaxis_title="Profit ($)",
                     yaxis_title="Liczba transakcji",
-                    height=300,
-                    showlegend=True
+                    height=300
                 )
                 
                 st.plotly_chart(fig_hist, use_container_width=True)
@@ -752,10 +773,11 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 
                 # Download
                 csv = trades_df.to_csv(index=False)
+                direction_short = trade_direction_value.replace(' Only', '').replace('Both', 'LongShort')
                 st.download_button(
                     "📥 Pobierz wyniki (CSV)",
                     csv,
-                    f"backtest_{selected_symbol}_{support_level}{resistance_level}_{datetime.now().strftime('%Y%m%d')}.csv",
+                    f"backtest_{selected_symbol}_{direction_short}_{datetime.now().strftime('%Y%m%d')}.csv",
                     "text/csv"
                 )
             else:
@@ -771,35 +793,36 @@ else:
     st.markdown("""
     ## 📖 Strategia
     
-    **Tygodniowy system sygnałów z wyborem poziomów i zarządzaniem ryzykiem:**
+    **Tygodniowy system sygnałów z wyborem kierunku, poziomów i zarządzaniem ryzykiem:**
+    
+    ### 🎲 Kierunek Tradingu:
+    - **Both (Long + Short)** - Pełna strategia dwukierunkowa
+    - **Long Only** - Tylko pozycje kupna (bullish bias)
+    - **Short Only** - Tylko pozycje sprzedaży (bearish bias)
     
     ### 🎯 Wybór poziomów wejścia:
     
     **LONG (Buy):**
-    - **S3** = Agresywne (dalej od ceny, rzadsze sygnały, większy potencjał)
-    - **S2** = Konserwatywne (bliżej ceny, częstsze sygnały, mniejszy potencjał)
+    - **S3** = Agresywne (dalej, rzadsze sygnały)
+    - **S2** = Konserwatywne (bliżej, częstsze sygnały)
     
     **SHORT (Sell):**
-    - **R3** = Agresywne (dalej od ceny, rzadsze sygnały, większy potencjał)
-    - **R2** = Konserwatywne (bliżej ceny, częstsze sygnały, mniejszy potencjał)
+    - **R3** = Agresywne (dalej, rzadsze sygnały)
+    - **R2** = Konserwatywne (bliżej, częstsze sygnały)
     
     ### 📅 Sygnały (każdy poniedziałek):
-    - Jeśli `Cena < Support Level` → Otwieramy **LONG**
-    - Jeśli `Cena > Resistance Level` → Otwieramy **SHORT**
+    - **LONG:** Cena < Support Level
+    - **SHORT:** Cena > Resistance Level
     
-    ### ⏱️ Zamknięcie pozycji:
-    - **Holding period:** Automatyczne zamknięcie po X dniach
-    - **Stop Loss (opcjonalny):** Zamknięcie gdy strata >= wybrany %
+    ### ⏱️ Zamknięcie:
+    - **Holding period:** Auto zamknięcie po X dniach
+    - **Stop Loss:** Opcjonalnie 0.5% - 3.0%
     
-    ### 🔄 Zarządzanie:
-    - Nakładające się pozycje: możesz mieć jednocześnie LONG i SHORT
-    - Rolling pivots: Poziomy obliczane z ostatnich N dni
-    - Spread uwzględniony w każdej transakcji
-    
-    ### 💡 Strategie:
-    - **S3/R3** = Najbardziej agresywna (najmniej sygnałów, największy potencjał ruchu)
-    - **S2/R2** = Najbardziej konserwatywna (najwięcej sygnałów, najmniejszy potencjał ruchu)
-    - **S3/R2** lub **S2/R3** = Strategie mieszane
+    ### 💡 Przykłady użycia:
+    - **Bullish market:** Long Only + S3 (agresywne kupno)
+    - **Bearish market:** Short Only + R3 (agresywna sprzedaż)
+    - **Range trading:** Both + S2/R2 (konserwatywne oba kierunki)
+    - **Trend following:** Both + S3/R3 (agresywne breakouty)
     """)
 
 # Footer
@@ -807,5 +830,5 @@ st.markdown("---")
 st.markdown(f"""
 **🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | 
 ⚠️ Tylko do celów edukacyjnych | 
-📊 Źródła: Yahoo Finance + CSV
+📊 Yahoo Finance + CSV
 """)
