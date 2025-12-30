@@ -259,7 +259,7 @@ class PivotBacktester:
         
         return df
     
-    def run_backtest(self, df, symbol, initial_capital=10000, lot_size=1.0, spread_value=0.0002, 
+    def run_backtest(self, df, symbol, initial_capital=1000000, lot_size=1.0, spread_value=0.0002, 
                     holding_days=5, stop_loss_pct=None, support_level='S3', resistance_level='R3',
                     trade_direction='Both'):
         """Uruchom backtest strategii"""
