@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 MT5 Pivot Strategy Backtester
-Strategia: Poniedziałkowe sygnały (Buy<S3 / Sell>R3) + stały holding period
+Strategia: Poniedziałkowe sygnały (Buy<S3 / Sell>R3) + stały holding period + stop loss
 """
 
 import pandas as pd
@@ -303,13 +303,14 @@ class PivotBacktester:
         
         return df
     
-    def run_backtest(self, df, initial_capital=10000, lot_size=1.0, spread_pips=2, holding_days=5):
+    def run_backtest(self, df, initial_capital=10000, lot_size=1.0, spread_pips=2, holding_days=5, stop_loss_pct=None):
         """
         Uruchom backtest strategii TYGODNIOWEJ
         Strategia: 
         - Każdy PONIEDZIAŁEK sprawdź sygnał:
           * Jeśli cena < S3 → KUP i trzymaj X dni
           * Jeśli cena > R3 → SPRZEDAJ i trzymaj X dni
+        - Stop loss: zamknij pozycję jeśli strata >= X%
         """
         
         trades = []
@@ -324,14 +325,42 @@ class PivotBacktester:
             
             current_date = row['Date']
             current_price = row['Close']
+            current_high = row['High']
+            current_low = row['Low']
             
-            # ZAMKNIJ wygasające pozycje
+            # SPRAWDŹ STOP LOSS dla otwartych pozycji
             positions_to_close = []
-            for pos_idx, pos in enumerate(open_positions):
-                if current_date >= pos['exit_date']:
-                    positions_to_close.append(pos_idx)
             
-            for pos_idx in sorted(positions_to_close, reverse=True):
+            for pos_idx, pos in enumerate(open_positions):
+                
+                # Sprawdź czy upłynął holding period
+                if current_date >= pos['exit_date']:
+                    positions_to_close.append((pos_idx, 'Time exit', current_price))
+                    continue
+                
+                # Sprawdź STOP LOSS (jeśli aktywny)
+                if stop_loss_pct is not None and stop_loss_pct > 0:
+                    
+                    if pos['type'] == 'long':
+                        # Dla LONG: sprawdź czy Low dotknęło stop loss
+                        stop_loss_price = pos['entry_price'] * (1 - stop_loss_pct / 100)
+                        
+                        if current_low <= stop_loss_price:
+                            # Stop loss trafiony
+                            positions_to_close.append((pos_idx, 'Stop Loss', stop_loss_price))
+                            continue
+                    
+                    else:  # short
+                        # Dla SHORT: sprawdź czy High dotknęło stop loss
+                        stop_loss_price = pos['entry_price'] * (1 + stop_loss_pct / 100)
+                        
+                        if current_high >= stop_loss_price:
+                            # Stop loss trafiony
+                            positions_to_close.append((pos_idx, 'Stop Loss', stop_loss_price))
+                            continue
+            
+            # Zamknij pozycje (od końca żeby nie zepsuć indeksów)
+            for pos_idx, exit_reason, exit_price_raw in sorted(positions_to_close, reverse=True, key=lambda x: x[0]):
                 pos = open_positions.pop(pos_idx)
                 
                 pip_value = 0.0001
@@ -339,11 +368,13 @@ class PivotBacktester:
                     pip_value = 0.01
                 
                 if pos['type'] == 'long':
-                    exit_price = current_price - (spread_pips * 0.0001)
+                    exit_price = exit_price_raw - (spread_pips * 0.0001)
                     pips_gained = (exit_price - pos['entry_price']) / pip_value
-                else:
-                    exit_price = current_price + (spread_pips * 0.0001)
+                    pnl_pct = ((exit_price - pos['entry_price']) / pos['entry_price']) * 100
+                else:  # short
+                    exit_price = exit_price_raw + (spread_pips * 0.0001)
                     pips_gained = (pos['entry_price'] - exit_price) / pip_value
+                    pnl_pct = ((pos['entry_price'] - exit_price) / pos['entry_price']) * 100
                 
                 profit = pips_gained * pip_value * pos['lot_size'] * 100000
                 capital += profit
@@ -359,8 +390,10 @@ class PivotBacktester:
                     'Entry Level': pos['entry_level'],
                     'Pips': pips_gained,
                     'Profit': profit,
+                    'P&L %': pnl_pct,
                     'Capital': capital,
-                    'Duration': days_held
+                    'Duration': days_held,
+                    'Exit Reason': exit_reason
                 })
             
             # OTWIERAJ NOWE POZYCJE W PONIEDZIAŁKI
@@ -394,7 +427,7 @@ class PivotBacktester:
                         'lot_size': lot_size
                     })
         
-        # Zamknij pozostałe pozycje
+        # Zamknij pozostałe pozycje na końcu
         last_row = df.iloc[-1]
         for pos in open_positions:
             pip_value = 0.0001
@@ -404,9 +437,11 @@ class PivotBacktester:
             if pos['type'] == 'long':
                 exit_price = last_row['Close'] - (spread_pips * 0.0001)
                 pips_gained = (exit_price - pos['entry_price']) / pip_value
+                pnl_pct = ((exit_price - pos['entry_price']) / pos['entry_price']) * 100
             else:
                 exit_price = last_row['Close'] + (spread_pips * 0.0001)
                 pips_gained = (pos['entry_price'] - exit_price) / pip_value
+                pnl_pct = ((pos['entry_price'] - exit_price) / pos['entry_price']) * 100
             
             profit = pips_gained * pip_value * pos['lot_size'] * 100000
             capital += profit
@@ -422,15 +457,17 @@ class PivotBacktester:
                 'Entry Level': pos['entry_level'],
                 'Pips': pips_gained,
                 'Profit': profit,
+                'P&L %': pnl_pct,
                 'Capital': capital,
-                'Duration': days_held
+                'Duration': days_held,
+                'Exit Reason': 'End of data'
             })
         
         return pd.DataFrame(trades), capital
 
 # TYTUŁ
 st.title("📊 Forex Pivot Strategy Backtester")
-st.markdown("**Strategia: Sygnały poniedziałkowe (Buy<S3 / Sell>R3) + stały holding period**")
+st.markdown("**Strategia: Sygnały poniedziałkowe (Buy<S3 / Sell>R3) + holding period + stop loss**")
 
 # SIDEBAR
 st.sidebar.header("⚙️ Konfiguracja")
@@ -453,16 +490,34 @@ else:
     selected_symbol = st.sidebar.selectbox("Para walutowa:", major_pairs)
 
 # Parametry
-st.sidebar.markdown("### 💰 Parametry")
+st.sidebar.markdown("### 💰 Parametry Backtestu")
 initial_capital = st.sidebar.number_input("Kapitał początkowy ($)", 1000, 100000, 10000, 1000)
 lot_size = st.sidebar.number_input("Wielkość lota", 0.01, 10.0, 1.0, 0.01)
 spread_pips = st.sidebar.number_input("Spread (pips)", 0.0, 10.0, 2.0, 0.1)
 
-st.sidebar.markdown("### 📅 Analiza")
+st.sidebar.markdown("### 📅 Parametry Strategii")
 if data_source == "🌐 Yahoo Finance":
     backtest_days = st.sidebar.slider("Dni historii", 30, 730, 365)
 lookback_days = st.sidebar.slider("Okres pivot (dni)", 3, 14, 7)
 holding_days = st.sidebar.slider("Holding period (dni)", 1, 30, 5)
+
+# STOP LOSS
+st.sidebar.markdown("### 🛡️ Stop Loss")
+use_stop_loss = st.sidebar.checkbox("Aktywuj Stop Loss", value=False)
+if use_stop_loss:
+    stop_loss_pct = st.sidebar.select_slider(
+        "Stop Loss (%)",
+        options=[0.5, 1.0, 1.5, 2.0],
+        value=0.5
+    )
+else:
+    stop_loss_pct = None
+
+# Info o stop lossie
+if use_stop_loss:
+    st.sidebar.info(f"🛡️ Stop Loss aktywny: {stop_loss_pct}%")
+else:
+    st.sidebar.warning("⚠️ Stop Loss wyłączony")
 
 # Przycisk
 can_run = (uploaded_file is not None) if data_source == "📥 Upload CSV" else (selected_symbol is not None)
@@ -494,22 +549,22 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             
             with st.spinner("Wykonywanie backtestu..."):
                 trades_df, final_capital = backtester.run_backtest(
-                    df, initial_capital, lot_size, spread_pips, holding_days
+                    df, initial_capital, lot_size, spread_pips, holding_days, stop_loss_pct
                 )
             
             # WYNIKI
-            st.markdown("## 📈 Wyniki")
+            st.markdown("## 📈 Wyniki Backtestu")
             
             col1, col2, col3, col4 = st.columns(4)
             total_return = final_capital - initial_capital
             return_pct = (total_return / initial_capital) * 100
             
             with col1:
-                st.metric("Kapitał", f"${final_capital:,.2f}", f"{total_return:+,.2f}")
+                st.metric("Kapitał końcowy", f"${final_capital:,.2f}", f"{total_return:+,.2f}")
             with col2:
-                st.metric("Zwrot", f"{return_pct:.2f}%")
+                st.metric("Zwrot %", f"{return_pct:.2f}%")
             with col3:
-                st.metric("Transakcje", len(trades_df))
+                st.metric("Liczba transakcji", len(trades_df))
             with col4:
                 if len(trades_df) > 0:
                     win_rate = (trades_df['Profit'] > 0).sum() / len(trades_df) * 100
@@ -518,26 +573,63 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             if len(trades_df) > 0:
                 
                 # Statystyki per typ
-                st.markdown("### 📊 Statystyki")
-                col1, col2 = st.columns(2)
+                st.markdown("### 📊 Statystyki szczegółowe")
+                col1, col2, col3 = st.columns(3)
                 
                 with col1:
                     long_trades = trades_df[trades_df['Type'] == 'LONG']
-                    st.markdown("**📈 LONG**")
+                    st.markdown("**📈 LONG positions**")
                     st.write(f"Liczba: {len(long_trades)}")
                     if len(long_trades) > 0:
-                        st.write(f"Win: {(long_trades['Profit'] > 0).sum() / len(long_trades) * 100:.1f}%")
-                        st.write(f"Avg: ${long_trades['Profit'].mean():.2f}")
-                        st.write(f"Total: ${long_trades['Profit'].sum():.2f}")
+                        long_wins = (long_trades['Profit'] > 0).sum()
+                        st.write(f"Win rate: {long_wins / len(long_trades) * 100:.1f}%")
+                        st.write(f"Avg profit: ${long_trades['Profit'].mean():.2f}")
+                        st.write(f"Total profit: ${long_trades['Profit'].sum():.2f}")
+                        sl_hits = len(long_trades[long_trades['Exit Reason'] == 'Stop Loss'])
+                        if sl_hits > 0:
+                            st.write(f"⚠️ SL hits: {sl_hits} ({sl_hits/len(long_trades)*100:.1f}%)")
                 
                 with col2:
                     short_trades = trades_df[trades_df['Type'] == 'SHORT']
-                    st.markdown("**📉 SHORT**")
+                    st.markdown("**📉 SHORT positions**")
                     st.write(f"Liczba: {len(short_trades)}")
                     if len(short_trades) > 0:
-                        st.write(f"Win: {(short_trades['Profit'] > 0).sum() / len(short_trades) * 100:.1f}%")
-                        st.write(f"Avg: ${short_trades['Profit'].mean():.2f}")
-                        st.write(f"Total: ${short_trades['Profit'].sum():.2f}")
+                        short_wins = (short_trades['Profit'] > 0).sum()
+                        st.write(f"Win rate: {short_wins / len(short_trades) * 100:.1f}%")
+                        st.write(f"Avg profit: ${short_trades['Profit'].mean():.2f}")
+                        st.write(f"Total profit: ${short_trades['Profit'].sum():.2f}")
+                        sl_hits = len(short_trades[short_trades['Exit Reason'] == 'Stop Loss'])
+                        if sl_hits > 0:
+                            st.write(f"⚠️ SL hits: {sl_hits} ({sl_hits/len(short_trades)*100:.1f}%)")
+                
+                with col3:
+                    st.markdown("**🛡️ EXIT REASONS**")
+                    total_sl = len(trades_df[trades_df['Exit Reason'] == 'Stop Loss'])
+                    time_exits = len(trades_df[trades_df['Exit Reason'] == 'Time exit'])
+                    end_exits = len(trades_df[trades_df['Exit Reason'] == 'End of data'])
+                    
+                    st.write(f"Stop Loss: {total_sl}")
+                    st.write(f"Time exit: {time_exits}")
+                    st.write(f"End of data: {end_exits}")
+                    
+                    if len(trades_df) > 0:
+                        st.write(f"SL rate: {total_sl/len(trades_df)*100:.1f}%")
+                
+                # Dodatkowe statystyki
+                st.markdown("### 📉 Rozkład P&L")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    avg_win = trades_df[trades_df['Profit'] > 0]['Profit'].mean() if len(trades_df[trades_df['Profit'] > 0]) > 0 else 0
+                    st.metric("Średni zysk", f"${avg_win:.2f}")
+                
+                with col2:
+                    avg_loss = trades_df[trades_df['Profit'] < 0]['Profit'].mean() if len(trades_df[trades_df['Profit'] < 0]) > 0 else 0
+                    st.metric("Średnia strata", f"${avg_loss:.2f}")
+                
+                with col3:
+                    max_dd = (trades_df['Capital'] - trades_df['Capital'].cummax()).min()
+                    st.metric("Max Drawdown", f"${max_dd:.2f}")
                 
                 # Krzywa kapitału
                 st.markdown("### 💹 Krzywa kapitału")
@@ -549,19 +641,49 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 fig.add_trace(go.Scatter(
                     x=dates_curve, y=capital_curve,
                     mode='lines+markers', name='Kapitał',
-                    line=dict(color='#1f77b4', width=2), fill='tonexty'
+                    line=dict(color='#1f77b4', width=2), 
+                    fill='tonexty',
+                    fillcolor='rgba(31, 119, 180, 0.1)'
                 ))
                 
-                fig.add_hline(y=initial_capital, line_dash='dash', line_color='gray')
+                fig.add_hline(y=initial_capital, line_dash='dash', line_color='gray', annotation_text='Start')
+                
                 fig.update_layout(
-                    title=f"{selected_symbol}", xaxis_title="Data",
-                    yaxis_title="Kapitał ($)", height=400, hovermode='x unified'
+                    title=f"Rozwój kapitału - {selected_symbol}",
+                    xaxis_title="Data",
+                    yaxis_title="Kapitał ($)",
+                    height=400, 
+                    hovermode='x unified'
                 )
                 
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Tabela
-                st.markdown("### 📝 Transakcje")
+                # Histogram P&L
+                st.markdown("### 📊 Histogram zysków/strat")
+                
+                fig_hist = go.Figure()
+                
+                fig_hist.add_trace(go.Histogram(
+                    x=trades_df['Profit'],
+                    nbinsx=30,
+                    name='Wszystkie',
+                    marker_color='#1f77b4',
+                    opacity=0.7
+                ))
+                
+                fig_hist.update_layout(
+                    title="Rozkład profitów z transakcji",
+                    xaxis_title="Profit ($)",
+                    yaxis_title="Liczba transakcji",
+                    height=300,
+                    showlegend=True
+                )
+                
+                st.plotly_chart(fig_hist, use_container_width=True)
+                
+                # Tabela transakcji
+                st.markdown("### 📝 Historia transakcji")
+                
                 display = trades_df.copy()
                 display['Entry Date'] = display['Entry Date'].dt.strftime('%Y-%m-%d')
                 display['Exit Date'] = display['Exit Date'].dt.strftime('%Y-%m-%d')
@@ -569,21 +691,65 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                     display[col] = display[col].round(5)
                 display['Pips'] = display['Pips'].round(1)
                 display['Profit'] = display['Profit'].round(2)
+                display['P&L %'] = display['P&L %'].round(2)
                 
-                st.dataframe(display, use_container_width=True)
+                # Pokoloruj Exit Reason
+                def highlight_exit(row):
+                    if row['Exit Reason'] == 'Stop Loss':
+                        return ['background-color: #ffcccc'] * len(row)
+                    elif row['Exit Reason'] == 'Time exit':
+                        return ['background-color: #ccffcc'] * len(row)
+                    return [''] * len(row)
                 
+                styled = display.style.apply(highlight_exit, axis=1)
+                st.dataframe(styled, use_container_width=True)
+                
+                # Download
                 csv = trades_df.to_csv(index=False)
-                st.download_button("📥 CSV", csv, f"backtest_{selected_symbol}.csv", "text/csv")
+                st.download_button(
+                    "📥 Pobierz wyniki (CSV)",
+                    csv,
+                    f"backtest_{selected_symbol}_{datetime.now().strftime('%Y%m%d')}.csv",
+                    "text/csv"
+                )
             else:
-                st.warning("Brak transakcji")
+                st.warning("⚠️ Brak transakcji w wybranym okresie")
         else:
-            st.error("Za mało danych")
+            st.error("❌ Za mało danych dla pivot points")
     else:
-        st.error("Nie udało się pobrać danych")
+        st.error("❌ Nie udało się pobrać danych")
 
 else:
-    st.info("👈 Kliknij URUCHOM BACKTEST")
+    st.info("👈 Skonfiguruj parametry i kliknij 'URUCHOM BACKTEST'")
+    
+    st.markdown("""
+    ## 📖 Strategia
+    
+    **Tygodniowy system sygnałów z zarządzaniem ryzykiem:**
+    
+    ### 📅 Sygnały (każdy poniedziałek):
+    - Jeśli `Cena < S3` → Otwieramy **LONG** (kupno)
+    - Jeśli `Cena > R3` → Otwieramy **SHORT** (sprzedaż)
+    
+    ### ⏱️ Zamknięcie pozycji:
+    - **Holding period:** Automatyczne zamknięcie po X dniach
+    - **Stop Loss (opcjonalny):** Zamknięcie gdy strata >= 0.5% lub 1.0%
+    
+    ### 🔄 Zarządzanie:
+    - Nakładające się pozycje: możesz mieć jednocześnie LONG i SHORT
+    - Rolling pivots: Poziomy S3/R3 obliczane z ostatnich N dni
+    - Spread uwzględniony w każdej transakcji
+    
+    ### 🛡️ Stop Loss:
+    - **LONG:** Zamyka gdy cena spadnie o X% poniżej entry
+    - **SHORT:** Zamyka gdy cena wzrośnie o X% powyżej entry
+    - Priorytet: Stop Loss > Time Exit
+    """)
 
 # Footer
 st.markdown("---")
-st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | ⚠️ Tylko edukacyjnie")
+st.markdown(f"""
+**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | 
+⚠️ Tylko do celów edukacyjnych | 
+📊 Źródła: Yahoo Finance + CSV
+""")
