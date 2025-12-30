@@ -63,6 +63,166 @@ class PivotBacktester:
     def __init__(self, lookback_days=7):
         self.lookback_days = lookback_days
     
+    def load_csv_data(self, uploaded_file):
+        """Załaduj dane z pliku CSV - wspiera format Investing.com i inne"""
+        try:
+            df = None
+            successful_config = None
+            
+            for encoding in ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']:
+                for sep in [',', ';', '\t']:
+                    try:
+                        uploaded_file.seek(0)
+                        df = pd.read_csv(uploaded_file, sep=sep, encoding=encoding, thousands=',')
+                        if len(df.columns) >= 5:
+                            successful_config = f"{encoding} + separator '{sep}'"
+                            break
+                    except:
+                        continue
+                if df is not None and len(df.columns) >= 5:
+                    break
+            
+            if df is None or len(df.columns) < 5:
+                st.error("❌ Nie można odczytać pliku CSV. Sprawdź format.")
+                return None
+            
+            st.info(f"✅ Odczytano plik używając: {successful_config}")
+            st.info(f"📋 Znalezione kolumny: {', '.join(df.columns.tolist())}")
+            
+            df.columns = df.columns.str.strip().str.lower().str.replace('"', '')
+            
+            column_mapping = {}
+            
+            date_cols = ['date', 'datetime', 'time', 'timestamp', 'data', 'datum']
+            for col in df.columns:
+                if col in date_cols or any(d in col for d in date_cols):
+                    column_mapping['Date'] = col
+                    break
+            
+            ohlc_mapping = {
+                'Open': ['open', 'o', 'opening'],
+                'High': ['high', 'h', 'max', 'hi'],
+                'Low': ['low', 'l', 'min', 'lo'],
+                'Close': ['close', 'c', 'last', 'price', 'closing']
+            }
+            
+            for target, possible_names in ohlc_mapping.items():
+                for col in df.columns:
+                    if col in possible_names or any(name in col for name in possible_names):
+                        column_mapping[target] = col
+                        break
+            
+            volume_cols = ['volume', 'vol', 'v', 'vol.', 'wolumen', 'volume.']
+            for col in df.columns:
+                if col in volume_cols or any(v in col for v in volume_cols):
+                    column_mapping['Volume'] = col
+                    break
+            
+            required = ['Date', 'Open', 'High', 'Low', 'Close']
+            missing = [col for col in required if col not in column_mapping]
+            
+            if missing:
+                st.error(f"❌ Brakujące kolumny: {', '.join(missing)}")
+                st.info(f"💡 Dostępne kolumny: {', '.join(df.columns.tolist())}")
+                return None
+            
+            new_df = pd.DataFrame()
+            for target, source in column_mapping.items():
+                new_df[target] = df[source].copy()
+            
+            if 'Volume' not in new_df.columns:
+                new_df['Volume'] = 0
+            
+            # Parsuj daty
+            try:
+                new_df['Date'] = pd.to_datetime(new_df['Date'], errors='coerce')
+                
+                if new_df['Date'].isna().sum() > len(new_df) * 0.5:
+                    sample_date = str(df[column_mapping['Date']].iloc[0]) if len(df) > 0 else None
+                    if sample_date:
+                        sample_date = sample_date.strip().replace('"', '').replace("'", '')
+                    
+                    date_formats = [
+                        '%m/%d/%Y', '%d/%m/%Y', '%b %d, %Y', '%B %d, %Y',
+                        '%Y-%m-%d', '%d.%m.%Y', '%Y/%m/%d', '%d-%m-%Y',
+                        '%d %b %Y', '%b %d %Y'
+                    ]
+                    
+                    for date_format in date_formats:
+                        try:
+                            clean_dates = df[column_mapping['Date']].astype(str).str.strip().str.replace('"', '').str.replace("'", '')
+                            test_date = pd.to_datetime(clean_dates.iloc[0], format=date_format, errors='coerce')
+                            
+                            if pd.notna(test_date):
+                                new_df['Date'] = pd.to_datetime(clean_dates, format=date_format, errors='coerce')
+                                if new_df['Date'].notna().sum() > len(new_df) * 0.5:
+                                    st.success(f"✅ Użyto formatu daty: {date_format}")
+                                    break
+                        except:
+                            continue
+            except Exception as e:
+                st.warning(f"⚠️ Problem z parsowaniem dat: {str(e)}")
+            
+            before_count = len(new_df)
+            new_df = new_df.dropna(subset=['Date'])
+            if len(new_df) < before_count:
+                st.warning(f"⚠️ Usunięto {before_count - len(new_df)} wierszy z nieprawidłowymi datami")
+            
+            # Konwertuj kolumny OHLC
+            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                try:
+                    if new_df[col].dtype == 'object':
+                        new_df[col] = new_df[col].astype(str).str.strip().str.replace('"', '').str.replace("'", '')
+                        
+                        sample_val = str(new_df[col].iloc[0]) if len(new_df) > 0 else "0"
+                        comma_count = sample_val.count(',')
+                        dot_count = sample_val.count('.')
+                        
+                        if comma_count > 0 and dot_count > 0:
+                            last_comma_pos = sample_val.rfind(',')
+                            last_dot_pos = sample_val.rfind('.')
+                            
+                            if last_comma_pos > last_dot_pos:
+                                new_df[col] = new_df[col].str.replace('.', '').str.replace(',', '.')
+                            else:
+                                new_df[col] = new_df[col].str.replace(',', '')
+                        elif comma_count > 0 and dot_count == 0:
+                            comma_pos = sample_val.rfind(',')
+                            digits_after = len(sample_val) - comma_pos - 1
+                            if digits_after == 3:
+                                new_df[col] = new_df[col].str.replace(',', '')
+                            else:
+                                new_df[col] = new_df[col].str.replace(',', '.')
+                        
+                        new_df[col] = new_df[col].str.replace('%', '').str.replace(' ', '').str.replace('\xa0', '')
+                    
+                    new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
+                except Exception as e:
+                    st.error(f"❌ Błąd konwersji kolumny {col}: {str(e)}")
+                    return None
+            
+            before_count = len(new_df)
+            new_df = new_df.dropna(subset=['Open', 'High', 'Low', 'Close'])
+            if len(new_df) < before_count:
+                st.warning(f"⚠️ Usunięto {before_count - len(new_df)} wierszy z brakującymi wartościami")
+            
+            new_df = new_df.sort_values('Date').reset_index(drop=True)
+            
+            if len(new_df) == 0:
+                st.error("❌ Brak prawidłowych danych")
+                return None
+            
+            st.success(f"✅ Załadowano {len(new_df)} wierszy")
+            st.info(f"📅 Okres: {new_df['Date'].min().strftime('%Y-%m-%d')} do {new_df['Date'].max().strftime('%Y-%m-%d')}")
+            
+            return new_df
+            
+        except Exception as e:
+            st.error(f"❌ Błąd: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
+            return None
+    
     def get_forex_data(self, symbol, days=365):
         """Pobierz dane forex"""
         try:
@@ -275,9 +435,22 @@ st.markdown("**Strategia: Sygnały poniedziałkowe (Buy<S3 / Sell>R3) + stały h
 # SIDEBAR
 st.sidebar.header("⚙️ Konfiguracja")
 
-# Wybór pary
-major_pairs = ['EURUSD', 'GBPUSD', 'USDJPY', 'GBPJPY', 'AUDUSD']
-selected_symbol = st.sidebar.selectbox("Para walutowa:", major_pairs)
+# Źródło danych
+data_source = st.sidebar.radio(
+    "📂 Źródło danych:",
+    ["🌐 Yahoo Finance", "📥 Upload CSV"]
+)
+
+selected_symbol = None
+uploaded_file = None
+
+if data_source == "📥 Upload CSV":
+    uploaded_file = st.sidebar.file_uploader("Wybierz plik CSV", type=['csv'])
+    if uploaded_file:
+        selected_symbol = st.sidebar.text_input("Nazwa pary:", "CUSTOM_PAIR")
+else:
+    major_pairs = ['EURUSD', 'GBPUSD', 'USDJPY', 'GBPJPY', 'AUDUSD', 'EURPLN', 'USDPLN']
+    selected_symbol = st.sidebar.selectbox("Para walutowa:", major_pairs)
 
 # Parametry
 st.sidebar.markdown("### 💰 Parametry")
@@ -286,20 +459,29 @@ lot_size = st.sidebar.number_input("Wielkość lota", 0.01, 10.0, 1.0, 0.01)
 spread_pips = st.sidebar.number_input("Spread (pips)", 0.0, 10.0, 2.0, 0.1)
 
 st.sidebar.markdown("### 📅 Analiza")
-backtest_days = st.sidebar.slider("Dni historii", 30, 730, 365)
+if data_source == "🌐 Yahoo Finance":
+    backtest_days = st.sidebar.slider("Dni historii", 30, 730, 365)
 lookback_days = st.sidebar.slider("Okres pivot (dni)", 3, 14, 7)
 holding_days = st.sidebar.slider("Holding period (dni)", 1, 30, 5)
 
 # Przycisk
-if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary"):
+can_run = (uploaded_file is not None) if data_source == "📥 Upload CSV" else (selected_symbol is not None)
+
+if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_run):
     
     backtester = PivotBacktester(lookback_days=lookback_days)
+    df = None
     
-    with st.spinner(f"Pobieranie danych {selected_symbol}..."):
-        df = backtester.get_forex_data(selected_symbol, backtest_days)
+    if data_source == "📥 Upload CSV":
+        with st.spinner("Wczytywanie CSV..."):
+            df = backtester.load_csv_data(uploaded_file)
+    else:
+        with st.spinner(f"Pobieranie {selected_symbol}..."):
+            df = backtester.get_forex_data(selected_symbol, backtest_days)
+            if df is not None:
+                st.success(f"✅ Pobrano {len(df)} dni")
     
     if df is not None and len(df) > 0:
-        st.success(f"✅ Pobrano {len(df)} dni danych")
         
         with st.spinner("Obliczanie pivot points..."):
             df = backtester.calculate_pivot_points(df)
@@ -308,7 +490,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary"):
         pivot_data = df[df['Pivot'].notna()].copy()
         
         if len(pivot_data) > 0:
-            st.success(f"✅ Obliczono poziomy pivot dla {len(pivot_data)} dni")
+            st.success(f"✅ Pivot dla {len(pivot_data)} dni")
             
             with st.spinner("Wykonywanie backtestu..."):
                 trades_df, final_capital = backtester.run_backtest(
@@ -316,18 +498,18 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary"):
                 )
             
             # WYNIKI
-            st.markdown("## 📈 Wyniki Backtestu")
+            st.markdown("## 📈 Wyniki")
             
             col1, col2, col3, col4 = st.columns(4)
             total_return = final_capital - initial_capital
             return_pct = (total_return / initial_capital) * 100
             
             with col1:
-                st.metric("Kapitał końcowy", f"${final_capital:,.2f}", f"{total_return:+,.2f}")
+                st.metric("Kapitał", f"${final_capital:,.2f}", f"{total_return:+,.2f}")
             with col2:
-                st.metric("Zwrot %", f"{return_pct:.2f}%")
+                st.metric("Zwrot", f"{return_pct:.2f}%")
             with col3:
-                st.metric("Liczba transakcji", len(trades_df))
+                st.metric("Transakcje", len(trades_df))
             with col4:
                 if len(trades_df) > 0:
                     win_rate = (trades_df['Profit'] > 0).sum() / len(trades_df) * 100
@@ -336,61 +518,50 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary"):
             if len(trades_df) > 0:
                 
                 # Statystyki per typ
-                st.markdown("### 📊 Statystyki per typ pozycji")
+                st.markdown("### 📊 Statystyki")
                 col1, col2 = st.columns(2)
                 
                 with col1:
                     long_trades = trades_df[trades_df['Type'] == 'LONG']
-                    st.markdown("**📈 LONG positions**")
+                    st.markdown("**📈 LONG**")
                     st.write(f"Liczba: {len(long_trades)}")
                     if len(long_trades) > 0:
-                        long_wins = (long_trades['Profit'] > 0).sum()
-                        st.write(f"Win rate: {long_wins / len(long_trades) * 100:.1f}%")
-                        st.write(f"Avg profit: ${long_trades['Profit'].mean():.2f}")
-                        st.write(f"Total profit: ${long_trades['Profit'].sum():.2f}")
+                        st.write(f"Win: {(long_trades['Profit'] > 0).sum() / len(long_trades) * 100:.1f}%")
+                        st.write(f"Avg: ${long_trades['Profit'].mean():.2f}")
+                        st.write(f"Total: ${long_trades['Profit'].sum():.2f}")
                 
                 with col2:
                     short_trades = trades_df[trades_df['Type'] == 'SHORT']
-                    st.markdown("**📉 SHORT positions**")
+                    st.markdown("**📉 SHORT**")
                     st.write(f"Liczba: {len(short_trades)}")
                     if len(short_trades) > 0:
-                        short_wins = (short_trades['Profit'] > 0).sum()
-                        st.write(f"Win rate: {short_wins / len(short_trades) * 100:.1f}%")
-                        st.write(f"Avg profit: ${short_trades['Profit'].mean():.2f}")
-                        st.write(f"Total profit: ${short_trades['Profit'].sum():.2f}")
+                        st.write(f"Win: {(short_trades['Profit'] > 0).sum() / len(short_trades) * 100:.1f}%")
+                        st.write(f"Avg: ${short_trades['Profit'].mean():.2f}")
+                        st.write(f"Total: ${short_trades['Profit'].sum():.2f}")
                 
                 # Krzywa kapitału
                 st.markdown("### 💹 Krzywa kapitału")
                 
                 fig = go.Figure()
-                
                 capital_curve = [initial_capital] + trades_df['Capital'].tolist()
                 dates_curve = [df['Date'].iloc[0]] + trades_df['Exit Date'].tolist()
                 
                 fig.add_trace(go.Scatter(
-                    x=dates_curve,
-                    y=capital_curve,
-                    mode='lines+markers',
-                    name='Kapitał',
-                    line=dict(color='#1f77b4', width=2),
-                    fill='tonexty'
+                    x=dates_curve, y=capital_curve,
+                    mode='lines+markers', name='Kapitał',
+                    line=dict(color='#1f77b4', width=2), fill='tonexty'
                 ))
                 
                 fig.add_hline(y=initial_capital, line_dash='dash', line_color='gray')
-                
                 fig.update_layout(
-                    title=f"Rozwój kapitału - {selected_symbol}",
-                    xaxis_title="Data",
-                    yaxis_title="Kapitał ($)",
-                    height=400,
-                    hovermode='x unified'
+                    title=f"{selected_symbol}", xaxis_title="Data",
+                    yaxis_title="Kapitał ($)", height=400, hovermode='x unified'
                 )
                 
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Tabela transakcji
-                st.markdown("### 📝 Historia transakcji")
-                
+                # Tabela
+                st.markdown("### 📝 Transakcje")
                 display = trades_df.copy()
                 display['Entry Date'] = display['Entry Date'].dt.strftime('%Y-%m-%d')
                 display['Exit Date'] = display['Exit Date'].dt.strftime('%Y-%m-%d')
@@ -401,40 +572,18 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary"):
                 
                 st.dataframe(display, use_container_width=True)
                 
-                # Download
                 csv = trades_df.to_csv(index=False)
-                st.download_button(
-                    "📥 Pobierz wyniki (CSV)",
-                    csv,
-                    f"backtest_{selected_symbol}_{datetime.now().strftime('%Y%m%d')}.csv",
-                    "text/csv"
-                )
+                st.download_button("📥 CSV", csv, f"backtest_{selected_symbol}.csv", "text/csv")
             else:
-                st.warning("⚠️ Brak transakcji w wybranym okresie")
+                st.warning("Brak transakcji")
         else:
-            st.error("❌ Za mało danych dla obliczenia pivot points")
+            st.error("Za mało danych")
     else:
-        st.error("❌ Nie udało się pobrać danych")
+        st.error("Nie udało się pobrać danych")
 
 else:
-    st.info("👈 Skonfiguruj parametry w panelu bocznym i kliknij 'URUCHOM BACKTEST'")
-    
-    st.markdown("""
-    ## 📖 Strategia
-    
-    **Tygodniowy system sygnałów:**
-    
-    - 📅 **Każdy poniedziałek** sprawdzamy sygnał:
-      - Jeśli `Cena < S3` → Otwieramy **LONG** (kupno)
-      - Jeśli `Cena > R3` → Otwieramy **SHORT** (sprzedaż)
-    
-    - ⏱️ **Holding period:** Każda pozycja trzymana przez X dni (np. 5)
-    
-    - 🔄 **Nakładające się pozycje:** Możesz mieć jednocześnie LONG i SHORT
-    
-    - 📊 **Rolling pivots:** Poziomy S3/R3 obliczane z ostatnich N dni
-    """)
+    st.info("👈 Kliknij URUCHOM BACKTEST")
 
 # Footer
 st.markdown("---")
-st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}** | ⚠️ Tylko do celów edukacyjnych")
+st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | ⚠️ Tylko edukacyjnie")
