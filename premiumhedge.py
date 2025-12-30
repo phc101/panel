@@ -2,7 +2,7 @@
 """
 MT5 Pivot Strategy Backtester
 Strategia: Poniedziałkowe sygnały (wybór kierunku i poziomów) + holding period + stop loss
-Spread: Realistyczny (LONG: entry+spread, exit-spread | SHORT: entry-spread, exit+spread)
+Spread: Format 0.0000 (np. 0.0002 = 2 pips dla większości par, 0.02 = 2 pips dla JPY)
 """
 
 import pandas as pd
@@ -304,13 +304,13 @@ class PivotBacktester:
         
         return df
     
-    def run_backtest(self, df, initial_capital=10000, lot_size=1.0, spread_pips=2, 
+    def run_backtest(self, df, initial_capital=10000, lot_size=1.0, spread_value=0.0002, 
                     holding_days=5, stop_loss_pct=None, support_level='S3', resistance_level='R3',
                     trade_direction='Both'):
         """
         Uruchom backtest strategii TYGODNIOWEJ
         
-        Spread w pipsach (np. 2 pips = 0.0002 dla większości par, 0.02 dla JPY)
+        Spread w formacie 0.0000 (np. 0.0002 = 2 pips dla większości par, 0.02 = 2 pips dla JPY)
         - LONG: entry = price + spread, exit = price - spread
         - SHORT: entry = price - spread, exit = price + spread
         """
@@ -319,13 +319,10 @@ class PivotBacktester:
         capital = initial_capital
         open_positions = []
         
-        # Określ wartość pipsa dla danej pary
-        pip_value = 0.0001  # standardowo dla większości par
+        # Określ wartość pipsa dla danej pary (do obliczenia zysków w pipsach)
+        pip_value = 0.0001  # standardowo
         if 'JPY' in df.attrs.get('symbol', ''):
             pip_value = 0.01  # dla par z JPY
-        
-        # Spread w jednostkach ceny
-        spread_value = spread_pips * pip_value
         
         for i in range(len(df)):
             row = df.iloc[i]
@@ -508,32 +505,61 @@ else:
 st.sidebar.markdown("### 💰 Parametry Backtestu")
 initial_capital = st.sidebar.number_input("Kapitał początkowy ($)", 1000, 100000, 10000, 1000)
 lot_size = st.sidebar.number_input("Wielkość lota", 0.01, 10.0, 1.0, 0.01)
-spread_pips = st.sidebar.number_input(
-    "Spread (pips)", 
-    0.0, 10.0, 2.0, 0.1,
-    help="Spread w pipsach (np. 2 = 0.0002 dla większości par, 0.02 dla JPY)"
+
+# SPREAD w formacie 0.0000
+spread_value = st.sidebar.number_input(
+    "Spread (format 0.0000)", 
+    min_value=0.0000,
+    max_value=0.1000,
+    value=0.0002,
+    step=0.0001,
+    format="%.4f",
+    help="Spread w formacie 0.0000. Przykłady: 0.0002 = 2 pips (EURUSD), 0.02 = 2 pips (USDJPY)"
 )
 
 # Info o spreadzie
 with st.sidebar.expander("ℹ️ Jak działa spread?"):
-    pip_val = 0.0001
+    # Oblicz pips na podstawie spreadu
     if selected_symbol and 'JPY' in selected_symbol:
-        pip_val = 0.01
-    spread_val = spread_pips * pip_val
-    
-    st.markdown(f"""
-    **Spread: {spread_pips} pips = {spread_val:.5f}**
-    
-    **LONG (kupno):**
-    - Entry: Cena + {spread_val:.5f} (ASK)
-    - Exit: Cena - {spread_val:.5f} (BID)
-    
-    **SHORT (sprzedaż):**
-    - Entry: Cena - {spread_val:.5f} (BID)
-    - Exit: Cena + {spread_val:.5f} (ASK)
-    
-    💡 Spread zawsze działa **przeciwko** traderowi (koszt transakcji).
-    """)
+        pips_display = spread_value / 0.01
+        st.markdown(f"""
+        **Spread: {spread_value:.4f} = {pips_display:.1f} pips (JPY pair)**
+        
+        **LONG (kupno):**
+        - Entry: Cena + {spread_value:.4f} (ASK)
+        - Exit: Cena - {spread_value:.4f} (BID)
+        
+        **SHORT (sprzedaż):**
+        - Entry: Cena - {spread_value:.4f} (BID)
+        - Exit: Cena + {spread_value:.4f} (ASK)
+        
+        💡 Spread zawsze działa **przeciwko** traderowi.
+        
+        **Typowe spready JPY pairs:**
+        - 0.02 = 2 pips (tight)
+        - 0.03 = 3 pips (normal)
+        - 0.05 = 5 pips (wide)
+        """)
+    else:
+        pips_display = spread_value / 0.0001
+        st.markdown(f"""
+        **Spread: {spread_value:.4f} = {pips_display:.1f} pips**
+        
+        **LONG (kupno):**
+        - Entry: Cena + {spread_value:.4f} (ASK)
+        - Exit: Cena - {spread_value:.4f} (BID)
+        
+        **SHORT (sprzedaż):**
+        - Entry: Cena - {spread_value:.4f} (BID)
+        - Exit: Cena + {spread_value:.4f} (ASK)
+        
+        💡 Spread zawsze działa **przeciwko** traderowi.
+        
+        **Typowe spready major pairs:**
+        - 0.0001 = 1 pip (ECN)
+        - 0.0002 = 2 pips (standard)
+        - 0.0003 = 3 pips (retail)
+        """)
 
 st.sidebar.markdown("### 📅 Parametry Strategii")
 if data_source == "🌐 Yahoo Finance":
@@ -633,17 +659,21 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         if len(pivot_data) > 0:
             st.success(f"✅ Pivot dla {len(pivot_data)} dni")
             
+            # Oblicz pips dla wyświetlenia
+            pip_val = 0.01 if 'JPY' in selected_symbol else 0.0001
+            spread_pips_display = spread_value / pip_val
+            
             # Info o strategii
             if trade_direction_value == "Both":
-                st.info(f"📊 **Strategia:** LONG przy {support_level} | SHORT przy {resistance_level} | Spread: {spread_pips} pips")
+                st.info(f"📊 **Strategia:** LONG przy {support_level} | SHORT przy {resistance_level} | Spread: {spread_value:.4f} ({spread_pips_display:.1f} pips)")
             elif trade_direction_value == "Long Only":
-                st.info(f"📈 **Strategia:** Tylko LONG przy {support_level} | Spread: {spread_pips} pips")
+                st.info(f"📈 **Strategia:** Tylko LONG przy {support_level} | Spread: {spread_value:.4f} ({spread_pips_display:.1f} pips)")
             else:
-                st.info(f"📉 **Strategia:** Tylko SHORT przy {resistance_level} | Spread: {spread_pips} pips")
+                st.info(f"📉 **Strategia:** Tylko SHORT przy {resistance_level} | Spread: {spread_value:.4f} ({spread_pips_display:.1f} pips)")
             
             with st.spinner("Wykonywanie backtestu..."):
                 trades_df, final_capital = backtester.run_backtest(
-                    df, initial_capital, lot_size, spread_pips, holding_days, 
+                    df, initial_capital, lot_size, spread_value, holding_days, 
                     stop_loss_pct, support_level, resistance_level, trade_direction_value
                 )
             
@@ -707,7 +737,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                             st.write(f"⚠️ SL: {sl_hits} ({sl_hits/len(short_trades)*100:.1f}%)")
                 
                 with col3:
-                    st.markdown("**🛡️ EXIT REASONS**")
+                    st.markdown("**🛡️ EXIT & COSTS**")
                     total_sl = len(trades_df[trades_df['Exit Reason'] == 'Stop Loss'])
                     time_exits = len(trades_df[trades_df['Exit Reason'] == 'Time exit'])
                     
@@ -716,11 +746,8 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                     if len(trades_df) > 0:
                         st.write(f"SL rate: {total_sl/len(trades_df)*100:.1f}%")
                     
-                    # Spread cost
-                    pip_val = 0.0001
-                    if 'JPY' in selected_symbol:
-                        pip_val = 0.01
-                    total_spread_cost = len(trades_df) * 2 * spread_pips * pip_val * lot_size * 100000
+                    # Spread cost (2x spread na każdą transakcję: entry + exit)
+                    total_spread_cost = len(trades_df) * 2 * spread_value * lot_size * 100000
                     st.write(f"💸 Spread cost: ${total_spread_cost:.2f}")
                 
                 # Dodatkowe statystyki
@@ -762,7 +789,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 
                 direction_label = trade_direction_value.replace(' Only', '').replace('Both', 'Long+Short')
                 fig.update_layout(
-                    title=f"Rozwój kapitału - {selected_symbol} ({direction_label})",
+                    title=f"Rozwój kapitału - {selected_symbol} ({direction_label}, Spread: {spread_value:.4f})",
                     xaxis_title="Data",
                     yaxis_title="Kapitał ($)",
                     height=400, 
@@ -838,46 +865,51 @@ else:
     st.markdown("""
     ## 📖 Strategia
     
-    **Tygodniowy system sygnałów z realistycznym spreadem:**
+    **Tygodniowy system sygnałów z precyzyjnym spreadem:**
     
-    ### 💸 Spread (koszt transakcji):
+    ### 💸 Spread (format 0.0000):
+    - Wpisuj spread bezpośrednio: **0.0002** = 2 pips (EURUSD)
+    - Dla par JPY: **0.02** = 2 pips (USDJPY)
     - **LONG:** Entry po ASK (+spread), Exit po BID (-spread)
     - **SHORT:** Entry po BID (-spread), Exit po ASK (+spread)
     - Spread zawsze działa **przeciwko** traderowi
-    - Typowe spready: 1-3 pips (major pairs), 3-10 pips (cross/exotic)
     
-    ### 🎲 Kierunek Tradingu:
-    - **Both** - Pełna strategia dwukierunkowa
-    - **Long Only** - Tylko kupno (bullish bias)
-    - **Short Only** - Tylko sprzedaż (bearish bias)
+    ### 📊 Przykłady spreadów:
+    **Major pairs (format 0.0000):**
+    - 0.0001 = 1 pip (ECN, bardzo dobry)
+    - 0.0002 = 2 pips (standardowy broker)
+    - 0.0003 = 3 pips (typowy retail)
+    - 0.0005 = 5 pips (szeroki spread)
     
-    ### 🎯 Poziomy wejścia:
-    - **S3/R3** = Agresywne (dalej, rzadsze sygnały)
-    - **S2/R2** = Konserwatywne (bliżej, częstsze sygnały)
+    **JPY pairs (format 0.00):**
+    - 0.02 = 2 pips (dobry)
+    - 0.03 = 3 pips (normalny)
+    - 0.05 = 5 pips (szeroki)
     
-    ### 📅 Sygnały (każdy poniedziałek):
-    - **LONG:** Cena < Support Level
-    - **SHORT:** Cena > Resistance Level
+    ### 🎲 Kierunek:
+    - **Both** - Long + Short
+    - **Long Only** - Tylko kupno
+    - **Short Only** - Tylko sprzedaż
     
-    ### ⏱️ Zamknięcie:
-    - **Holding period:** Auto po X dniach
-    - **Stop Loss:** Opcjonalnie 0.5% - 3.0%
+    ### 🎯 Poziomy:
+    - **S3/R3** = Agresywne
+    - **S2/R2** = Konserwatywne
     
-    ### 💡 Przykład spreadu:
+    ### 💡 Przykład (EURUSD, spread 0.0002):
 ```
-    EURUSD, spread 2 pips = 0.0002
-    
     LONG:
-    - Cena: 1.1000
-    - Entry: 1.1002 (ASK)
-    - Exit: 1.1098 (BID)
-    - Profit: 96 pips
+    - Rynek: 1.1000
+    - Entry: 1.1002 (ASK, +0.0002)
+    - Exit: 1.1098 (BID, -0.0002)
+    - Gross move: 100 pips
+    - Net profit: 96 pips (minus 4 pips spread)
     
     SHORT:
-    - Cena: 1.1000
-    - Entry: 1.0998 (BID)
-    - Exit: 1.0902 (ASK)
-    - Profit: 96 pips
+    - Rynek: 1.1000
+    - Entry: 1.0998 (BID, -0.0002)
+    - Exit: 1.0902 (ASK, +0.0002)
+    - Gross move: 100 pips
+    - Net profit: 96 pips (minus 4 pips spread)
 ```
     """)
 
@@ -887,5 +919,5 @@ st.markdown(f"""
 **🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | 
 ⚠️ Tylko do celów edukacyjnych | 
 📊 Yahoo Finance + CSV | 
-💸 Spread: Realistyczny (ASK/BID)
+💸 Spread: Format 0.0000 (precyzyjny)
 """)
