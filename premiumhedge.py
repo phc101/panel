@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-MT5 Pivot Strategy Backtester
+MT5 Pivot Strategy Backtester - Multi-Currency
 Strategia: Poniedziałkowe sygnały + analiza roczna + prognoza
-Holding period: 1-90 dni
+Multi-currency: Do 5 par jednocześnie
 """
 
 import pandas as pd
@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 
 # Page config
 st.set_page_config(
-    page_title="Forex Pivot Strategy Backtester",
+    page_title="Forex Pivot Strategy Backtester - Multi-Currency",
     page_icon="📊",
     layout="wide"
 )
@@ -65,7 +65,7 @@ class PivotBacktester:
         self.lookback_days = lookback_days
     
     def load_csv_data(self, uploaded_file):
-        """Załaduj dane z pliku CSV - wspiera format Investing.com i inne"""
+        """Załaduj dane z pliku CSV"""
         try:
             df = None
             successful_config = None
@@ -84,16 +84,16 @@ class PivotBacktester:
                     break
             
             if df is None or len(df.columns) < 5:
-                st.error("❌ Nie można odczytać pliku CSV. Sprawdź format.")
+                st.error("❌ Nie można odczytać pliku CSV.")
                 return None
             
-            st.info(f"✅ Odczytano plik używając: {successful_config}")
+            st.info(f"✅ Odczytano plik: {successful_config}")
             
             df.columns = df.columns.str.strip().str.lower().str.replace('"', '')
             
             column_mapping = {}
             
-            date_cols = ['date', 'datetime', 'time', 'timestamp', 'data', 'datum']
+            date_cols = ['date', 'datetime', 'time', 'timestamp']
             for col in df.columns:
                 if col in date_cols or any(d in col for d in date_cols):
                     column_mapping['Date'] = col
@@ -101,8 +101,8 @@ class PivotBacktester:
             
             ohlc_mapping = {
                 'Open': ['open', 'o', 'opening'],
-                'High': ['high', 'h', 'max', 'hi'],
-                'Low': ['low', 'l', 'min', 'lo'],
+                'High': ['high', 'h', 'max'],
+                'Low': ['low', 'l', 'min'],
                 'Close': ['close', 'c', 'last', 'price', 'closing']
             }
             
@@ -111,12 +111,6 @@ class PivotBacktester:
                     if col in possible_names or any(name in col for name in possible_names):
                         column_mapping[target] = col
                         break
-            
-            volume_cols = ['volume', 'vol', 'v', 'vol.', 'wolumen', 'volume.']
-            for col in df.columns:
-                if col in volume_cols or any(v in col for v in volume_cols):
-                    column_mapping['Volume'] = col
-                    break
             
             required = ['Date', 'Open', 'High', 'Low', 'Close']
             missing = [col for col in required if col not in column_mapping]
@@ -129,82 +123,18 @@ class PivotBacktester:
             for target, source in column_mapping.items():
                 new_df[target] = df[source].copy()
             
-            if 'Volume' not in new_df.columns:
-                new_df['Volume'] = 0
-            
-            # Parsuj daty
-            try:
-                new_df['Date'] = pd.to_datetime(new_df['Date'], errors='coerce')
-                
-                if new_df['Date'].isna().sum() > len(new_df) * 0.5:
-                    sample_date = str(df[column_mapping['Date']].iloc[0]) if len(df) > 0 else None
-                    if sample_date:
-                        sample_date = sample_date.strip().replace('"', '').replace("'", '')
-                    
-                    date_formats = [
-                        '%m/%d/%Y', '%d/%m/%Y', '%b %d, %Y', '%B %d, %Y',
-                        '%Y-%m-%d', '%d.%m.%Y', '%Y/%m/%d', '%d-%m-%Y',
-                        '%d %b %Y', '%b %d %Y'
-                    ]
-                    
-                    for date_format in date_formats:
-                        try:
-                            clean_dates = df[column_mapping['Date']].astype(str).str.strip().str.replace('"', '').str.replace("'", '')
-                            test_date = pd.to_datetime(clean_dates.iloc[0], format=date_format, errors='coerce')
-                            
-                            if pd.notna(test_date):
-                                new_df['Date'] = pd.to_datetime(clean_dates, format=date_format, errors='coerce')
-                                if new_df['Date'].notna().sum() > len(new_df) * 0.5:
-                                    break
-                        except:
-                            continue
-            except Exception as e:
-                st.warning(f"⚠️ Problem z parsowaniem dat: {str(e)}")
-            
+            new_df['Date'] = pd.to_datetime(new_df['Date'], errors='coerce')
             new_df = new_df.dropna(subset=['Date'])
             
-            # Konwertuj kolumny OHLC
-            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-                try:
-                    if new_df[col].dtype == 'object':
-                        new_df[col] = new_df[col].astype(str).str.strip().str.replace('"', '').str.replace("'", '')
-                        
-                        sample_val = str(new_df[col].iloc[0]) if len(new_df) > 0 else "0"
-                        comma_count = sample_val.count(',')
-                        dot_count = sample_val.count('.')
-                        
-                        if comma_count > 0 and dot_count > 0:
-                            last_comma_pos = sample_val.rfind(',')
-                            last_dot_pos = sample_val.rfind('.')
-                            
-                            if last_comma_pos > last_dot_pos:
-                                new_df[col] = new_df[col].str.replace('.', '').str.replace(',', '.')
-                            else:
-                                new_df[col] = new_df[col].str.replace(',', '')
-                        elif comma_count > 0 and dot_count == 0:
-                            comma_pos = sample_val.rfind(',')
-                            digits_after = len(sample_val) - comma_pos - 1
-                            if digits_after == 3:
-                                new_df[col] = new_df[col].str.replace(',', '')
-                            else:
-                                new_df[col] = new_df[col].str.replace(',', '.')
-                        
-                        new_df[col] = new_df[col].str.replace('%', '').str.replace(' ', '').str.replace('\xa0', '')
-                    
-                    new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
-                except Exception as e:
-                    st.error(f"❌ Błąd konwersji kolumny {col}: {str(e)}")
-                    return None
+            for col in ['Open', 'High', 'Low', 'Close']:
+                if new_df[col].dtype == 'object':
+                    new_df[col] = new_df[col].astype(str).str.replace(',', '.')
+                new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
             
             new_df = new_df.dropna(subset=['Open', 'High', 'Low', 'Close'])
             new_df = new_df.sort_values('Date').reset_index(drop=True)
             
-            if len(new_df) == 0:
-                st.error("❌ Brak prawidłowych danych")
-                return None
-            
             st.success(f"✅ Załadowano {len(new_df)} wierszy")
-            
             return new_df
             
         except Exception as e:
@@ -241,8 +171,7 @@ class PivotBacktester:
                 'Open': data['Open'].astype(float),
                 'High': data['High'].astype(float), 
                 'Low': data['Low'].astype(float),
-                'Close': data['Close'].astype(float),
-                'Volume': data['Volume'].astype(float) if 'Volume' in data.columns else 0
+                'Close': data['Close'].astype(float)
             }).reset_index(drop=True)
             
             df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
@@ -250,7 +179,6 @@ class PivotBacktester:
             return df
             
         except Exception as e:
-            st.error(f"Błąd pobierania danych: {str(e)}")
             return None
     
     def calculate_pivot_points(self, df):
@@ -291,7 +219,7 @@ class PivotBacktester:
         
         return df
     
-    def run_backtest(self, df, initial_capital=10000, lot_size=1.0, spread_value=0.0002, 
+    def run_backtest(self, df, symbol, initial_capital=10000, lot_size=1.0, spread_value=0.0002, 
                     holding_days=5, stop_loss_pct=None, support_level='S3', resistance_level='R3',
                     trade_direction='Both'):
         """Uruchom backtest strategii"""
@@ -301,7 +229,7 @@ class PivotBacktester:
         open_positions = []
         
         pip_value = 0.0001
-        if 'JPY' in df.attrs.get('symbol', ''):
+        if 'JPY' in symbol:
             pip_value = 0.01
         
         for i in range(len(df)):
@@ -327,14 +255,11 @@ class PivotBacktester:
                     
                     if pos['type'] == 'long':
                         stop_loss_price = pos['entry_price'] * (1 - stop_loss_pct / 100)
-                        
                         if current_low <= stop_loss_price:
                             positions_to_close.append((pos_idx, 'Stop Loss', stop_loss_price))
                             continue
-                    
                     else:
                         stop_loss_price = pos['entry_price'] * (1 + stop_loss_pct / 100)
-                        
                         if current_high >= stop_loss_price:
                             positions_to_close.append((pos_idx, 'Stop Loss', stop_loss_price))
                             continue
@@ -357,6 +282,7 @@ class PivotBacktester:
                 days_held = (current_date - pos['entry_date']).days
                 
                 trades.append({
+                    'Symbol': symbol,
                     'Entry Date': pos['entry_date'],
                     'Exit Date': current_date,
                     'Type': pos['type'].upper(),
@@ -425,6 +351,7 @@ class PivotBacktester:
             days_held = (last_row['Date'] - pos['entry_date']).days
             
             trades.append({
+                'Symbol': symbol,
                 'Entry Date': pos['entry_date'],
                 'Exit Date': last_row['Date'],
                 'Type': pos['type'].upper(),
@@ -448,7 +375,6 @@ def calculate_yearly_stats(trades_df, initial_capital):
         return pd.DataFrame()
     
     trades_df['Year'] = trades_df['Exit Date'].dt.year
-    
     yearly_stats = []
     
     for year in sorted(trades_df['Year'].unique()):
@@ -464,13 +390,11 @@ def calculate_yearly_stats(trades_df, initial_capital):
                 start_capital = initial_capital
         
         end_capital = year_trades.iloc[-1]['Capital']
-        
         profit_nominal = end_capital - start_capital
         profit_pct = (profit_nominal / start_capital) * 100
         
         total_trades = len(year_trades)
         winning_trades = len(year_trades[year_trades['Profit'] > 0])
-        losing_trades = len(year_trades[year_trades['Profit'] < 0])
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
         
         year_capital = year_trades['Capital'].values
@@ -548,31 +472,47 @@ def calculate_projection(trades_df, initial_capital, years_ahead=5):
     return pd.DataFrame(projections), avg_annual_return, std_annual_return
 
 # TYTUŁ
-st.title("📊 Forex Pivot Strategy Backtester")
-st.markdown("**Strategia: Analiza roczna + Prognoza 5-letnia**")
+st.title("📊 Forex Pivot Strategy Backtester - Multi-Currency")
+st.markdown("**Strategia: Do 5 par walutowych jednocześnie + analiza zbiorcza**")
 
 # SIDEBAR
 st.sidebar.header("⚙️ Konfiguracja")
 
+# Wybór źródła danych
 data_source = st.sidebar.radio(
     "📂 Źródło danych:",
     ["🌐 Yahoo Finance", "📥 Upload CSV"]
 )
 
-selected_symbol = None
+selected_symbols = []
 uploaded_file = None
 
 if data_source == "📥 Upload CSV":
     uploaded_file = st.sidebar.file_uploader("Wybierz plik CSV", type=['csv'])
     if uploaded_file:
-        selected_symbol = st.sidebar.text_input("Nazwa pary:", "CUSTOM_PAIR")
+        custom_symbol = st.sidebar.text_input("Nazwa pary:", "CUSTOM_PAIR")
+        selected_symbols = [custom_symbol]
 else:
-    major_pairs = ['EURUSD', 'GBPUSD', 'USDJPY', 'GBPJPY', 'AUDUSD', 'EURPLN', 'USDPLN']
-    selected_symbol = st.sidebar.selectbox("Para walutowa:", major_pairs)
+    # Multi-select dla wielu par
+    st.sidebar.markdown("### 💱 Wybór par walutowych")
+    
+    available_pairs = list(FOREX_SYMBOLS.keys())
+    
+    selected_symbols = st.sidebar.multiselect(
+        "Wybierz pary (max 5):",
+        available_pairs,
+        default=['EURUSD'],
+        max_selections=5
+    )
+    
+    if len(selected_symbols) > 0:
+        st.sidebar.success(f"✅ Wybrano: {len(selected_symbols)} par")
+    else:
+        st.sidebar.warning("⚠️ Wybierz co najmniej 1 parę")
 
 st.sidebar.markdown("### 💰 Parametry")
 initial_capital = st.sidebar.number_input("Kapitał początkowy ($)", 1000, 100000, 10000, 1000)
-lot_size = st.sidebar.number_input("Wielkość lota", 0.01, 10.0, 1.0, 0.01)
+lot_size = st.sidebar.number_input("Wielkość lota (per para)", 0.01, 10.0, 1.0, 0.01)
 
 spread_value = st.sidebar.number_input(
     "Spread (format 0.0000)", 
@@ -583,24 +523,11 @@ spread_value = st.sidebar.number_input(
     format="%.4f"
 )
 
-with st.sidebar.expander("ℹ️ Jak działa spread?"):
-    pip_val = 0.01 if (selected_symbol and 'JPY' in selected_symbol) else 0.0001
-    spread_pips_display = spread_value / pip_val
-    
-    st.markdown(f"""
-    **Spread: {spread_value:.4f} = {spread_pips_display:.1f} pips**
-    
-    **LONG:** Entry +{spread_value:.4f}, Exit -{spread_value:.4f}
-    **SHORT:** Entry -{spread_value:.4f}, Exit +{spread_value:.4f}
-    
-    💡 Spread zawsze przeciwko traderowi
-    """)
-
 st.sidebar.markdown("### 📅 Strategia")
 if data_source == "🌐 Yahoo Finance":
     backtest_days = st.sidebar.slider("Dni historii", 365, 3650, 1825)
 lookback_days = st.sidebar.slider("Okres pivot (dni)", 3, 14, 7)
-holding_days = st.sidebar.slider("Holding period (dni)", 1, 90, 5)  # ZMIENIONE: max 90 dni
+holding_days = st.sidebar.slider("Holding period (dni)", 1, 90, 5)
 
 trade_direction = st.sidebar.radio(
     "Kierunek:",
@@ -614,13 +541,6 @@ direction_map = {
     "Short Only (Sell)": "Short Only"
 }
 trade_direction_value = direction_map[trade_direction]
-
-if trade_direction_value == "Both":
-    st.sidebar.success("📊 Dwukierunkowa")
-elif trade_direction_value == "Long Only":
-    st.sidebar.info("📈 Tylko LONG")
-else:
-    st.sidebar.info("📉 Tylko SHORT")
 
 if trade_direction_value in ["Both", "Long Only"]:
     support_level = st.sidebar.radio("📉 Support:", ["S3", "S2"], index=0)
@@ -638,367 +558,387 @@ if use_stop_loss:
 else:
     stop_loss_pct = None
 
-can_run = (uploaded_file is not None) if data_source == "📥 Upload CSV" else (selected_symbol is not None)
+can_run = (uploaded_file is not None) if data_source == "📥 Upload CSV" else (len(selected_symbols) > 0)
 
 if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_run):
     
     backtester = PivotBacktester(lookback_days=lookback_days)
-    df = None
+    
+    # Dla multi-currency dzielimy kapitał na pary
+    capital_per_pair = initial_capital / len(selected_symbols)
+    
+    all_trades = []
+    results_per_symbol = {}
     
     if data_source == "📥 Upload CSV":
         with st.spinner("Wczytywanie CSV..."):
             df = backtester.load_csv_data(uploaded_file)
-    else:
-        with st.spinner(f"Pobieranie {selected_symbol}..."):
-            df = backtester.get_forex_data(selected_symbol, backtest_days)
-            if df is not None:
-                st.success(f"✅ Pobrano {len(df)} dni")
-    
-    if df is not None and len(df) > 0:
-        
-        with st.spinner("Obliczanie pivot points..."):
-            df = backtester.calculate_pivot_points(df)
-            df.attrs['symbol'] = selected_symbol
-        
-        pivot_data = df[df['Pivot'].notna()].copy()
-        
-        if len(pivot_data) > 0:
-            st.success(f"✅ Pivot dla {len(pivot_data)} dni")
             
-            pip_val = 0.01 if 'JPY' in selected_symbol else 0.0001
-            spread_pips_display = spread_value / pip_val
-            
-            if trade_direction_value == "Both":
-                st.info(f"📊 **Strategia:** LONG przy {support_level} | SHORT przy {resistance_level} | Spread: {spread_value:.4f} ({spread_pips_display:.1f} pips) | Holding: {holding_days} dni")
-            elif trade_direction_value == "Long Only":
-                st.info(f"📈 **Strategia:** Tylko LONG przy {support_level} | Spread: {spread_value:.4f} ({spread_pips_display:.1f} pips) | Holding: {holding_days} dni")
-            else:
-                st.info(f"📉 **Strategia:** Tylko SHORT przy {resistance_level} | Spread: {spread_value:.4f} ({spread_pips_display:.1f} pips) | Holding: {holding_days} dni")
-            
-            with st.spinner("Wykonywanie backtestu..."):
-                trades_df, final_capital = backtester.run_backtest(
-                    df, initial_capital, lot_size, spread_value, holding_days, 
-                    stop_loss_pct, support_level, resistance_level, trade_direction_value
+            if df is not None and len(df) > 0:
+                df = backtester.calculate_pivot_points(df)
+                
+                trades_df, final_cap = backtester.run_backtest(
+                    df, selected_symbols[0], capital_per_pair, lot_size, spread_value,
+                    holding_days, stop_loss_pct, support_level, resistance_level, trade_direction_value
                 )
-            
-            # WYNIKI GŁÓWNE
-            st.markdown("## 📈 Wyniki Ogólne")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            total_return = final_capital - initial_capital
-            return_pct = (total_return / initial_capital) * 100
-            
-            with col1:
-                st.metric("Kapitał końcowy", f"${final_capital:,.2f}", f"{total_return:+,.2f}")
-            with col2:
-                st.metric("Zwrot %", f"{return_pct:.2f}%")
-            with col3:
-                st.metric("Liczba transakcji", len(trades_df))
-            with col4:
-                if len(trades_df) > 0:
-                    win_rate = (trades_df['Profit'] > 0).sum() / len(trades_df) * 100
-                    st.metric("Win Rate", f"{win_rate:.1f}%")
-            
-            if len(trades_df) > 0:
                 
-                # ANALIZA ROCZNA
-                st.markdown("## 📊 Analiza Roczna")
+                all_trades.append(trades_df)
+                results_per_symbol[selected_symbols[0]] = {
+                    'trades': trades_df,
+                    'final_capital': final_cap,
+                    'initial_capital': capital_per_pair
+                }
+    
+    else:
+        # Multi-currency backtest
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for idx, symbol in enumerate(selected_symbols):
+            status_text.text(f"Przetwarzam {symbol}... ({idx+1}/{len(selected_symbols)})")
+            
+            df = backtester.get_forex_data(symbol, backtest_days)
+            
+            if df is not None and len(df) > 0:
+                df = backtester.calculate_pivot_points(df)
                 
-                yearly_stats = calculate_yearly_stats(trades_df, initial_capital)
+                trades_df, final_cap = backtester.run_backtest(
+                    df, symbol, capital_per_pair, lot_size, spread_value,
+                    holding_days, stop_loss_pct, support_level, resistance_level, trade_direction_value
+                )
+                
+                all_trades.append(trades_df)
+                results_per_symbol[symbol] = {
+                    'trades': trades_df,
+                    'final_capital': final_cap,
+                    'initial_capital': capital_per_pair
+                }
+            else:
+                st.warning(f"⚠️ Nie udało się pobrać danych dla {symbol}")
+            
+            progress_bar.progress((idx + 1) / len(selected_symbols))
+        
+        status_text.empty()
+        progress_bar.empty()
+    
+    if len(all_trades) > 0:
+        # Połącz wszystkie transakcje
+        combined_trades = pd.concat(all_trades, ignore_index=True)
+        combined_trades = combined_trades.sort_values('Exit Date').reset_index(drop=True)
+        
+        # Przelicz kapitał skumulowany dla połączonego portfolio
+        combined_trades['Portfolio Capital'] = initial_capital
+        for i in range(len(combined_trades)):
+            if i > 0:
+                combined_trades.at[i, 'Portfolio Capital'] = combined_trades.at[i-1, 'Portfolio Capital'] + combined_trades.at[i, 'Profit']
+            else:
+                combined_trades.at[0, 'Portfolio Capital'] = initial_capital + combined_trades.at[0, 'Profit']
+        
+        final_portfolio_capital = combined_trades.iloc[-1]['Portfolio Capital']
+        
+        # WYNIKI ZBIORCZE
+        st.markdown("## 📊 Podsumowanie Portfolio")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        total_return = final_portfolio_capital - initial_capital
+        return_pct = (total_return / initial_capital) * 100
+        
+        with col1:
+            st.metric("Kapitał portfolio", f"${final_portfolio_capital:,.2f}", f"{total_return:+,.2f}")
+        with col2:
+            st.metric("Zwrot portfolio %", f"{return_pct:.2f}%")
+        with col3:
+            st.metric("Liczba par", len(results_per_symbol))
+        with col4:
+            st.metric("Łączne transakcje", len(combined_trades))
+        
+        # WYNIKI PER PARA
+        st.markdown("## 💱 Wyniki per para walutowa")
+        
+        summary_data = []
+        
+        for symbol, result in results_per_symbol.items():
+            trades = result['trades']
+            final_cap = result['final_capital']
+            initial_cap = result['initial_capital']
+            
+            if len(trades) > 0:
+                profit = final_cap - initial_cap
+                profit_pct = (profit / initial_cap) * 100
+                win_rate = (trades['Profit'] > 0).sum() / len(trades) * 100
+                total_pips = trades['Pips'].sum()
+                avg_holding = trades['Duration'].mean()
+                
+                summary_data.append({
+                    'Symbol': symbol,
+                    'Initial Capital': initial_cap,
+                    'Final Capital': final_cap,
+                    'Profit ($)': profit,
+                    'Profit (%)': profit_pct,
+                    'Trades': len(trades),
+                    'Win Rate (%)': win_rate,
+                    'Total Pips': total_pips,
+                    'Avg Holding (days)': avg_holding
+                })
+        
+        summary_df = pd.DataFrame(summary_data)
+        
+        if len(summary_df) > 0:
+            # Formatuj tabelę
+            display_summary = summary_df.copy()
+            display_summary['Initial Capital'] = display_summary['Initial Capital'].apply(lambda x: f"${x:,.2f}")
+            display_summary['Final Capital'] = display_summary['Final Capital'].apply(lambda x: f"${x:,.2f}")
+            display_summary['Profit ($)'] = display_summary['Profit ($)'].apply(lambda x: f"${x:+,.2f}")
+            display_summary['Profit (%)'] = display_summary['Profit (%)'].apply(lambda x: f"{x:+.2f}%")
+            display_summary['Win Rate (%)'] = display_summary['Win Rate (%)'].apply(lambda x: f"{x:.1f}%")
+            display_summary['Total Pips'] = display_summary['Total Pips'].apply(lambda x: f"{x:.1f}")
+            display_summary['Avg Holding (days)'] = display_summary['Avg Holding (days)'].apply(lambda x: f"{x:.1f}")
+            
+            st.dataframe(display_summary, use_container_width=True, hide_index=True)
+            
+            # Wykres porównawczy zwrotów
+            st.markdown("### 📊 Porównanie zwrotów per para")
+            
+            fig_comparison = go.Figure()
+            
+            colors = ['green' if x > 0 else 'red' for x in summary_df['Profit (%)']]
+            
+            fig_comparison.add_trace(go.Bar(
+                x=summary_df['Symbol'],
+                y=summary_df['Profit (%)'],
+                marker_color=colors,
+                text=summary_df['Profit (%)'].apply(lambda x: f"{x:+.1f}%"),
+                textposition='outside'
+            ))
+            
+            fig_comparison.update_layout(
+                title="Zwrot % per para walutowa",
+                xaxis_title="Para",
+                yaxis_title="Zwrot (%)",
+                height=400,
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig_comparison, use_container_width=True)
+            
+            # Krzywa kapitału portfolio
+            st.markdown("### 💹 Krzywa kapitału portfolio")
+            
+            fig_portfolio = go.Figure()
+            
+            fig_portfolio.add_trace(go.Scatter(
+                x=combined_trades['Exit Date'],
+                y=combined_trades['Portfolio Capital'],
+                mode='lines',
+                name='Portfolio',
+                line=dict(color='blue', width=2),
+                fill='tonexty',
+                fillcolor='rgba(31, 119, 180, 0.1)'
+            ))
+            
+            fig_portfolio.add_hline(y=initial_capital, line_dash='dash', line_color='gray', annotation_text='Start')
+            
+            fig_portfolio.update_layout(
+                title=f"Rozwój kapitału portfolio ({len(selected_symbols)} par)",
+                xaxis_title="Data",
+                yaxis_title="Kapitał ($)",
+                height=500,
+                hovermode='x unified'
+            )
+            
+            st.plotly_chart(fig_portfolio, use_container_width=True)
+            
+            # ANALIZA ROCZNA PORTFOLIO
+            st.markdown("## 📅 Analiza roczna portfolio")
+            
+            yearly_stats = calculate_yearly_stats(combined_trades, initial_capital)
+            
+            if len(yearly_stats) > 0:
+                display_yearly = yearly_stats.copy()
+                display_yearly['Start Capital'] = display_yearly['Start Capital'].apply(lambda x: f"${x:,.2f}")
+                display_yearly['End Capital'] = display_yearly['End Capital'].apply(lambda x: f"${x:,.2f}")
+                display_yearly['Profit ($)'] = display_yearly['Profit ($)'].apply(lambda x: f"${x:+,.2f}")
+                display_yearly['Profit (%)'] = display_yearly['Profit (%)'].apply(lambda x: f"{x:+.2f}%")
+                display_yearly['Win Rate (%)'] = display_yearly['Win Rate (%)'].apply(lambda x: f"{x:.1f}%")
+                display_yearly['Max DD (%)'] = display_yearly['Max DD (%)'].apply(lambda x: f"{x:.2f}%")
+                display_yearly['Sharpe Ratio'] = display_yearly['Sharpe Ratio'].apply(lambda x: f"{x:.2f}")
+                display_yearly['Total Pips'] = display_yearly['Total Pips'].apply(lambda x: f"{x:.1f}")
+                
+                st.dataframe(display_yearly, use_container_width=True, hide_index=True)
+                
+                # Wykres rocznych zwrotów
+                fig_yearly = go.Figure()
+                
+                colors_yearly = ['green' if x > 0 else 'red' for x in yearly_stats['Profit (%)']]
+                
+                fig_yearly.add_trace(go.Bar(
+                    x=yearly_stats['Year'],
+                    y=yearly_stats['Profit (%)'],
+                    marker_color=colors_yearly,
+                    text=yearly_stats['Profit (%)'].apply(lambda x: f"{x:+.1f}%"),
+                    textposition='outside'
+                ))
+                
+                fig_yearly.update_layout(
+                    title="Roczne zwroty portfolio",
+                    xaxis_title="Rok",
+                    yaxis_title="Zwrot (%)",
+                    height=400
+                )
+                
+                st.plotly_chart(fig_yearly, use_container_width=True)
+            
+            # PROGNOZA PORTFOLIO
+            st.markdown("## 🔮 Prognoza 5-letnia portfolio")
+            
+            projection_df, avg_return, std_return = calculate_projection(combined_trades, initial_capital, 5)
+            
+            if projection_df is not None:
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Średni roczny zwrot", f"{avg_return*100:.2f}%")
+                with col2:
+                    st.metric("Odchylenie std", f"{std_return*100:.2f}%")
+                with col3:
+                    final_projected = projection_df.iloc[-1]['Base']
+                    projected_gain = final_projected - final_portfolio_capital
+                    st.metric("Prognoza za 5 lat", f"${final_projected:,.0f}", f"+${projected_gain:,.0f}")
+                
+                # Wykres prognozy
+                fig_proj = go.Figure()
                 
                 if len(yearly_stats) > 0:
-                    st.markdown("### 📅 Statystyki per rok")
-                    
-                    display_yearly = yearly_stats.copy()
-                    display_yearly['Start Capital'] = display_yearly['Start Capital'].apply(lambda x: f"${x:,.2f}")
-                    display_yearly['End Capital'] = display_yearly['End Capital'].apply(lambda x: f"${x:,.2f}")
-                    display_yearly['Profit ($)'] = display_yearly['Profit ($)'].apply(lambda x: f"${x:+,.2f}")
-                    display_yearly['Profit (%)'] = display_yearly['Profit (%)'].apply(lambda x: f"{x:+.2f}%")
-                    display_yearly['Win Rate (%)'] = display_yearly['Win Rate (%)'].apply(lambda x: f"{x:.1f}%")
-                    display_yearly['Max DD (%)'] = display_yearly['Max DD (%)'].apply(lambda x: f"{x:.2f}%")
-                    display_yearly['Sharpe Ratio'] = display_yearly['Sharpe Ratio'].apply(lambda x: f"{x:.2f}")
-                    display_yearly['Total Pips'] = display_yearly['Total Pips'].apply(lambda x: f"{x:.1f}")
-                    
-                    st.dataframe(display_yearly, use_container_width=True, hide_index=True)
-                    
-                    # Wykres rocznych zwrotów
-                    st.markdown("### 📊 Roczne zwroty (%)")
-                    
-                    fig_yearly = go.Figure()
-                    
-                    colors = ['green' if x > 0 else 'red' for x in yearly_stats['Profit (%)']]
-                    
-                    fig_yearly.add_trace(go.Bar(
-                        x=yearly_stats['Year'],
-                        y=yearly_stats['Profit (%)'],
-                        marker_color=colors,
-                        text=yearly_stats['Profit (%)'].apply(lambda x: f"{x:+.1f}%"),
-                        textposition='outside'
-                    ))
-                    
-                    fig_yearly.update_layout(
-                        title="Roczne zwroty procentowe",
-                        xaxis_title="Rok",
-                        yaxis_title="Zwrot (%)",
-                        height=400,
-                        showlegend=False
-                    )
-                    
-                    st.plotly_chart(fig_yearly, use_container_width=True)
-                    
-                    # Wykres skumulowanego kapitału
-                    st.markdown("### 💹 Skumulowany kapitał")
-                    
-                    fig_cum = go.Figure()
-                    
-                    fig_cum.add_trace(go.Scatter(
+                    fig_proj.add_trace(go.Scatter(
                         x=yearly_stats['Year'],
                         y=yearly_stats['End Capital'],
                         mode='lines+markers',
-                        name='Kapitał',
-                        line=dict(color='#1f77b4', width=3),
-                        marker=dict(size=10),
-                        fill='tozeroy',
-                        fillcolor='rgba(31, 119, 180, 0.1)'
+                        name='Historia',
+                        line=dict(color='blue', width=3)
                     ))
-                    
-                    fig_cum.add_hline(y=initial_capital, line_dash='dash', line_color='gray', annotation_text='Start')
-                    
-                    fig_cum.update_layout(
-                        title="Rozwój kapitału rok do roku",
-                        xaxis_title="Rok",
-                        yaxis_title="Kapitał ($)",
-                        height=400
-                    )
-                    
-                    st.plotly_chart(fig_cum, use_container_width=True)
                 
-                # PROGNOZA
-                st.markdown("## 🔮 Prognoza 5-letnia")
+                current_year = datetime.now().year
+                proj_years = [current_year] + projection_df['Year'].tolist()
+                proj_base = [final_portfolio_capital] + projection_df['Base'].tolist()
+                proj_pess = [final_portfolio_capital] + projection_df['Pessimistic'].tolist()
+                proj_opt = [final_portfolio_capital] + projection_df['Optimistic'].tolist()
                 
-                projection_df, avg_return, std_return = calculate_projection(trades_df, initial_capital, 5)
+                fig_proj.add_trace(go.Scatter(
+                    x=proj_years, y=proj_base,
+                    mode='lines+markers', name='Bazowa',
+                    line=dict(color='green', width=2, dash='dash')
+                ))
                 
-                if projection_df is not None:
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.metric("Średni roczny zwrot", f"{avg_return*100:.2f}%")
-                    with col2:
-                        st.metric("Odchylenie std", f"{std_return*100:.2f}%")
-                    with col3:
-                        final_projected = projection_df.iloc[-1]['Base']
-                        projected_gain = final_projected - final_capital
-                        st.metric("Prognoza za 5 lat", f"${final_projected:,.0f}", f"+${projected_gain:,.0f}")
-                    
-                    # Tabela prognozy
-                    st.markdown("### 📋 Scenariusze prognozy")
-                    
-                    display_proj = projection_df.copy()
-                    display_proj['Pessimistic'] = display_proj['Pessimistic'].apply(lambda x: f"${x:,.0f}")
-                    display_proj['Base'] = display_proj['Base'].apply(lambda x: f"${x:,.0f}")
-                    display_proj['Optimistic'] = display_proj['Optimistic'].apply(lambda x: f"${x:,.0f}")
-                    
-                    for idx in range(len(projection_df)):
-                        if idx == 0:
-                            base_val = final_capital
-                        else:
-                            base_val = projection_df.iloc[idx-1]['Base']
-                        
-                        pess_change = (projection_df.iloc[idx]['Pessimistic'] - base_val) / base_val * 100
-                        base_change = (projection_df.iloc[idx]['Base'] - base_val) / base_val * 100
-                        opt_change = (projection_df.iloc[idx]['Optimistic'] - base_val) / base_val * 100
-                        
-                        display_proj.at[idx, 'Pess. Change'] = f"{pess_change:+.1f}%"
-                        display_proj.at[idx, 'Base Change'] = f"{base_change:+.1f}%"
-                        display_proj.at[idx, 'Opt. Change'] = f"{opt_change:+.1f}%"
-                    
-                    st.dataframe(display_proj, use_container_width=True, hide_index=True)
-                    
-                    # Wykres prognozy
-                    st.markdown("### 📈 Wizualizacja prognozy")
-                    
-                    fig_proj = go.Figure()
-                    
-                    if len(yearly_stats) > 0:
-                        fig_proj.add_trace(go.Scatter(
-                            x=yearly_stats['Year'],
-                            y=yearly_stats['End Capital'],
-                            mode='lines+markers',
-                            name='Historia',
-                            line=dict(color='blue', width=3),
-                            marker=dict(size=8)
-                        ))
-                    
-                    current_year = datetime.now().year
-                    fig_proj.add_trace(go.Scatter(
-                        x=[current_year],
-                        y=[final_capital],
-                        mode='markers',
-                        name='Obecny stan',
-                        marker=dict(size=15, color='gold', symbol='star')
-                    ))
-                    
-                    proj_years = [current_year] + projection_df['Year'].tolist()
-                    proj_base = [final_capital] + projection_df['Base'].tolist()
-                    proj_pess = [final_capital] + projection_df['Pessimistic'].tolist()
-                    proj_opt = [final_capital] + projection_df['Optimistic'].tolist()
-                    
-                    fig_proj.add_trace(go.Scatter(
-                        x=proj_years,
-                        y=proj_base,
-                        mode='lines+markers',
-                        name='Prognoza bazowa',
-                        line=dict(color='green', width=2, dash='dash'),
-                        marker=dict(size=6)
-                    ))
-                    
-                    fig_proj.add_trace(go.Scatter(
-                        x=proj_years,
-                        y=proj_opt,
-                        mode='lines',
-                        name='Optymistyczna',
-                        line=dict(color='lightgreen', width=1, dash='dot'),
-                        fill='tonexty'
-                    ))
-                    
-                    fig_proj.add_trace(go.Scatter(
-                        x=proj_years,
-                        y=proj_pess,
-                        mode='lines',
-                        name='Pesymistyczna',
-                        line=dict(color='salmon', width=1, dash='dot')
-                    ))
-                    
-                    fig_proj.update_layout(
-                        title=f"Prognoza kapitału: {current_year}-{current_year+5}",
-                        xaxis_title="Rok",
-                        yaxis_title="Kapitał ($)",
-                        height=500,
-                        hovermode='x unified'
-                    )
-                    
-                    st.plotly_chart(fig_proj, use_container_width=True)
-                    
-                    with st.expander("ℹ️ Założenia prognozy"):
-                        st.markdown(f"""
-                        **Metodologia:**
-                        - Prognoza oparta na historycznych rocznych zwrotach
-                        - **Średni roczny zwrot:** {avg_return*100:.2f}%
-                        - **Odchylenie standardowe:** {std_return*100:.2f}%
-                        
-                        **Scenariusze:**
-                        - **Pesymistyczny:** {(avg_return - std_return)*100:.2f}% rocznie
-                        - **Bazowy:** {avg_return*100:.2f}% rocznie
-                        - **Optymistyczny:** {(avg_return + std_return)*100:.2f}% rocznie
-                        
-                        ⚠️ **Uwaga:** Prognoza zakłada kontynuację historycznych wzorców.
-                        """)
+                fig_proj.add_trace(go.Scatter(
+                    x=proj_years, y=proj_opt,
+                    mode='lines', name='Optymistyczna',
+                    line=dict(color='lightgreen', width=1, dash='dot'),
+                    fill='tonexty'
+                ))
                 
-                # Szczegółowe statystyki
-                st.markdown("## 📊 Statystyki szczegółowe")
+                fig_proj.add_trace(go.Scatter(
+                    x=proj_years, y=proj_pess,
+                    mode='lines', name='Pesymistyczna',
+                    line=dict(color='salmon', width=1, dash='dot')
+                ))
                 
-                long_trades = trades_df[trades_df['Type'] == 'LONG']
-                short_trades = trades_df[trades_df['Type'] == 'SHORT']
-                
-                if trade_direction_value == "Both":
-                    col1, col2, col3 = st.columns(3)
-                elif trade_direction_value == "Long Only":
-                    col1, col3 = st.columns(2)
-                else:
-                    col2, col3 = st.columns(2)
-                
-                if trade_direction_value in ["Both", "Long Only"] and len(long_trades) > 0:
-                    with col1:
-                        st.markdown(f"**📈 LONG ({support_level})**")
-                        st.write(f"Liczba: {len(long_trades)}")
-                        long_wins = (long_trades['Profit'] > 0).sum()
-                        st.write(f"Win rate: {long_wins / len(long_trades) * 100:.1f}%")
-                        st.write(f"Avg profit: ${long_trades['Profit'].mean():.2f}")
-                        st.write(f"Total profit: ${long_trades['Profit'].sum():.2f}")
-                        st.write(f"Avg holding: {long_trades['Duration'].mean():.1f} dni")
-                
-                if trade_direction_value in ["Both", "Short Only"] and len(short_trades) > 0:
-                    with col2:
-                        st.markdown(f"**📉 SHORT ({resistance_level})**")
-                        st.write(f"Liczba: {len(short_trades)}")
-                        short_wins = (short_trades['Profit'] > 0).sum()
-                        st.write(f"Win rate: {short_wins / len(short_trades) * 100:.1f}%")
-                        st.write(f"Avg profit: ${short_trades['Profit'].mean():.2f}")
-                        st.write(f"Total profit: ${short_trades['Profit'].sum():.2f}")
-                        st.write(f"Avg holding: {short_trades['Duration'].mean():.1f} dni")
-                
-                with col3:
-                    st.markdown("**🛡️ EXIT & COSTS**")
-                    total_sl = len(trades_df[trades_df['Exit Reason'] == 'Stop Loss'])
-                    time_exits = len(trades_df[trades_df['Exit Reason'] == 'Time exit'])
-                    st.write(f"Stop Loss: {total_sl}")
-                    st.write(f"Time exit: {time_exits}")
-                    
-                    total_spread_cost = len(trades_df) * 2 * spread_value * lot_size * 100000
-                    st.write(f"💸 Spread cost: ${total_spread_cost:.2f}")
-                    st.write(f"Avg holding: {trades_df['Duration'].mean():.1f} dni")
-                
-                # Tabela transakcji
-                st.markdown("### 📝 Historia transakcji")
-                
-                display = trades_df.copy()
-                display['Entry Date'] = display['Entry Date'].dt.strftime('%Y-%m-%d')
-                display['Exit Date'] = display['Exit Date'].dt.strftime('%Y-%m-%d')
-                for col in ['Entry Price', 'Exit Price', 'Entry Level Value']:
-                    display[col] = display[col].round(5)
-                display['Pips'] = display['Pips'].round(1)
-                display['Profit'] = display['Profit'].round(2)
-                display['P&L %'] = display['P&L %'].round(2)
-                
-                def highlight_exit(row):
-                    if row['Exit Reason'] == 'Stop Loss':
-                        return ['background-color: #ffcccc'] * len(row)
-                    elif row['Exit Reason'] == 'Time exit':
-                        return ['background-color: #ccffcc'] * len(row)
-                    return [''] * len(row)
-                
-                styled = display.style.apply(highlight_exit, axis=1)
-                st.dataframe(styled, use_container_width=True)
-                
-                csv = trades_df.to_csv(index=False)
-                direction_short = trade_direction_value.replace(' Only', '').replace('Both', 'LongShort')
-                st.download_button(
-                    "📥 Pobierz CSV",
-                    csv,
-                    f"backtest_{selected_symbol}_{direction_short}_H{holding_days}_{datetime.now().strftime('%Y%m%d')}.csv",
-                    "text/csv"
+                fig_proj.update_layout(
+                    title=f"Prognoza kapitału portfolio ({len(selected_symbols)} par)",
+                    xaxis_title="Rok",
+                    yaxis_title="Kapitał ($)",
+                    height=500,
+                    hovermode='x unified'
                 )
-            else:
-                st.warning("⚠️ Brak transakcji")
-        else:
-            st.error("❌ Za mało danych")
+                
+                st.plotly_chart(fig_proj, use_container_width=True)
+            
+            # STATYSTYKI SZCZEGÓŁOWE
+            st.markdown("## 📊 Statystyki szczegółowe portfolio")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**📈 LONG**")
+                long_trades = combined_trades[combined_trades['Type'] == 'LONG']
+                if len(long_trades) > 0:
+                    st.write(f"Liczba: {len(long_trades)}")
+                    st.write(f"Win rate: {(long_trades['Profit'] > 0).sum() / len(long_trades) * 100:.1f}%")
+                    st.write(f"Total profit: ${long_trades['Profit'].sum():.2f}")
+            
+            with col2:
+                st.markdown("**📉 SHORT**")
+                short_trades = combined_trades[combined_trades['Type'] == 'SHORT']
+                if len(short_trades) > 0:
+                    st.write(f"Liczba: {len(short_trades)}")
+                    st.write(f"Win rate: {(short_trades['Profit'] > 0).sum() / len(short_trades) * 100:.1f}%")
+                    st.write(f"Total profit: ${short_trades['Profit'].sum():.2f}")
+            
+            with col3:
+                st.markdown("**🛡️ EXIT**")
+                st.write(f"Stop Loss: {len(combined_trades[combined_trades['Exit Reason'] == 'Stop Loss'])}")
+                st.write(f"Time exit: {len(combined_trades[combined_trades['Exit Reason'] == 'Time exit'])}")
+                st.write(f"Avg holding: {combined_trades['Duration'].mean():.1f} dni")
+            
+            # Historia transakcji
+            st.markdown("### 📝 Historia transakcji portfolio")
+            
+            display = combined_trades.copy()
+            display['Entry Date'] = display['Entry Date'].dt.strftime('%Y-%m-%d')
+            display['Exit Date'] = display['Exit Date'].dt.strftime('%Y-%m-%d')
+            for col in ['Entry Price', 'Exit Price', 'Entry Level Value']:
+                display[col] = display[col].round(5)
+            display['Pips'] = display['Pips'].round(1)
+            display['Profit'] = display['Profit'].round(2)
+            display['P&L %'] = display['P&L %'].round(2)
+            display['Portfolio Capital'] = display['Portfolio Capital'].round(2)
+            
+            st.dataframe(display, use_container_width=True)
+            
+            # Download
+            csv = combined_trades.to_csv(index=False)
+            symbols_str = "_".join(selected_symbols[:3])
+            if len(selected_symbols) > 3:
+                symbols_str += f"_plus{len(selected_symbols)-3}"
+            
+            st.download_button(
+                "📥 Pobierz wyniki portfolio (CSV)",
+                csv,
+                f"portfolio_{symbols_str}_H{holding_days}_{datetime.now().strftime('%Y%m%d')}.csv",
+                "text/csv"
+            )
+    
     else:
-        st.error("❌ Nie udało się pobrać danych")
+        st.error("❌ Nie udało się wykonać backtestingu dla żadnej pary")
 
 else:
-    st.info("👈 Kliknij URUCHOM BACKTEST")
+    st.info("👈 Wybierz pary walutowe i kliknij URUCHOM BACKTEST")
     
     st.markdown("""
-    ## 📖 O strategii
+    ## 📖 Multi-Currency Backtesting
     
-    **Holding period: 1-90 dni**
-    - **1-5 dni:** Scalping/swing
-    - **5-10 dni:** Krótkoterminowe
-    - **10-30 dni:** Średnioterminowe
-    - **30-90 dni:** Długoterminowe (quarterly)
+    **Nowe funkcje:**
+    - ✅ **Do 5 par jednocześnie** - dywersyfikacja portfolio
+    - ✅ **Podział kapitału** - automatyczny na wybrane pary
+    - ✅ **Zbiorcze statystyki** - portfolio jako całość
+    - ✅ **Porównanie par** - która para najlepsza?
+    - ✅ **Krzywa portfolio** - skumulowany kapitał wszystkich par
+    - ✅ **Prognoza portfolio** - na podstawie wszystkich transakcji
     
-    **Analiza roczna:**
-    - Zwroty per rok ($ i %)
-    - Win rate roczny
-    - Max drawdown
-    - Sharpe ratio
+    **Przykład:**
+    - Kapitał: $10,000
+    - Wybrane pary: EURUSD, GBPUSD, USDJPY
+    - Alokacja: $3,333 per para
+    - Transakcje: niezależne per para
+    - Kapitał końcowy: suma ze wszystkich par
     
-    **Prognoza 5-letnia:**
-    - 3 scenariusze (pesymistyczny/bazowy/optymistyczny)
-    - Oparta na historycznych zwrotach
-    - Zakłada kontynuację wzorców
+    **Korzyści:**
+    - 📊 Dywersyfikacja ryzyka
+    - 💹 Większa liczba okazji
+    - 🎯 Lepszy profil risk/reward
+    - 📈 Stabilniejsze zwroty
     """)
 
 st.markdown("---")
-st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | ⚠️ Tylko edukacyjnie")
+st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | ⚠️ Tylko edukacyjnie | 💱 Multi-Currency Support")
