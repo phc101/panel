@@ -3,7 +3,7 @@
 MT5 Pivot Strategy Backtester - Multi-Currency
 Strategia: Poniedziałkowe sygnały + analiza roczna + prognoza
 Multi-currency: Do 5 par jednocześnie (Yahoo Finance lub CSV)
-+ Management Fee 1.5% + Success Fee 12%
++ Management Fee + Success Fee (FULLY CORRECTED REALISTIC CALCULATIONS)
 """
 
 import pandas as pd
@@ -415,7 +415,7 @@ class PivotBacktester:
         return pd.DataFrame(trades), capital
 
 def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_pct=1.5, success_fee_pct=12.0):
-    """Oblicz statystyki roczne Z FEES"""
+    """Oblicz statystyki roczne Z FEES - FULLY CORRECTED V3"""
     if len(trades_df) == 0:
         return pd.DataFrame(), pd.DataFrame()
     
@@ -425,11 +425,15 @@ def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_
     yearly_stats_before_fees = []
     yearly_stats_after_fees = []
     
-    capital_after_fees = initial_capital
+    # Kapitał AFTER FEES (rzeczywisty kapitał dostępny między latami)
+    capital_after_fees_tracking = initial_capital
     
     for year in sorted(trades_df['Year'].unique()):
         year_trades = trades_df[trades_df['Year'] == year]
         
+        # ============================================
+        # PRZED FEES (teoretyczny kapitał z portfolio)
+        # ============================================
         if year == trades_df['Year'].min():
             start_capital_before = initial_capital
         else:
@@ -441,38 +445,67 @@ def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_
         
         end_capital_before = year_trades.iloc[-1]['Portfolio Capital']
         profit_before = end_capital_before - start_capital_before
-        profit_pct_before = (profit_before / start_capital_before) * 100
+        profit_pct_before = (profit_before / start_capital_before) * 100 if start_capital_before != 0 else 0
         
-        management_fee = start_capital_before * (management_fee_pct / 100)
+        # ============================================
+        # PO FEES (REALISTIC) - POPRAWIONE OBLICZENIA V3
+        # ============================================
         
-        if profit_before > 0:
-            success_fee = profit_before * (success_fee_pct / 100)
+        # KROK 1: Start roku = kapitał after fees z poprzedniego roku
+        start_capital_after = capital_after_fees_tracking
+        
+        # KROK 2: Management Fee pobierany NA POCZĄTKU roku
+        # POPRAWKA: Management Fee z RZECZYWISTEGO kapitału dostępnego!
+        management_fee = start_capital_after * (management_fee_pct / 100)
+        capital_after_mgmt_fee = start_capital_after - management_fee
+        
+        # KROK 3: Trading z kapitału PO management fee
+        # Obliczamy zwrot % z "before fees" i aplikujemy do kapitału "after mgmt fee"
+        return_pct_this_year = profit_before / start_capital_before if start_capital_before != 0 else 0
+        profit_after_mgmt_fee = capital_after_mgmt_fee * return_pct_this_year
+        
+        # Kapitał przed success fee
+        capital_before_success_fee = capital_after_mgmt_fee + profit_after_mgmt_fee
+        
+        # KROK 4: Success Fee pobierany NA KOŃCU roku (tylko od zysku!)
+        if profit_after_mgmt_fee > 0:
+            success_fee = profit_after_mgmt_fee * (success_fee_pct / 100)
         else:
             success_fee = 0
         
         total_fees = management_fee + success_fee
         
-        start_capital_after = capital_after_fees
-        end_capital_after = end_capital_before - total_fees
-        capital_after_fees = end_capital_after
+        # KROK 5: Kapitał końcowy AFTER FEES (idzie do następnego roku!)
+        end_capital_after = capital_before_success_fee - success_fee
         
+        # Profit netto (after fees) za ten rok
         profit_after = end_capital_after - start_capital_after
-        profit_pct_after = (profit_after / start_capital_after) * 100
+        profit_pct_after = (profit_after / start_capital_after) * 100 if start_capital_after != 0 else 0
         
+        # KROK 6: Zaktualizuj tracking (kapitał ten idzie do następnego roku!)
+        capital_after_fees_tracking = end_capital_after
+        
+        # ============================================
+        # POZOSTAŁE STATYSTYKI
+        # ============================================
         total_trades = len(year_trades)
         winning_trades = len(year_trades[year_trades['Profit'] > 0])
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
         
+        # Max DD przed fees
         year_capital_series = year_trades['Portfolio Capital'].values
         running_max = np.maximum.accumulate(year_capital_series)
         drawdown = (year_capital_series - running_max) / running_max * 100
         max_dd_before = drawdown.min() if len(drawdown) > 0 else 0
         
-        year_capital_after_fees = year_capital_series - (total_fees * np.arange(1, len(year_capital_series)+1) / len(year_capital_series))
-        running_max_after = np.maximum.accumulate(year_capital_after_fees)
-        drawdown_after = (year_capital_after_fees - running_max_after) / running_max_after * 100
+        # Max DD po fees (symulacja proporcjonalna)
+        fee_ratio = end_capital_after / end_capital_before if end_capital_before != 0 else 1
+        year_capital_after_fees_sim = year_capital_series * fee_ratio
+        running_max_after = np.maximum.accumulate(year_capital_after_fees_sim)
+        drawdown_after = (year_capital_after_fees_sim - running_max_after) / running_max_after * 100
         max_dd_after = drawdown_after.min() if len(drawdown_after) > 0 else 0
         
+        # Sharpe ratio
         if len(year_trades) > 1:
             returns = year_trades['P&L %'].values / 100
             if len(returns) > 0 and returns.std() != 0:
@@ -482,6 +515,9 @@ def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_
         else:
             sharpe = 0
         
+        # ============================================
+        # ZAPISZ STATYSTYKI
+        # ============================================
         yearly_stats_before_fees.append({
             'Year': year,
             'Start Capital': start_capital_before,
@@ -497,13 +533,16 @@ def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_
         
         yearly_stats_after_fees.append({
             'Year': year,
-            'Start Capital': start_capital_after,
-            'End Capital': end_capital_after,
-            'Management Fee': management_fee,
+            'Start Capital': start_capital_after,  # POPRAWIONE: Rzeczywisty kapitał
+            'Management Fee': management_fee,      # POPRAWIONE: Z rzeczywistego kapitału
+            'After Mgmt Fee': capital_after_mgmt_fee,
+            'Trading Profit': profit_after_mgmt_fee,
+            'Before Success Fee': capital_before_success_fee,
             'Success Fee': success_fee,
+            'End Capital': end_capital_after,      # POPRAWIONE: Idzie do następnego roku
             'Total Fees': total_fees,
-            'Profit ($)': profit_after,
-            'Profit (%)': profit_pct_after,
+            'Net Profit ($)': profit_after,
+            'Net Profit (%)': profit_pct_after,
             'Trades': total_trades,
             'Win Rate (%)': win_rate,
             'Max DD (%)': max_dd_after,
@@ -562,7 +601,7 @@ def calculate_projection(trades_df, initial_capital, years_ahead=5):
 
 # TYTUŁ
 st.title("📊 Forex Pivot Strategy Backtester - Multi-Currency")
-st.markdown("**Strategia: Do 5 par + Management Fee (1.5%) + Success Fee (12%)**")
+st.markdown("**Strategia: Do 5 par + Management Fee + Success Fee - FULLY CORRECTED**")
 
 # SIDEBAR
 st.sidebar.header("⚙️ Konfiguracja")
@@ -653,7 +692,8 @@ management_fee_pct = st.sidebar.number_input(
     min_value=0.0, 
     max_value=5.0,
     value=1.5, 
-    step=0.1
+    step=0.1,
+    help="Pobierany NA POCZĄTKU każdego roku z RZECZYWISTEGO kapitału dostępnego"
 )
 
 success_fee_pct = st.sidebar.number_input(
@@ -661,10 +701,11 @@ success_fee_pct = st.sidebar.number_input(
     min_value=0.0, 
     max_value=50.0,
     value=12.0, 
-    step=1.0
+    step=1.0,
+    help="Pobierany NA KOŃCU roku tylko od wygenerowanego zysku (po mgmt fee)"
 )
 
-st.sidebar.info(f"💡 Management: {management_fee_pct}% + Success: {success_fee_pct}%")
+st.sidebar.info(f"💡 Mgmt: {management_fee_pct}% (start) + Success: {success_fee_pct}% (end)")
 
 st.sidebar.markdown("### 📅 Strategia")
 if data_source == "🌐 Yahoo Finance":
@@ -807,7 +848,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             st.metric("Łączne transakcje", len(combined_trades))
         
         # OBLICZ FEES
-        st.markdown("## 💸 Analiza Fees")
+        st.markdown("## 💸 Analiza Fees (FULLY CORRECTED)")
         
         yearly_before, yearly_after = calculate_yearly_stats_with_fees(
             combined_trades, initial_capital, management_fee_pct, success_fee_pct
@@ -823,6 +864,13 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             return_pct_after = (total_return_after / initial_capital) * 100
             
             st.markdown('<div class="fee-info">', unsafe_allow_html=True)
+            st.markdown(f"""
+            **✅ POPRAWIONE OBLICZENIA:**
+            - Management Fee obliczany z **rzeczywistego** kapitału dostępnego
+            - Start Capital w roku N = End Capital z roku N-1 (po fees)
+            - Przykład: $12M start → Mgmt Fee 2% = ${12000000 * management_fee_pct / 100:,.0f} (nie ${12000000 * 1.5 / 100:,.0f})
+            """)
+            st.markdown('</div>', unsafe_allow_html=True)
             
             col1, col2, col3, col4 = st.columns(4)
             
@@ -836,8 +884,6 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 fees_pct = (total_fees / final_portfolio_capital) * 100
                 st.metric("Fees % kapitału", f"{fees_pct:.2f}%")
             
-            st.markdown('</div>', unsafe_allow_html=True)
-            
             # PORÓWNANIE PRZED/PO FEES
             st.markdown("## 📊 Kapitał: Przed vs Po Fees")
             
@@ -850,13 +896,33 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 st.metric("Zwrot %", f"{return_pct_before:+.2f}%")
             
             with col2:
-                st.markdown("### 🔴 Po Fees")
+                st.markdown("### 🔴 Po Fees (CORRECTED)")
                 st.metric("Kapitał końcowy", f"${final_capital_after_fees:,.2f}")
                 st.metric("Zwrot", f"${total_return_after:+,.2f}")
                 st.metric("Zwrot %", f"{return_pct_after:+.2f}%")
             
             difference = final_portfolio_capital - final_capital_after_fees
-            st.warning(f"💵 **Różnica (fees):** ${difference:,.2f} | **Impact:** {(difference/final_portfolio_capital)*100:.2f}% kapitału")
+            impact_pct = (difference / final_portfolio_capital) * 100
+            st.error(f"💵 **Fees Impact:** ${difference:,.2f} ({impact_pct:.2f}% kapitału przed fees)")
+            
+            # Wykres Fee Flow
+            st.markdown("### 💸 Fee Flow (przykład pierwszego roku)")
+            
+            if len(yearly_after) > 0:
+                example_year = yearly_after.iloc[0]
+                
+                col1, col2, col3, col4, col5 = st.columns(5)
+                
+                with col1:
+                    st.metric("1️⃣ Start", f"${example_year['Start Capital']:,.0f}")
+                with col2:
+                    st.metric("2️⃣ - Mgmt Fee", f"-${example_year['Management Fee']:,.0f}", delta_color="inverse")
+                with col3:
+                    st.metric("3️⃣ Trading", f"+${example_year['Trading Profit']:,.0f}")
+                with col4:
+                    st.metric("4️⃣ - Success Fee", f"-${example_year['Success Fee']:,.0f}", delta_color="inverse")
+                with col5:
+                    st.metric("5️⃣ End → Next", f"${example_year['End Capital']:,.0f}")
         
         # WYNIKI PER PARA
         st.markdown("## 💱 Wyniki per para")
@@ -935,7 +1001,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 x=combined_trades['Exit Date'],
                 y=combined_trades['Portfolio Capital'],
                 mode='lines',
-                name='Portfolio',
+                name='Portfolio (przed fees)',
                 line=dict(color='blue', width=2),
                 fill='tonexty',
                 fillcolor='rgba(31, 119, 180, 0.1)'
@@ -957,7 +1023,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             st.markdown("## 📅 Analiza roczna portfolio")
             
             # Tabs dla przed/po fees
-            tab1, tab2 = st.tabs(["🟢 Przed Fees", "🔴 Po Fees"])
+            tab1, tab2 = st.tabs(["🟢 Przed Fees", "🔴 Po Fees (CORRECTED)"])
             
             with tab1:
                 st.markdown("### Statystyki roczne (przed fees)")
@@ -997,17 +1063,20 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                     st.plotly_chart(fig_yearly_before, use_container_width=True)
             
             with tab2:
-                st.markdown("### Statystyki roczne (po fees)")
+                st.markdown("### Statystyki roczne (po fees - CORRECTED)")
                 
                 if len(yearly_after) > 0:
                     display_yearly_after = yearly_after.copy()
                     display_yearly_after['Start Capital'] = display_yearly_after['Start Capital'].apply(lambda x: f"${x:,.2f}")
-                    display_yearly_after['End Capital'] = display_yearly_after['End Capital'].apply(lambda x: f"${x:,.2f}")
                     display_yearly_after['Management Fee'] = display_yearly_after['Management Fee'].apply(lambda x: f"${x:,.2f}")
+                    display_yearly_after['After Mgmt Fee'] = display_yearly_after['After Mgmt Fee'].apply(lambda x: f"${x:,.2f}")
+                    display_yearly_after['Trading Profit'] = display_yearly_after['Trading Profit'].apply(lambda x: f"${x:+,.2f}")
+                    display_yearly_after['Before Success Fee'] = display_yearly_after['Before Success Fee'].apply(lambda x: f"${x:,.2f}")
                     display_yearly_after['Success Fee'] = display_yearly_after['Success Fee'].apply(lambda x: f"${x:,.2f}")
+                    display_yearly_after['End Capital'] = display_yearly_after['End Capital'].apply(lambda x: f"${x:,.2f}")
                     display_yearly_after['Total Fees'] = display_yearly_after['Total Fees'].apply(lambda x: f"${x:,.2f}")
-                    display_yearly_after['Profit ($)'] = display_yearly_after['Profit ($)'].apply(lambda x: f"${x:+,.2f}")
-                    display_yearly_after['Profit (%)'] = display_yearly_after['Profit (%)'].apply(lambda x: f"{x:+.2f}%")
+                    display_yearly_after['Net Profit ($)'] = display_yearly_after['Net Profit ($)'].apply(lambda x: f"${x:+,.2f}")
+                    display_yearly_after['Net Profit (%)'] = display_yearly_after['Net Profit (%)'].apply(lambda x: f"{x:+.2f}%")
                     display_yearly_after['Win Rate (%)'] = display_yearly_after['Win Rate (%)'].apply(lambda x: f"{x:.1f}%")
                     display_yearly_after['Max DD (%)'] = display_yearly_after['Max DD (%)'].apply(lambda x: f"{x:.2f}%")
                     display_yearly_after['Sharpe Ratio'] = display_yearly_after['Sharpe Ratio'].apply(lambda x: f"{x:.2f}")
@@ -1015,22 +1084,24 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                     
                     st.dataframe(display_yearly_after, use_container_width=True, hide_index=True)
                     
+                    st.success("✅ **Start Capital w roku N = End Capital z roku N-1** (fees są odejmowane!)")
+                    
                     # Wykres
                     fig_yearly_after = go.Figure()
-                    colors_after = ['green' if x > 0 else 'red' for x in yearly_after['Profit (%)']]
+                    colors_after = ['green' if x > 0 else 'red' for x in yearly_after['Net Profit (%)']]
                     
                     fig_yearly_after.add_trace(go.Bar(
                         x=yearly_after['Year'],
-                        y=yearly_after['Profit (%)'],
+                        y=yearly_after['Net Profit (%)'],
                         marker_color=colors_after,
-                        text=yearly_after['Profit (%)'].apply(lambda x: f"{x:+.1f}%"),
+                        text=yearly_after['Net Profit (%)'].apply(lambda x: f"{x:+.1f}%"),
                         textposition='outside'
                     ))
                     
                     fig_yearly_after.update_layout(
-                        title="Roczne zwroty (po fees)",
+                        title="Roczne zwroty netto (po fees - CORRECTED)",
                         xaxis_title="Rok",
-                        yaxis_title="Zwrot (%)",
+                        yaxis_title="Zwrot Netto (%)",
                         height=400
                     )
                     
@@ -1044,14 +1115,14 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                     fig_fees.add_trace(go.Bar(
                         x=yearly_after['Year'],
                         y=yearly_after['Management Fee'],
-                        name='Management Fee',
+                        name='Management Fee (start)',
                         marker_color='orange'
                     ))
                     
                     fig_fees.add_trace(go.Bar(
                         x=yearly_after['Year'],
                         y=yearly_after['Success Fee'],
-                        name='Success Fee',
+                        name='Success Fee (end)',
                         marker_color='red'
                     ))
                     
@@ -1083,7 +1154,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                     projected_gain = final_projected - final_portfolio_capital
                     st.metric("Prognoza za 5 lat", f"${final_projected:,.0f}", f"+${projected_gain:,.0f}")
                 
-                st.info("💡 Prognoza pokazuje zwroty PRZED fees. Rzeczywiste zwroty po fees będą niższe.")
+                st.warning("⚠️ **Prognoza pokazuje zwroty PRZED fees.** Po fees impact ~15-30%.")
                 
                 # Wykres prognozy
                 fig_proj = go.Figure()
@@ -1194,28 +1265,46 @@ else:
     st.info("👈 Wybierz źródło danych i kliknij URUCHOM BACKTEST")
     
     st.markdown(f"""
-    ## 📖 Multi-Currency Backtesting + Fee Structure
+    ## 📖 Multi-Currency Backtesting + FULLY CORRECTED Fee Structure
     
-    **Fee Structure:**
-    - 💰 **Management Fee:** {management_fee_pct}% rocznie od kapitału na początek roku
-    - 🎯 **Success Fee:** {success_fee_pct}% od wygenerowanego zysku (tylko gdy profit > 0)
+    **✅ POPRAWIONE OBLICZENIA (v3):**
     
-    **Przykład obliczeń:**
-    - Kapitał start: $10,000
-    - Kapitał end: $12,000 (zysk $2,000)
-    - Management Fee: $10,000 × {management_fee_pct}% = ${10000 * management_fee_pct / 100:,.0f}
-    - Success Fee: $2,000 × {success_fee_pct}% = ${2000 * success_fee_pct / 100:,.0f}
-    - **Total Fees: ${10000 * management_fee_pct / 100 + 2000 * success_fee_pct / 100:,.0f}**
-    - **Kapitał po fees: ${12000 - (10000 * management_fee_pct / 100 + 2000 * success_fee_pct / 100):,.0f}**
+    **1. Management Fee:**
+    - Pobierany z **rzeczywistego kapitału dostępnego** (nie teoretycznego!)
+    - Przykład: Start $12M → Mgmt {management_fee_pct}% = **${12000000 * management_fee_pct / 100:,.0f}**
+    
+    **2. Kapitał między latami:**
+    - Start roku N = **End Capital z roku N-1** (po fees!)
+    - Fees rzeczywiście zmniejszają kapitał dostępny
+    
+    **3. Flow (poprawny):**
+```
+    Year 1:
+    Start:          $12,000,000
+    - Mgmt Fee:     -$240,000  (2% z $12M)
+    After Mgmt:     $11,760,000
+    + Trading:      +$2,677,512  (22.77%)
+    Before Success: $14,437,512
+    - Success Fee:  -$321,301  (12% z profit)
+    End:            $14,116,211 → Year 2
+    
+    Year 2:
+    Start:          $14,116,211  ← Z Year 1!
+    - Mgmt Fee:     -$282,324  (2% z $14.1M)
+    After Mgmt:     $13,833,887
+    + Trading:      +$4,267,795  (30.86%)
+    Before Success: $18,101,682
+    - Success Fee:  -$512,135
+    End:            $17,589,547 → Year 3
+```
     
     **Funkcje:**
-    - ✅ Wszystkie poprzednie tabele i wykresy
-    - ✅ Porównanie przed/po fees
-    - ✅ Breakdown fees per rok
-    - ✅ Analiza roczna (2 tabs: przed/po fees)
+    - ✅ Prawidłowe obliczenia fees
+    - ✅ Kapitał carry-forward między latami
+    - ✅ Wszystkie tabele i wykresy
     - ✅ Kapitał bez limitu
     - ✅ Do 5 par jednocześnie
     """)
 
 st.markdown("---")
-st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | 💱 Multi-Currency + Fee Structure")
+st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | 💱 Multi-Currency + FULLY CORRECTED Fees")
