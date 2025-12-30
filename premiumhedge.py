@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 MT5 Pivot Strategy Backtester
-Strategia: Poniedziałkowe sygnały (Buy<S3 / Sell>R3) + stały holding period + stop loss
+Strategia: Poniedziałkowe sygnały (wybór poziomów) + holding period + stop loss
 """
 
 import pandas as pd
@@ -303,14 +303,19 @@ class PivotBacktester:
         
         return df
     
-    def run_backtest(self, df, initial_capital=10000, lot_size=1.0, spread_pips=2, holding_days=5, stop_loss_pct=None):
+    def run_backtest(self, df, initial_capital=10000, lot_size=1.0, spread_pips=2, 
+                    holding_days=5, stop_loss_pct=None, support_level='S3', resistance_level='R3'):
         """
         Uruchom backtest strategii TYGODNIOWEJ
         Strategia: 
         - Każdy PONIEDZIAŁEK sprawdź sygnał:
-          * Jeśli cena < S3 → KUP i trzymaj X dni
-          * Jeśli cena > R3 → SPRZEDAJ i trzymaj X dni
+          * Jeśli cena < support_level → KUP i trzymaj X dni
+          * Jeśli cena > resistance_level → SPRZEDAJ i trzymaj X dni
         - Stop loss: zamknij pozycję jeśli strata >= X%
+        
+        Parametry:
+        - support_level: 'S2' (konserwatywne) lub 'S3' (agresywne) dla LONG
+        - resistance_level: 'R2' (konserwatywne) lub 'R3' (agresywne) dla SHORT
         """
         
         trades = []
@@ -346,7 +351,6 @@ class PivotBacktester:
                         stop_loss_price = pos['entry_price'] * (1 - stop_loss_pct / 100)
                         
                         if current_low <= stop_loss_price:
-                            # Stop loss trafiony
                             positions_to_close.append((pos_idx, 'Stop Loss', stop_loss_price))
                             continue
                     
@@ -355,7 +359,6 @@ class PivotBacktester:
                         stop_loss_price = pos['entry_price'] * (1 + stop_loss_pct / 100)
                         
                         if current_high >= stop_loss_price:
-                            # Stop loss trafiony
                             positions_to_close.append((pos_idx, 'Stop Loss', stop_loss_price))
                             continue
             
@@ -387,7 +390,8 @@ class PivotBacktester:
                     'Type': pos['type'].upper(),
                     'Entry Price': pos['entry_price'],
                     'Exit Price': exit_price,
-                    'Entry Level': pos['entry_level'],
+                    'Entry Level': pos['entry_level_name'],
+                    'Entry Level Value': pos['entry_level_value'],
                     'Pips': pips_gained,
                     'Profit': profit,
                     'P&L %': pnl_pct,
@@ -399,8 +403,12 @@ class PivotBacktester:
             # OTWIERAJ NOWE POZYCJE W PONIEDZIAŁKI
             if current_date.weekday() == 0:
                 
-                # Sygnał BUY: cena < S3
-                if current_price < row['S3']:
+                # Pobierz wartości wybranych poziomów
+                support_value = row[support_level]
+                resistance_value = row[resistance_level]
+                
+                # Sygnał BUY: cena < support_level
+                if current_price < support_value:
                     entry_price = current_price + (spread_pips * 0.0001)
                     exit_date = current_date + timedelta(days=holding_days)
                     
@@ -409,12 +417,13 @@ class PivotBacktester:
                         'entry_date': current_date,
                         'exit_date': exit_date,
                         'entry_price': entry_price,
-                        'entry_level': row['S3'],
+                        'entry_level_name': support_level,
+                        'entry_level_value': support_value,
                         'lot_size': lot_size
                     })
                 
-                # Sygnał SELL: cena > R3
-                if current_price > row['R3']:
+                # Sygnał SELL: cena > resistance_level
+                if current_price > resistance_value:
                     entry_price = current_price - (spread_pips * 0.0001)
                     exit_date = current_date + timedelta(days=holding_days)
                     
@@ -423,7 +432,8 @@ class PivotBacktester:
                         'entry_date': current_date,
                         'exit_date': exit_date,
                         'entry_price': entry_price,
-                        'entry_level': row['R3'],
+                        'entry_level_name': resistance_level,
+                        'entry_level_value': resistance_value,
                         'lot_size': lot_size
                     })
         
@@ -454,7 +464,8 @@ class PivotBacktester:
                 'Type': pos['type'].upper(),
                 'Entry Price': pos['entry_price'],
                 'Exit Price': exit_price,
-                'Entry Level': pos['entry_level'],
+                'Entry Level': pos['entry_level_name'],
+                'Entry Level Value': pos['entry_level_value'],
                 'Pips': pips_gained,
                 'Profit': profit,
                 'P&L %': pnl_pct,
@@ -467,7 +478,7 @@ class PivotBacktester:
 
 # TYTUŁ
 st.title("📊 Forex Pivot Strategy Backtester")
-st.markdown("**Strategia: Sygnały poniedziałkowe (Buy<S3 / Sell>R3) + holding period + stop loss**")
+st.markdown("**Strategia: Sygnały poniedziałkowe (wybór poziomów) + holding period + stop loss**")
 
 # SIDEBAR
 st.sidebar.header("⚙️ Konfiguracja")
@@ -501,14 +512,45 @@ if data_source == "🌐 Yahoo Finance":
 lookback_days = st.sidebar.slider("Okres pivot (dni)", 3, 14, 7)
 holding_days = st.sidebar.slider("Holding period (dni)", 1, 30, 5)
 
+# WYBÓR POZIOMÓW WEJŚCIA
+st.sidebar.markdown("### 🎯 Poziomy Wejścia")
+
+col1, col2 = st.sidebar.columns(2)
+
+with col1:
+    st.markdown("**📉 LONG (Buy)**")
+    support_level = st.radio(
+        "Support level:",
+        ["S3", "S2"],
+        index=0,
+        help="S3 = agresywne (dalej od ceny), S2 = konserwatywne (bliżej ceny)"
+    )
+
+with col2:
+    st.markdown("**📈 SHORT (Sell)**")
+    resistance_level = st.radio(
+        "Resistance level:",
+        ["R3", "R2"],
+        index=0,
+        help="R3 = agresywne (dalej od ceny), R2 = konserwatywne (bliżej ceny)"
+    )
+
+# Info o wybranych poziomach
+if support_level == 'S3' and resistance_level == 'R3':
+    st.sidebar.success("🚀 Agresywna strategia (S3/R3)")
+elif support_level == 'S2' and resistance_level == 'R2':
+    st.sidebar.info("🛡️ Konserwatywna strategia (S2/R2)")
+else:
+    st.sidebar.warning("⚖️ Strategia mieszana")
+
 # STOP LOSS
 st.sidebar.markdown("### 🛡️ Stop Loss")
 use_stop_loss = st.sidebar.checkbox("Aktywuj Stop Loss", value=False)
 if use_stop_loss:
     stop_loss_pct = st.sidebar.select_slider(
         "Stop Loss (%)",
-        options=[0.5, 1.0, 1.5, 2.0],
-        value=0.5
+        options=[0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
+        value=1.0
     )
 else:
     stop_loss_pct = None
@@ -547,9 +589,13 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         if len(pivot_data) > 0:
             st.success(f"✅ Pivot dla {len(pivot_data)} dni")
             
+            # Info o wybranych poziomach
+            st.info(f"📊 **Poziomy:** LONG przy {support_level} | SHORT przy {resistance_level}")
+            
             with st.spinner("Wykonywanie backtestu..."):
                 trades_df, final_capital = backtester.run_backtest(
-                    df, initial_capital, lot_size, spread_pips, holding_days, stop_loss_pct
+                    df, initial_capital, lot_size, spread_pips, holding_days, 
+                    stop_loss_pct, support_level, resistance_level
                 )
             
             # WYNIKI
@@ -578,7 +624,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 
                 with col1:
                     long_trades = trades_df[trades_df['Type'] == 'LONG']
-                    st.markdown("**📈 LONG positions**")
+                    st.markdown(f"**📈 LONG ({support_level})**")
                     st.write(f"Liczba: {len(long_trades)}")
                     if len(long_trades) > 0:
                         long_wins = (long_trades['Profit'] > 0).sum()
@@ -591,7 +637,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 
                 with col2:
                     short_trades = trades_df[trades_df['Type'] == 'SHORT']
-                    st.markdown("**📉 SHORT positions**")
+                    st.markdown(f"**📉 SHORT ({resistance_level})**")
                     st.write(f"Liczba: {len(short_trades)}")
                     if len(short_trades) > 0:
                         short_wins = (short_trades['Profit'] > 0).sum()
@@ -649,7 +695,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 fig.add_hline(y=initial_capital, line_dash='dash', line_color='gray', annotation_text='Start')
                 
                 fig.update_layout(
-                    title=f"Rozwój kapitału - {selected_symbol}",
+                    title=f"Rozwój kapitału - {selected_symbol} ({support_level}/{resistance_level})",
                     xaxis_title="Data",
                     yaxis_title="Kapitał ($)",
                     height=400, 
@@ -687,7 +733,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 display = trades_df.copy()
                 display['Entry Date'] = display['Entry Date'].dt.strftime('%Y-%m-%d')
                 display['Exit Date'] = display['Exit Date'].dt.strftime('%Y-%m-%d')
-                for col in ['Entry Price', 'Exit Price', 'Entry Level']:
+                for col in ['Entry Price', 'Exit Price', 'Entry Level Value']:
                     display[col] = display[col].round(5)
                 display['Pips'] = display['Pips'].round(1)
                 display['Profit'] = display['Profit'].round(2)
@@ -709,7 +755,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 st.download_button(
                     "📥 Pobierz wyniki (CSV)",
                     csv,
-                    f"backtest_{selected_symbol}_{datetime.now().strftime('%Y%m%d')}.csv",
+                    f"backtest_{selected_symbol}_{support_level}{resistance_level}_{datetime.now().strftime('%Y%m%d')}.csv",
                     "text/csv"
                 )
             else:
@@ -725,25 +771,35 @@ else:
     st.markdown("""
     ## 📖 Strategia
     
-    **Tygodniowy system sygnałów z zarządzaniem ryzykiem:**
+    **Tygodniowy system sygnałów z wyborem poziomów i zarządzaniem ryzykiem:**
+    
+    ### 🎯 Wybór poziomów wejścia:
+    
+    **LONG (Buy):**
+    - **S3** = Agresywne (dalej od ceny, rzadsze sygnały, większy potencjał)
+    - **S2** = Konserwatywne (bliżej ceny, częstsze sygnały, mniejszy potencjał)
+    
+    **SHORT (Sell):**
+    - **R3** = Agresywne (dalej od ceny, rzadsze sygnały, większy potencjał)
+    - **R2** = Konserwatywne (bliżej ceny, częstsze sygnały, mniejszy potencjał)
     
     ### 📅 Sygnały (każdy poniedziałek):
-    - Jeśli `Cena < S3` → Otwieramy **LONG** (kupno)
-    - Jeśli `Cena > R3` → Otwieramy **SHORT** (sprzedaż)
+    - Jeśli `Cena < Support Level` → Otwieramy **LONG**
+    - Jeśli `Cena > Resistance Level` → Otwieramy **SHORT**
     
     ### ⏱️ Zamknięcie pozycji:
     - **Holding period:** Automatyczne zamknięcie po X dniach
-    - **Stop Loss (opcjonalny):** Zamknięcie gdy strata >= 0.5% lub 1.0%
+    - **Stop Loss (opcjonalny):** Zamknięcie gdy strata >= wybrany %
     
     ### 🔄 Zarządzanie:
     - Nakładające się pozycje: możesz mieć jednocześnie LONG i SHORT
-    - Rolling pivots: Poziomy S3/R3 obliczane z ostatnich N dni
+    - Rolling pivots: Poziomy obliczane z ostatnich N dni
     - Spread uwzględniony w każdej transakcji
     
-    ### 🛡️ Stop Loss:
-    - **LONG:** Zamyka gdy cena spadnie o X% poniżej entry
-    - **SHORT:** Zamyka gdy cena wzrośnie o X% powyżej entry
-    - Priorytet: Stop Loss > Time Exit
+    ### 💡 Strategie:
+    - **S3/R3** = Najbardziej agresywna (najmniej sygnałów, największy potencjał ruchu)
+    - **S2/R2** = Najbardziej konserwatywna (najwięcej sygnałów, najmniejszy potencjał ruchu)
+    - **S3/R2** lub **S2/R3** = Strategie mieszane
     """)
 
 # Footer
