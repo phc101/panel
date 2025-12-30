@@ -4,6 +4,7 @@ MT5 Pivot Strategy Backtester - Multi-Currency
 Strategia: Poniedziałkowe sygnały + analiza roczna + prognoza
 Multi-currency: Do 5 par jednocześnie (Yahoo Finance lub CSV)
 + Management Fee + Success Fee (FULLY CORRECTED REALISTIC CALCULATIONS)
+Pivot Period: 3-21 dni
 """
 
 import pandas as pd
@@ -710,7 +711,18 @@ st.sidebar.info(f"💡 Mgmt: {management_fee_pct}% (start) + Success: {success_f
 st.sidebar.markdown("### 📅 Strategia")
 if data_source == "🌐 Yahoo Finance":
     backtest_days = st.sidebar.slider("Dni historii", 365, 3650, 1825)
-lookback_days = st.sidebar.slider("Okres pivot (dni)", 3, 14, 7)
+
+# ============================================
+# ZMIENIONE: Pivot period do 21 dni
+# ============================================
+lookback_days = st.sidebar.slider(
+    "Okres pivot (dni)", 
+    min_value=3, 
+    max_value=21,  # ZMIENIONE z 14 na 21
+    value=7,
+    help="Liczba dni do obliczania średnich dla pivot points (3-21)"
+)
+
 holding_days = st.sidebar.slider("Holding period (dni)", 1, 90, 5)
 
 trade_direction = st.sidebar.radio(
@@ -868,7 +880,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             **✅ POPRAWIONE OBLICZENIA:**
             - Management Fee obliczany z **rzeczywistego** kapitału dostępnego
             - Start Capital w roku N = End Capital z roku N-1 (po fees)
-            - Przykład: $12M start → Mgmt Fee 2% = ${12000000 * management_fee_pct / 100:,.0f} (nie ${12000000 * 1.5 / 100:,.0f})
+            - Pivot Period: {lookback_days} dni (średnie rolling window)
             """)
             st.markdown('</div>', unsafe_allow_html=True)
             
@@ -1010,7 +1022,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             fig_portfolio.add_hline(y=initial_capital, line_dash='dash', line_color='gray', annotation_text='Start')
             
             fig_portfolio.update_layout(
-                title=f"Rozwój kapitału portfolio ({len(selected_symbols)} par)",
+                title=f"Rozwój kapitału portfolio ({len(selected_symbols)} par) - Pivot {lookback_days}d",
                 xaxis_title="Data",
                 yaxis_title="Kapitał ($)",
                 height=500,
@@ -1254,7 +1266,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             st.download_button(
                 "📥 Pobierz wyniki portfolio (CSV)",
                 csv,
-                f"portfolio_{symbols_str}_H{holding_days}_{datetime.now().strftime('%Y%m%d')}.csv",
+                f"portfolio_{symbols_str}_P{lookback_days}d_H{holding_days}d_{datetime.now().strftime('%Y%m%d')}.csv",
                 "text/csv"
             )
     
@@ -1267,44 +1279,28 @@ else:
     st.markdown(f"""
     ## 📖 Multi-Currency Backtesting + FULLY CORRECTED Fee Structure
     
-    **✅ POPRAWIONE OBLICZENIA (v3):**
+    **Pivot Points:**
+    - **Okres:** 3-21 dni (slider)
+    - **Logika:** Classic pivot points (średnie High/Low/Close)
+    - **Poziomy:** R3, R2, R1, Pivot, S1, S2, S3
     
-    **1. Management Fee:**
-    - Pobierany z **rzeczywistego kapitału dostępnego** (nie teoretycznego!)
-    - Przykład: Start $12M → Mgmt {management_fee_pct}% = **${12000000 * management_fee_pct / 100:,.0f}**
+    **Przykłady użycia pivot period:**
+    - **7 dni:** Tygodniowe pivoty (najczęściej używane, szybka reakcja)
+    - **14 dni:** Dwutygodniowe pivoty (więcej wygładzenia, mniej szumu)
+    - **21 dni:** Miesięczne pivoty (długoterminowe, silniejsze poziomy)
     
-    **2. Kapitał między latami:**
-    - Start roku N = **End Capital z roku N-1** (po fees!)
-    - Fees rzeczywiście zmniejszają kapitał dostępny
-    
-    **3. Flow (poprawny):**
-```
-    Year 1:
-    Start:          $12,000,000
-    - Mgmt Fee:     -$240,000  (2% z $12M)
-    After Mgmt:     $11,760,000
-    + Trading:      +$2,677,512  (22.77%)
-    Before Success: $14,437,512
-    - Success Fee:  -$321,301  (12% z profit)
-    End:            $14,116,211 → Year 2
-    
-    Year 2:
-    Start:          $14,116,211  ← Z Year 1!
-    - Mgmt Fee:     -$282,324  (2% z $14.1M)
-    After Mgmt:     $13,833,887
-    + Trading:      +$4,267,795  (30.86%)
-    Before Success: $18,101,682
-    - Success Fee:  -$512,135
-    End:            $17,589,547 → Year 3
-```
+    **Fee Structure:**
+    - Management Fee {management_fee_pct}% (pobierany NA POCZĄTKU roku z rzeczywistego kapitału)
+    - Success Fee {success_fee_pct}% (pobierany NA KOŃCU roku tylko od zysku)
+    - Kapitał przenosi się między latami (po fees!)
     
     **Funkcje:**
-    - ✅ Prawidłowe obliczenia fees
-    - ✅ Kapitał carry-forward między latami
-    - ✅ Wszystkie tabele i wykresy
-    - ✅ Kapitał bez limitu
+    - ✅ Pivot period 3-21 dni
     - ✅ Do 5 par jednocześnie
+    - ✅ Prawidłowe obliczenia fees
+    - ✅ Kapitał bez limitu
+    - ✅ Wszystkie tabele i wykresy
     """)
 
 st.markdown("---")
-st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | 💱 Multi-Currency + FULLY CORRECTED Fees")
+st.markdown(f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | 💱 Multi-Currency + Pivot 3-21d + CORRECTED Fees")
