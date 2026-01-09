@@ -108,6 +108,7 @@ with st.sidebar:
 
 # Helper functions
 def parse_fx_investing_polish(file):
+    """Parse FX data from Investing.com Polish format"""
     df = pd.read_csv(file, encoding='utf-8-sig')
     if len(df.columns) >= 2:
         df = df.iloc[:, [0, 1]]
@@ -117,6 +118,7 @@ def parse_fx_investing_polish(file):
     return df.sort_values('Date')[['Date', 'Close']].dropna()
 
 def parse_yield_fred(file):
+    """Parse yield data from FRED format"""
     df = pd.read_csv(file)
     if len(df.columns) >= 2:
         df = df.iloc[:, [0, 1]]
@@ -128,7 +130,11 @@ def parse_yield_fred(file):
     return df.dropna()
 
 def merge_with_yields(fx_df, short_df, long_df):
+    """Merge FX data with yield data using 7-day tolerance window"""
     yields = short_df.merge(long_df, on='Date', how='inner', suffixes=('_10Y', '_30Y'))
+    
+    if len(yields) == 0:
+        raise ValueError("No overlapping dates between 10Y and 30Y yield data")
     
     merged_data = []
     for idx, row in fx_df.iterrows():
@@ -145,11 +151,19 @@ def merge_with_yields(fx_df, short_df, long_df):
                 '30Y': closest_yields['Yield_30Y']
             })
     
+    if len(merged_data) == 0:
+        raise ValueError(
+            f"No FX dates matched with yield data within 7-day window.\n"
+            f"FX date range: {fx_df['Date'].min()} to {fx_df['Date'].max()}\n"
+            f"Yield date range: {yields['Date'].min()} to {yields['Date'].max()}"
+        )
+    
     df = pd.DataFrame(merged_data)
     df['Spread'] = df['30Y'] - df['10Y']
     return df
 
 def calculate_fair_value(df, correlation, use_recent=False):
+    """Calculate fair value based on yield spread correlation"""
     if use_recent and len(df) >= 52:
         base_data = df.tail(52)
         corr_actual = base_data['FX_Rate'].corr(base_data['Spread'])
