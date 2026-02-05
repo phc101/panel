@@ -616,10 +616,12 @@ with col4:
         </div>
     """, unsafe_allow_html=True)
 
-# Interpretation
+# Interpretation - per 25bp
+change_per_25bp = stats['slope'] * 0.25
+change_per_25bp_pips = change_per_25bp * 10000  # Convert to pips for most pairs
+
 st.markdown(f"""
-    **Model Interpretation:** For every 1% increase in the 30Y-10Y spread, {fx_pair} changes by 
-    **{stats['slope']:+.4f}** on average. Current deviation from fair value: **{current['Deviation_Pct']:+.2f}%**
+    **Model:** +25bp spread → {fx_pair} **{change_per_25bp:+.4f}** ({change_per_25bp_pips:+.1f} pips) | Current deviation: **{current['Deviation_Pct']:+.2f}%** from FV
 """)
 
 # =====================================================
