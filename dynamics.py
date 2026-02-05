@@ -423,38 +423,68 @@ with col1:
     y30_min = max(0.0, float(df['Y30'].min()) - 1)
     y30_max = float(df['Y30'].max()) + 1
     
+    # Initialize session state for sliders
+    if 'target_10y' not in st.session_state:
+        st.session_state.target_10y = float(current['Y10'])
+    if 'target_30y' not in st.session_state:
+        st.session_state.target_30y = float(current['Y30'])
+    
+    # Quick scenarios - PRZED sliderami
+    st.markdown("**Quick Scenarios:**")
+    scen_col1, scen_col2, scen_col3, scen_col4 = st.columns(4)
+    
+    with scen_col1:
+        if st.button("📈 Steepen", use_container_width=True, help="10Y -25bp, 30Y +25bp"):
+            st.session_state.target_10y = float(current['Y10']) - 0.25
+            st.session_state.target_30y = float(current['Y30']) + 0.25
+            st.rerun()
+    
+    with scen_col2:
+        if st.button("📉 Flatten", use_container_width=True, help="10Y +25bp, 30Y -25bp"):
+            st.session_state.target_10y = float(current['Y10']) + 0.25
+            st.session_state.target_30y = float(current['Y30']) - 0.25
+            st.rerun()
+    
+    with scen_col3:
+        if st.button("⬆️ +50bp", use_container_width=True, help="Parallel shift +50bp"):
+            st.session_state.target_10y = float(current['Y10']) + 0.50
+            st.session_state.target_30y = float(current['Y30']) + 0.50
+            st.rerun()
+    
+    with scen_col4:
+        if st.button("🔄 Reset", use_container_width=True, help="Reset to current"):
+            st.session_state.target_10y = float(current['Y10'])
+            st.session_state.target_30y = float(current['Y30'])
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # Slidery używające session_state
     target_10y = st.slider(
         "📉 Target 10Y Yield (%)",
         min_value=y10_min,
         max_value=y10_max,
-        value=float(current['Y10']),
+        value=st.session_state.target_10y,
         step=0.05,
-        format="%.2f"
+        format="%.2f",
+        key="slider_10y"
     )
     
     target_30y = st.slider(
         "📈 Target 30Y Yield (%)",
         min_value=y30_min,
         max_value=y30_max,
-        value=float(current['Y30']),
+        value=st.session_state.target_30y,
         step=0.05,
-        format="%.2f"
+        format="%.2f",
+        key="slider_30y"
     )
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Update session state from sliders
+    st.session_state.target_10y = target_10y
+    st.session_state.target_30y = target_30y
     
-    # Quick scenarios
-    st.markdown("**Quick Scenarios:**")
-    scen_col1, scen_col2, scen_col3 = st.columns(3)
-    with scen_col1:
-        if st.button("📈 Steepen", use_container_width=True):
-            st.session_state['scenario'] = 'steepen'
-    with scen_col2:
-        if st.button("📉 Flatten", use_container_width=True):
-            st.session_state['scenario'] = 'flatten'
-    with scen_col3:
-        if st.button("⬆️ +50bp", use_container_width=True):
-            st.session_state['scenario'] = 'parallel'
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
     # Calculate forecast
