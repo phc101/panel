@@ -429,33 +429,87 @@ with col1:
     if 'target_30y' not in st.session_state:
         st.session_state.target_30y = float(current['Y30'])
     
-    # Quick scenarios - PRZED sliderami
+    # Quick scenarios
     st.markdown("**Quick Scenarios:**")
-    scen_col1, scen_col2, scen_col3, scen_col4 = st.columns(4)
     
-    with scen_col1:
-        if st.button("📈 Steepen", use_container_width=True, help="10Y -25bp, 30Y +25bp"):
+    # Steepening row
+    st.markdown("📈 **Steepening** (10Y↓, 30Y↑)")
+    steep_col1, steep_col2, steep_col3 = st.columns(3)
+    
+    with steep_col1:
+        if st.button("Steep +25bp", use_container_width=True, help="10Y -12.5bp, 30Y +12.5bp"):
+            st.session_state.target_10y = float(current['Y10']) - 0.125
+            st.session_state.target_30y = float(current['Y30']) + 0.125
+            st.rerun()
+    
+    with steep_col2:
+        if st.button("Steep +50bp", use_container_width=True, help="10Y -25bp, 30Y +25bp"):
             st.session_state.target_10y = float(current['Y10']) - 0.25
             st.session_state.target_30y = float(current['Y30']) + 0.25
             st.rerun()
     
-    with scen_col2:
-        if st.button("📉 Flatten", use_container_width=True, help="10Y +25bp, 30Y -25bp"):
+    with steep_col3:
+        if st.button("Steep +100bp", use_container_width=True, help="10Y -50bp, 30Y +50bp"):
+            st.session_state.target_10y = float(current['Y10']) - 0.50
+            st.session_state.target_30y = float(current['Y30']) + 0.50
+            st.rerun()
+    
+    # Flattening row
+    st.markdown("📉 **Flattening** (10Y↑, 30Y↓)")
+    flat_col1, flat_col2, flat_col3 = st.columns(3)
+    
+    with flat_col1:
+        if st.button("Flat +25bp", use_container_width=True, help="10Y +12.5bp, 30Y -12.5bp"):
+            st.session_state.target_10y = float(current['Y10']) + 0.125
+            st.session_state.target_30y = float(current['Y30']) - 0.125
+            st.rerun()
+    
+    with flat_col2:
+        if st.button("Flat +50bp", use_container_width=True, help="10Y +25bp, 30Y -25bp"):
             st.session_state.target_10y = float(current['Y10']) + 0.25
             st.session_state.target_30y = float(current['Y30']) - 0.25
             st.rerun()
     
-    with scen_col3:
-        if st.button("⬆️ +50bp", use_container_width=True, help="Parallel shift +50bp"):
+    with flat_col3:
+        if st.button("Flat +100bp", use_container_width=True, help="10Y +50bp, 30Y -50bp"):
+            st.session_state.target_10y = float(current['Y10']) + 0.50
+            st.session_state.target_30y = float(current['Y30']) - 0.50
+            st.rerun()
+    
+    # Parallel shift row
+    st.markdown("↕️ **Parallel Shift**")
+    par_col1, par_col2, par_col3, par_col4 = st.columns(4)
+    
+    with par_col1:
+        if st.button("⬆️ +25bp", use_container_width=True):
+            st.session_state.target_10y = float(current['Y10']) + 0.25
+            st.session_state.target_30y = float(current['Y30']) + 0.25
+            st.rerun()
+    
+    with par_col2:
+        if st.button("⬆️ +50bp", use_container_width=True):
             st.session_state.target_10y = float(current['Y10']) + 0.50
             st.session_state.target_30y = float(current['Y30']) + 0.50
             st.rerun()
     
-    with scen_col4:
-        if st.button("🔄 Reset", use_container_width=True, help="Reset to current"):
-            st.session_state.target_10y = float(current['Y10'])
-            st.session_state.target_30y = float(current['Y30'])
+    with par_col3:
+        if st.button("⬇️ -25bp", use_container_width=True):
+            st.session_state.target_10y = float(current['Y10']) - 0.25
+            st.session_state.target_30y = float(current['Y30']) - 0.25
             st.rerun()
+    
+    with par_col4:
+        if st.button("⬇️ -50bp", use_container_width=True):
+            st.session_state.target_10y = float(current['Y10']) - 0.50
+            st.session_state.target_30y = float(current['Y30']) - 0.50
+            st.rerun()
+    
+    # Reset button
+    st.markdown("---")
+    if st.button("🔄 Reset to Current", use_container_width=True):
+        st.session_state.target_10y = float(current['Y10'])
+        st.session_state.target_30y = float(current['Y30'])
+        st.rerun()
     
     st.markdown("---")
     
