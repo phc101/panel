@@ -444,12 +444,12 @@ with col1:
             <div style="background: #1e3a1e; padding: 8px; border-radius: 6px; border-left: 3px solid #00d26a; margin-bottom: 8px;">
                 <small style="color: #ffffff;"><b>🐂 Bull Steepening</b><br>
                 Fed cuts → 10Y↓↓, 30Y↓<br>
-                <i>Easing cycle begins</i></small>
+                <i>Easing cycle, spread +20bp</i></small>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Bull Steep +50bp", use_container_width=True, key="bull_steep"):
-            st.session_state.target_10y = float(current['Y10']) - 0.35  # 10Y drops more
-            st.session_state.target_30y = float(current['Y30']) - 0.15  # 30Y drops less
+        if st.button("Bull Steep", use_container_width=True, key="bull_steep"):
+            st.session_state.target_10y = float(current['Y10']) - 0.30  # 10Y drops more
+            st.session_state.target_30y = float(current['Y30']) - 0.10  # 30Y drops less
             st.rerun()
     
     with steep_col2:
@@ -457,12 +457,12 @@ with col1:
             <div style="background: #3a1e1e; padding: 8px; border-radius: 6px; border-left: 3px solid #e94560; margin-bottom: 8px;">
                 <small style="color: #ffffff;"><b>🐻 Bear Steepening</b><br>
                 Inflation fears → 10Y↑, 30Y↑↑<br>
-                <i>Higher term premium</i></small>
+                <i>Term premium up, spread +40bp</i></small>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Bear Steep +50bp", use_container_width=True, key="bear_steep"):
-            st.session_state.target_10y = float(current['Y10']) + 0.15  # 10Y rises less
-            st.session_state.target_30y = float(current['Y30']) + 0.35  # 30Y rises more
+        if st.button("Bear Steep", use_container_width=True, key="bear_steep"):
+            st.session_state.target_10y = float(current['Y10']) + 0.10  # 10Y rises less
+            st.session_state.target_30y = float(current['Y30']) + 0.50  # 30Y rises more
             st.rerun()
     
     # FLATTENING scenarios
@@ -475,12 +475,12 @@ with col1:
             <div style="background: #3a1e1e; padding: 8px; border-radius: 6px; border-left: 3px solid #e94560; margin-bottom: 8px;">
                 <small style="color: #ffffff;"><b>🐻 Bear Flattening</b><br>
                 Fed hikes → 10Y↑↑, 30Y↑<br>
-                <i>Tightening cycle</i></small>
+                <i>Tightening cycle, spread -40bp</i></small>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Bear Flat +50bp", use_container_width=True, key="bear_flat"):
-            st.session_state.target_10y = float(current['Y10']) + 0.35  # 10Y rises more
-            st.session_state.target_30y = float(current['Y30']) + 0.15  # 30Y rises less
+        if st.button("Bear Flat", use_container_width=True, key="bear_flat"):
+            st.session_state.target_10y = float(current['Y10']) + 0.50  # 10Y rises more
+            st.session_state.target_30y = float(current['Y30']) + 0.10  # 30Y rises less
             st.rerun()
     
     with flat_col2:
@@ -488,12 +488,12 @@ with col1:
             <div style="background: #1e3a1e; padding: 8px; border-radius: 6px; border-left: 3px solid #00d26a; margin-bottom: 8px;">
                 <small style="color: #ffffff;"><b>🐂 Bull Flattening</b><br>
                 Recession/risk-off → 10Y↓, 30Y↓↓<br>
-                <i>Flight to safety</i></small>
+                <i>Flight to safety, spread -20bp</i></small>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Bull Flat +50bp", use_container_width=True, key="bull_flat"):
-            st.session_state.target_10y = float(current['Y10']) - 0.15  # 10Y drops less
-            st.session_state.target_30y = float(current['Y30']) - 0.35  # 30Y drops more
+        if st.button("Bull Flat", use_container_width=True, key="bull_flat"):
+            st.session_state.target_10y = float(current['Y10']) - 0.10  # 10Y drops less
+            st.session_state.target_30y = float(current['Y30']) - 0.30  # 30Y drops more
             st.rerun()
     
     st.markdown("---")
