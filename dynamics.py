@@ -442,7 +442,7 @@ with col1:
     with steep_col1:
         st.markdown("""
             <div style="background: #1e3a1e; padding: 8px; border-radius: 6px; border-left: 3px solid #00d26a; margin-bottom: 8px;">
-                <small><b>🐂 Bull Steepening</b><br>
+                <small style="color: #ffffff;"><b>🐂 Bull Steepening</b><br>
                 Fed cuts → 10Y↓↓, 30Y↓<br>
                 <i>Easing cycle begins</i></small>
             </div>
@@ -455,7 +455,7 @@ with col1:
     with steep_col2:
         st.markdown("""
             <div style="background: #3a1e1e; padding: 8px; border-radius: 6px; border-left: 3px solid #e94560; margin-bottom: 8px;">
-                <small><b>🐻 Bear Steepening</b><br>
+                <small style="color: #ffffff;"><b>🐻 Bear Steepening</b><br>
                 Inflation fears → 10Y↑, 30Y↑↑<br>
                 <i>Higher term premium</i></small>
             </div>
@@ -473,7 +473,7 @@ with col1:
     with flat_col1:
         st.markdown("""
             <div style="background: #3a1e1e; padding: 8px; border-radius: 6px; border-left: 3px solid #e94560; margin-bottom: 8px;">
-                <small><b>🐻 Bear Flattening</b><br>
+                <small style="color: #ffffff;"><b>🐻 Bear Flattening</b><br>
                 Fed hikes → 10Y↑↑, 30Y↑<br>
                 <i>Tightening cycle</i></small>
             </div>
@@ -486,7 +486,7 @@ with col1:
     with flat_col2:
         st.markdown("""
             <div style="background: #1e3a1e; padding: 8px; border-radius: 6px; border-left: 3px solid #00d26a; margin-bottom: 8px;">
-                <small><b>🐂 Bull Flattening</b><br>
+                <small style="color: #ffffff;"><b>🐂 Bull Flattening</b><br>
                 Recession/risk-off → 10Y↓, 30Y↓↓<br>
                 <i>Flight to safety</i></small>
             </div>
