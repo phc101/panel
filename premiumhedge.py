@@ -275,33 +275,39 @@ class PivotBacktester:
 
         return df
 
-    def run_backtest(self, df, symbol, initial_capital=10000, volume=100000,
+    def run_backtest(self, df, symbol, initial_capital=10000,
                      spread_value=0.0002, holding_days=5, stop_loss_pct=None,
                      support_level='S3', resistance_level='R3',
-                     trade_direction='Both', leverage=1):
+                     trade_direction='Both', leverage=1, capital_usage_pct=100):
         """
-        Uruchom backtest strategii - POPRAWIONA KALKULACJA P&L + LEVERAGE
+        Backtest z dynamicznym wolumenem z kapitału + margin check + margin call.
 
-        Logika P&L:
-        - Wynik transakcji w pipsach: (exit_price - entry_price) dla long
-        - Wynik w walucie KWOTOWANEJ: pips_diff * volume
-          np. EURPLN: (4.22 - 4.21) * 100,000 = 1,000 PLN
-        - Przeliczenie na walutę BAZOWĄ: profit_quoted / exit_price
-          np. 1,000 PLN / 4.22 = 236.97 EUR
-
-        Leverage:
-        - Efektywny wolumen = volume * leverage
-        - Margin (depozyt) = volume / leverage (ile kapitału blokujemy)
-        - P&L liczone od efektywnego wolumenu
-        - Stop loss / margin call jeśli strata > margin
-
-        Kapitał i wyniki są w walucie BAZOWEJ pary.
+        Logika:
+        - Wolumen = (dostępny_kapitał × capital_usage_pct% × leverage)
+          np. 1M EUR × 100% × x10 = 10M EUR efektywna pozycja
+        - Margin (depozyt) = wolumen / leverage = kapitał × usage%
+        - Margin check: nie otwieraj jeśli margin > wolny kapitał
+        - Margin call: zamknij pozycję jeśli unrealized loss >= margin (depozyt)
+        - P&L w walucie bazowej: profit_quoted / exit_price
+        - Compound: wolumen rośnie/maleje z equity
         """
 
         trades = []
-        capital = initial_capital  # w walucie bazowej
+        capital = initial_capital
         open_positions = []
-        effective_volume = volume * leverage  # wolumen z dźwignią
+        margin_calls = 0
+        skipped_no_margin = 0
+
+        def calc_used_margin():
+            """Suma zablokowanego marginu w otwartych pozycjach"""
+            return sum(pos['margin'] for pos in open_positions)
+
+        def calc_free_margin():
+            """Wolny margin = kapitał - zablokowany margin + unrealized P&L"""
+            used = calc_used_margin()
+            unrealized = 0
+            # Nie liczymy unrealized tutaj dla uproszczenia (conservative)
+            return capital - used
 
         for i in range(len(df)):
             row = df.iloc[i]
@@ -318,12 +324,43 @@ class PivotBacktester:
 
             for pos_idx, pos in enumerate(open_positions):
 
+                # --- MARGIN CALL CHECK ---
+                # Sprawdź czy unrealized loss >= margin (depozyt)
+                if pos['type'] == 'long':
+                    unrealized_price_diff = current_low - pos['entry_price']
+                else:
+                    unrealized_price_diff = pos['entry_price'] - current_high
+
+                # Unrealized P&L w bazowej
+                unrealized_quoted = unrealized_price_diff * pos['eff_volume']
+                check_price = current_low if pos['type'] == 'long' else current_high
+                if check_price != 0:
+                    unrealized_base = unrealized_quoted / check_price
+                else:
+                    unrealized_base = 0
+
+                # Margin call: strata >= margin (tracimy cały depozyt)
+                if unrealized_base <= -pos['margin']:
+                    # Zamknij po cenie margin call (cena przy której strata = margin)
+                    if pos['type'] == 'long':
+                        # margin_base = margin, szukamy ceny gdzie loss_base = margin
+                        # loss_quoted = (entry - mc_price) * eff_vol
+                        # loss_base = loss_quoted / mc_price = margin
+                        # (entry - mc_price) * eff_vol / mc_price = margin
+                        # Przybliżenie: zamykamy po current_low
+                        mc_price = current_low
+                    else:
+                        mc_price = current_high
+                    positions_to_close.append((pos_idx, 'Margin Call', mc_price))
+                    continue
+
+                # --- TIME EXIT ---
                 if current_date >= pos['exit_date']:
                     positions_to_close.append((pos_idx, 'Time exit', current_price))
                     continue
 
+                # --- STOP LOSS ---
                 if stop_loss_pct is not None and stop_loss_pct > 0:
-
                     if pos['type'] == 'long':
                         stop_loss_price = pos['entry_price'] * (1 - stop_loss_pct / 100)
                         if current_low <= stop_loss_price:
@@ -335,12 +372,10 @@ class PivotBacktester:
                             positions_to_close.append((pos_idx, 'Stop Loss', stop_loss_price))
                             continue
 
+            # Zamykanie pozycji
             for pos_idx, exit_reason, exit_price_raw in sorted(positions_to_close, reverse=True, key=lambda x: x[0]):
                 pos = open_positions.pop(pos_idx)
 
-                # ============================================
-                # POPRAWIONA KALKULACJA P&L + LEVERAGE
-                # ============================================
                 if pos['type'] == 'long':
                     exit_price = exit_price_raw - spread_value
                     price_diff = exit_price - pos['entry_price']
@@ -348,31 +383,33 @@ class PivotBacktester:
                     exit_price = exit_price_raw + spread_value
                     price_diff = pos['entry_price'] - exit_price
 
-                # Wynik w walucie KWOTOWANEJ = różnica * efektywny wolumen (z dźwignią!)
-                profit_quoted = price_diff * effective_volume
+                # P&L w kwotowanej
+                profit_quoted = price_diff * pos['eff_volume']
 
-                # Przeliczenie na walutę BAZOWĄ
+                # P&L w bazowej
                 if exit_price != 0:
                     profit_base = profit_quoted / exit_price
                 else:
                     profit_base = 0
 
-                # Margin (depozyt) = nominalna pozycja / leverage
-                margin_used = volume  # nominalna pozycja bazowa bez dźwigni
+                # Przy margin call: strata ograniczona do marginu
+                if exit_reason == 'Margin Call':
+                    profit_base = max(profit_base, -pos['margin'])
+                    margin_calls += 1
 
-                # P&L % vs margin (depozyt), nie vs cały kapitał
                 pnl_pct = (profit_base / capital) * 100 if capital != 0 else 0
+                roi_on_margin = (profit_base / pos['margin']) * 100 if pos['margin'] != 0 else 0
 
-                # ROI on margin - zwrot na depozycie
-                roi_on_margin = (profit_base / margin_used) * 100 if margin_used != 0 else 0
-
-                # Pips
                 pip_value = 0.0001
                 if 'JPY' in symbol:
                     pip_value = 0.01
                 pips_gained = price_diff / pip_value
 
                 capital += profit_base
+
+                # Zabezpieczenie: kapitał nie spada poniżej 0
+                if capital < 0:
+                    capital = 0
 
                 days_held = (current_date - pos['entry_date']).days
 
@@ -391,49 +428,86 @@ class PivotBacktester:
                     'Profit (base)': profit_base,
                     'P&L %': pnl_pct,
                     'ROI Margin %': roi_on_margin,
+                    'Margin Used': pos['margin'],
+                    'Eff. Volume': pos['eff_volume'],
                     'Capital': capital,
-                    'Volume': volume,
-                    'Eff. Volume': effective_volume,
                     'Leverage': leverage,
                     'Duration': days_held,
                     'Exit Reason': exit_reason
                 })
 
-            # Otwieranie pozycji w poniedziałek
-            if current_date.weekday() == 0:
+            # ============================================
+            # OTWIERANIE POZYCJI W PONIEDZIAŁEK
+            # Wolumen = wolny_kapitał × usage% × leverage (COMPOUND)
+            # ============================================
+            if current_date.weekday() == 0 and capital > 0:
 
                 support_value = row[support_level]
                 resistance_value = row[resistance_level]
 
+                free_margin = calc_free_margin()
+
+                if free_margin <= 0:
+                    continue
+
+                # Margin na pozycję = wolny kapitał × usage%
+                position_margin = free_margin * (capital_usage_pct / 100)
+
+                if position_margin <= 0:
+                    continue
+
+                # Efektywny wolumen = margin × leverage
+                eff_volume = position_margin * leverage
+
                 if trade_direction in ['Both', 'Long Only']:
                     if current_price < support_value:
-                        entry_price = current_price + spread_value
-                        exit_date = current_date + timedelta(days=holding_days)
+                        # Margin check
+                        required_margin = position_margin
+                        if required_margin > free_margin:
+                            skipped_no_margin += 1
+                        else:
+                            entry_price = current_price + spread_value
+                            exit_date = current_date + timedelta(days=holding_days)
 
-                        open_positions.append({
-                            'type': 'long',
-                            'entry_date': current_date,
-                            'exit_date': exit_date,
-                            'entry_price': entry_price,
-                            'entry_level_name': support_level,
-                            'entry_level_value': support_value,
-                            'volume': volume
-                        })
+                            open_positions.append({
+                                'type': 'long',
+                                'entry_date': current_date,
+                                'exit_date': exit_date,
+                                'entry_price': entry_price,
+                                'entry_level_name': support_level,
+                                'entry_level_value': support_value,
+                                'margin': position_margin,
+                                'eff_volume': eff_volume
+                            })
+
+                            # Odśwież wolny margin po otwarciu
+                            free_margin = calc_free_margin()
 
                 if trade_direction in ['Both', 'Short Only']:
                     if current_price > resistance_value:
-                        entry_price = current_price - spread_value
-                        exit_date = current_date + timedelta(days=holding_days)
+                        # Recalc margin jeśli otworzyliśmy long powyżej
+                        if free_margin <= 0:
+                            skipped_no_margin += 1
+                        else:
+                            position_margin_short = min(position_margin, free_margin * (capital_usage_pct / 100))
+                            if position_margin_short <= 0:
+                                skipped_no_margin += 1
+                            else:
+                                eff_volume_short = position_margin_short * leverage
 
-                        open_positions.append({
-                            'type': 'short',
-                            'entry_date': current_date,
-                            'exit_date': exit_date,
-                            'entry_price': entry_price,
-                            'entry_level_name': resistance_level,
-                            'entry_level_value': resistance_value,
-                            'volume': volume
-                        })
+                                entry_price = current_price - spread_value
+                                exit_date = current_date + timedelta(days=holding_days)
+
+                                open_positions.append({
+                                    'type': 'short',
+                                    'entry_date': current_date,
+                                    'exit_date': exit_date,
+                                    'entry_price': entry_price,
+                                    'entry_level_name': resistance_level,
+                                    'entry_level_value': resistance_value,
+                                    'margin': position_margin_short,
+                                    'eff_volume': eff_volume_short
+                                })
 
         # Zamknij otwarte pozycje na końcu danych
         last_row = df.iloc[-1]
@@ -446,16 +520,14 @@ class PivotBacktester:
                 exit_price = last_row['Close'] + spread_value
                 price_diff = pos['entry_price'] - exit_price
 
-            profit_quoted = price_diff * effective_volume
+            profit_quoted = price_diff * pos['eff_volume']
             if exit_price != 0:
                 profit_base = profit_quoted / exit_price
             else:
                 profit_base = 0
 
             pnl_pct = (profit_base / capital) * 100 if capital != 0 else 0
-
-            margin_used = volume
-            roi_on_margin = (profit_base / margin_used) * 100 if margin_used != 0 else 0
+            roi_on_margin = (profit_base / pos['margin']) * 100 if pos['margin'] != 0 else 0
 
             pip_value = 0.0001
             if 'JPY' in symbol:
@@ -463,6 +535,8 @@ class PivotBacktester:
             pips_gained = price_diff / pip_value
 
             capital += profit_base
+            if capital < 0:
+                capital = 0
 
             days_held = (last_row['Date'] - pos['entry_date']).days
 
@@ -481,15 +555,15 @@ class PivotBacktester:
                 'Profit (base)': profit_base,
                 'P&L %': pnl_pct,
                 'ROI Margin %': roi_on_margin,
+                'Margin Used': pos['margin'],
+                'Eff. Volume': pos['eff_volume'],
                 'Capital': capital,
-                'Volume': volume,
-                'Eff. Volume': effective_volume,
                 'Leverage': leverage,
                 'Duration': days_held,
                 'Exit Reason': 'End of data'
             })
 
-        return pd.DataFrame(trades), capital
+        return pd.DataFrame(trades), capital, margin_calls, skipped_no_margin
 
 
 def calculate_yearly_stats_with_fees(trades_df, initial_capital, management_fee_pct=1.5, success_fee_pct=12.0):
@@ -734,35 +808,41 @@ initial_capital = st.sidebar.number_input(
     help="Kapitał w walucie BAZOWEJ pary (np. EUR dla EURPLN)"
 )
 
-volume = st.sidebar.number_input(
-    "Wolumen (jednostki waluty bazowej)",
-    min_value=1000,
-    max_value=10000000,
-    value=100000,
-    step=10000,
-    format="%d",
-    help="Ile jednostek waluty bazowej kupujesz/sprzedajesz (np. 100,000 EUR)"
-)
-
 leverage = st.sidebar.select_slider(
     "⚡ Leverage (dźwignia)",
     options=[1, 5, 10, 15, 20],
     value=1,
-    help="Mnożnik dźwigni. x10 = kontrolujesz 10× więcej niż depozyt"
+    help="Mnożnik dźwigni. Efektywny wolumen = kapitał × usage% × leverage"
 )
 
-effective_volume_display = volume * leverage
-margin_display = volume  # depozyt = nominalna pozycja
+capital_usage_pct = st.sidebar.slider(
+    "📊 Alokacja kapitału na pozycję (%)",
+    min_value=10,
+    max_value=100,
+    value=100,
+    step=10,
+    help="Ile % wolnego kapitału alokować na margin jednej pozycji"
+)
+
+# Pokazanie kalkulacji
+example_margin = initial_capital * (capital_usage_pct / 100)
+example_eff_vol = example_margin * leverage
+
+st.sidebar.markdown(f"""
+**📐 Kalkulacja (start):**
+- Kapitał: **{initial_capital:,}**
+- Margin/pozycję: {initial_capital:,} × {capital_usage_pct}% = **{example_margin:,.0f}**
+- Eff. wolumen: {example_margin:,.0f} × x{leverage} = **{example_eff_vol:,.0f}**
+""")
 
 if leverage > 1:
     st.sidebar.warning(
-        f"⚡ **Leverage x{leverage}**\n\n"
-        f"Nominalna pozycja: {volume:,}\n\n"
-        f"Efektywny wolumen: **{effective_volume_display:,}**\n\n"
-        f"⚠️ Zyski i straty × {leverage}"
+        f"⚡ **Leverage x{leverage}** — zyski i straty × {leverage}\n\n"
+        f"⚠️ Margin call przy stracie = 100% depozytu\n\n"
+        f"📈 Compound: wolumen rośnie/maleje z kapitałem"
     )
 else:
-    st.sidebar.info(f"Wolumen: {volume:,} (bez dźwigni)")
+    st.sidebar.info("Bez dźwigni — wolumen = kapitał × alokacja%")
 
 spread_value = st.sidebar.number_input(
     "Spread (format 0.0000)",
@@ -868,17 +948,19 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
 
                 df = backtester.calculate_pivot_points(df)
 
-                trades_df, final_cap = backtester.run_backtest(
-                    df, symbol, capital_per_pair, volume, spread_value,
+                trades_df, final_cap, mc_count, skip_count = backtester.run_backtest(
+                    df, symbol, capital_per_pair, spread_value,
                     holding_days, stop_loss_pct, support_level, resistance_level, trade_direction_value,
-                    leverage
+                    leverage, capital_usage_pct
                 )
 
                 all_trades.append(trades_df)
                 results_per_symbol[symbol] = {
                     'trades': trades_df,
                     'final_capital': final_cap,
-                    'initial_capital': capital_per_pair
+                    'initial_capital': capital_per_pair,
+                    'margin_calls': mc_count,
+                    'skipped_no_margin': skip_count
                 }
             else:
                 st.error(f"❌ {symbol}: {load_status}")
@@ -900,17 +982,19 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             if df is not None and len(df) > 0:
                 df = backtester.calculate_pivot_points(df)
 
-                trades_df, final_cap = backtester.run_backtest(
-                    df, symbol, capital_per_pair, volume, spread_value,
+                trades_df, final_cap, mc_count, skip_count = backtester.run_backtest(
+                    df, symbol, capital_per_pair, spread_value,
                     holding_days, stop_loss_pct, support_level, resistance_level, trade_direction_value,
-                    leverage
+                    leverage, capital_usage_pct
                 )
 
                 all_trades.append(trades_df)
                 results_per_symbol[symbol] = {
                     'trades': trades_df,
                     'final_capital': final_cap,
-                    'initial_capital': capital_per_pair
+                    'initial_capital': capital_per_pair,
+                    'margin_calls': mc_count,
+                    'skipped_no_margin': skip_count
                 }
             else:
                 st.warning(f"⚠️ Nie udało się pobrać danych dla {symbol}")
@@ -939,20 +1023,19 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         # INFO BOX: P&L EXPLANATION
         # ============================================
         st.markdown("## ℹ️ Logika kalkulacji P&L")
-        leverage_text = f" × leverage x{leverage} = **{volume * leverage:,}**" if leverage > 1 else ""
         st.markdown(f"""
         <div class="fee-info">
-        <b>KALKULACJA P&L (waluta bazowa) + LEVERAGE:</b><br>
-        1. Różnica kursowa: <code>exit_price - entry_price</code> (long) lub odwrotnie (short)<br>
-        2. Efektywny wolumen: <code>{volume:,}{' × ' + str(leverage) + ' = ' + f'{volume*leverage:,}' if leverage > 1 else ''}</code><br>
-        3. Wynik w walucie <b>kwotowanej</b>: <code>różnica × efektywny wolumen</code><br>
-        4. Przeliczenie na walutę <b>bazową</b>: <code>wynik_kwotowany / kurs_zamknięcia</code><br><br>
-        <b>Przykład EURPLN (wolumen {volume:,}, leverage x{leverage}):</b><br>
-        Long entry: 4.2100, exit: 4.2200, efektywny wolumen: {volume*leverage:,}<br>
-        → Wynik PLN = 0.0100 × {volume*leverage:,} = <b>{0.01 * volume * leverage:,.0f} PLN</b><br>
-        → Wynik EUR = {0.01 * volume * leverage:,.0f} / 4.2200 = <b>{0.01 * volume * leverage / 4.22:,.2f} EUR</b><br><br>
-        {'⚡ <b>UWAGA: Leverage x' + str(leverage) + ' oznacza ' + str(leverage) + '× większe zyski ALE też ' + str(leverage) + '× większe straty!</b><br>' if leverage > 1 else ''}
-        Kapitał i wyniki w <b>walucie bazowej</b> pary.
+        <b>DYNAMIC VOLUME + MARGIN + LEVERAGE:</b><br><br>
+        <b>1. Wolumen z kapitału (compound):</b><br>
+        &nbsp;&nbsp;Margin = wolny_kapitał × alokacja ({capital_usage_pct}%)<br>
+        &nbsp;&nbsp;Eff. wolumen = margin × leverage (x{leverage})<br>
+        &nbsp;&nbsp;→ Start: {initial_capital:,} × {capital_usage_pct}% × x{leverage} = <b>{initial_capital * capital_usage_pct/100 * leverage:,.0f}</b> eff. wolumen<br><br>
+        <b>2. P&L w walucie bazowej:</b><br>
+        &nbsp;&nbsp;profit_quoted = (exit - entry) × eff_volume<br>
+        &nbsp;&nbsp;profit_base = profit_quoted / exit_price<br><br>
+        <b>3. Margin check:</b> Nie otwieraj jeśli brak wolnego marginu<br>
+        <b>4. Margin call:</b> Zamknij jeśli strata ≥ depozyt (margin)<br>
+        <b>5. Compound:</b> Wolumen rośnie z zyskami, maleje ze stratami<br>
         </div>
         """, unsafe_allow_html=True)
 
@@ -964,6 +1047,9 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         total_return_before = final_portfolio_capital - initial_capital
         return_pct_before = (total_return_before / initial_capital) * 100
 
+        total_margin_calls = sum(r.get('margin_calls', 0) for r in results_per_symbol.values())
+        total_skipped = sum(r.get('skipped_no_margin', 0) for r in results_per_symbol.values())
+
         with col1:
             st.metric("Kapitał końcowy (base)", f"{final_portfolio_capital:,.2f}", f"{total_return_before:+,.2f}")
         with col2:
@@ -971,9 +1057,19 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         with col3:
             st.metric("Leverage", f"x{leverage}")
         with col4:
-            st.metric("Liczba par", len(results_per_symbol))
-        with col5:
             st.metric("Łączne transakcje", len(combined_trades))
+        with col5:
+            st.metric("Liczba par", len(results_per_symbol))
+
+        # Margin stats
+        if total_margin_calls > 0 or total_skipped > 0:
+            mcol1, mcol2 = st.columns(2)
+            with mcol1:
+                if total_margin_calls > 0:
+                    st.error(f"⚠️ **Margin Calls: {total_margin_calls}** — pozycje zamknięte z powodu utraty depozytu")
+            with mcol2:
+                if total_skipped > 0:
+                    st.warning(f"⏭️ **Pominięte sygnały (brak marginu): {total_skipped}**")
 
         # FEES
         st.markdown("## 💸 Analiza Fees")
@@ -1060,6 +1156,8 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                 total_profit_quoted = trades['Profit (quoted)'].sum()
                 total_profit_base = trades['Profit (base)'].sum()
                 avg_holding = trades['Duration'].mean()
+                mc = result.get('margin_calls', 0)
+                skipped = result.get('skipped_no_margin', 0)
 
                 summary_data.append({
                     'Symbol': symbol,
@@ -1071,6 +1169,8 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                     'Total P&L (base)': total_profit_base,
                     'Trades': len(trades),
                     'Win Rate (%)': win_rate,
+                    'Margin Calls': mc,
+                    'Skipped (no margin)': skipped,
                     'Total Pips': total_pips,
                     'Avg Holding (days)': avg_holding
                 })
@@ -1374,10 +1474,9 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
 
             with col3:
                 st.markdown("**🛡️ EXIT**")
-                st.write(
-                    f"Stop Loss: {len(combined_trades[combined_trades['Exit Reason'] == 'Stop Loss'])}")
-                st.write(
-                    f"Time exit: {len(combined_trades[combined_trades['Exit Reason'] == 'Time exit'])}")
+                st.write(f"Time exit: {len(combined_trades[combined_trades['Exit Reason'] == 'Time exit'])}")
+                st.write(f"Stop Loss: {len(combined_trades[combined_trades['Exit Reason'] == 'Stop Loss'])}")
+                st.write(f"Margin Call: {len(combined_trades[combined_trades['Exit Reason'] == 'Margin Call'])}")
                 st.write(f"Avg holding: {combined_trades['Duration'].mean():.1f} dni")
 
             # Historia transakcji
@@ -1393,6 +1492,8 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             display['Profit (base)'] = display['Profit (base)'].round(2)
             display['P&L %'] = display['P&L %'].round(2)
             display['ROI Margin %'] = display['ROI Margin %'].round(2)
+            display['Margin Used'] = display['Margin Used'].round(2)
+            display['Eff. Volume'] = display['Eff. Volume'].round(0)
             display['Portfolio Capital'] = display['Portfolio Capital'].round(2)
 
             st.dataframe(display, use_container_width=True)
@@ -1417,29 +1518,30 @@ else:
     st.info("👈 Wybierz źródło danych i kliknij URUCHOM BACKTEST")
 
     st.markdown(f"""
-    ## 📖 Multi-Currency Backtesting - P&L in Base Currency + Leverage
+    ## 📖 Multi-Currency Backtesting — Dynamic Volume + Margin + Leverage
 
-    **🔑 Kalkulacja P&L (waluta bazowa):**
-    - Wynik transakcji: `(exit - entry) × efektywny_wolumen` = wynik w **walucie kwotowanej**
-    - Przeliczenie na bazową: `wynik_kwotowany / kurs_zamknięcia` = wynik w **walucie bazowej**
-    - Kapitał i wszystkie wyniki wyrażone w walucie **bazowej** pary
+    **🔑 Dynamiczny wolumen z kapitału (compound):**
+    - Margin na pozycję = wolny_kapitał × alokacja%
+    - Efektywny wolumen = margin × leverage
+    - Wolumen rośnie z zyskami, maleje ze stratami
 
-    **⚡ Leverage (dźwignia):**
-    - Dostępne: x1 (bez), x5, x10, x15, x20
-    - Efektywny wolumen = wolumen × leverage
-    - Zyski i straty pomnożone przez dźwignię
-    - Przykład: 100k EUR × x10 = kontrolujesz 1M EUR pozycję
+    **⚡ Leverage:** x1, x5, x10, x15, x20
+    - Przykład: 1M EUR × 100% alokacji × x10 = **10M EUR** efektywna pozycja
+    - Zyski i straty pomnożone × leverage
 
-    **Przykład EURPLN (wolumen 100,000 EUR, leverage x10):**
-    - Long entry: 4.2100, exit: 4.2200, eff. volume: 1,000,000
-    - Wynik PLN = 0.0100 × 1,000,000 = **10,000 PLN** (kwotowana)
-    - Wynik EUR = 10,000 / 4.2200 = **2,369.67 EUR** (bazowa)
+    **🛡️ Margin management:**
+    - **Margin check:** nie otwieraj pozycji jeśli brak wolnego marginu
+    - **Margin call:** zamknij pozycję jeśli strata ≥ depozyt
+
+    **💱 P&L w walucie bazowej:**
+    - profit_quoted = (exit - entry) × eff_volume (waluta kwotowana)
+    - profit_base = profit_quoted / exit_price (waluta bazowa)
 
     **Pivot Points:** 3-21 dni | **Holding:** 1-120 dni
 
     **Fee Structure:**
-    - Management Fee {management_fee_pct}% (start roku z rzeczywistego kapitału)
-    - Success Fee {success_fee_pct}% (koniec roku, tylko od zysku)
+    - Management Fee {management_fee_pct}% (start roku)
+    - Success Fee {success_fee_pct}% (koniec roku, od zysku)
     """)
 
 st.markdown("---")
