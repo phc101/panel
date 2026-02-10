@@ -278,9 +278,9 @@ class PivotBacktester:
     def run_backtest(self, df, symbol, initial_capital=10000, volume=100000,
                      spread_value=0.0002, holding_days=5, stop_loss_pct=None,
                      support_level='S3', resistance_level='R3',
-                     trade_direction='Both'):
+                     trade_direction='Both', leverage=1):
         """
-        Uruchom backtest strategii - POPRAWIONA KALKULACJA P&L
+        Uruchom backtest strategii - POPRAWIONA KALKULACJA P&L + LEVERAGE
 
         Logika P&L:
         - Wynik transakcji w pipsach: (exit_price - entry_price) dla long
@@ -289,12 +289,19 @@ class PivotBacktester:
         - Przeliczenie na walutę BAZOWĄ: profit_quoted / exit_price
           np. 1,000 PLN / 4.22 = 236.97 EUR
 
+        Leverage:
+        - Efektywny wolumen = volume * leverage
+        - Margin (depozyt) = volume / leverage (ile kapitału blokujemy)
+        - P&L liczone od efektywnego wolumenu
+        - Stop loss / margin call jeśli strata > margin
+
         Kapitał i wyniki są w walucie BAZOWEJ pary.
         """
 
         trades = []
         capital = initial_capital  # w walucie bazowej
         open_positions = []
+        effective_volume = volume * leverage  # wolumen z dźwignią
 
         for i in range(len(df)):
             row = df.iloc[i]
@@ -332,34 +339,34 @@ class PivotBacktester:
                 pos = open_positions.pop(pos_idx)
 
                 # ============================================
-                # POPRAWIONA KALKULACJA P&L
+                # POPRAWIONA KALKULACJA P&L + LEVERAGE
                 # ============================================
                 if pos['type'] == 'long':
-                    # Long: kupujemy bazową, sprzedajemy kwotowaną
                     exit_price = exit_price_raw - spread_value
-                    # Różnica kursowa
                     price_diff = exit_price - pos['entry_price']
                 else:
-                    # Short: sprzedajemy bazową, kupujemy kwotowaną
                     exit_price = exit_price_raw + spread_value
                     price_diff = pos['entry_price'] - exit_price
 
-                # Wynik w walucie KWOTOWANEJ = różnica * wolumen
-                profit_quoted = price_diff * volume
+                # Wynik w walucie KWOTOWANEJ = różnica * efektywny wolumen (z dźwignią!)
+                profit_quoted = price_diff * effective_volume
 
-                # Przeliczenie na walutę BAZOWĄ = profit_quoted / kurs_zamknięcia
-                # (dzielimy przez exit_price, bo tyle kosztuje 1 jednostka bazowa)
+                # Przeliczenie na walutę BAZOWĄ
                 if exit_price != 0:
                     profit_base = profit_quoted / exit_price
                 else:
                     profit_base = 0
 
-                # P&L procentowy względem kapitału w momencie wejścia
-                # Wartość pozycji w bazowej = volume (bo kupujemy/sprzedajemy volume jednostek bazowej)
-                # ale kapitał to nasz account balance, więc % liczymy vs capital
+                # Margin (depozyt) = nominalna pozycja / leverage
+                margin_used = volume  # nominalna pozycja bazowa bez dźwigni
+
+                # P&L % vs margin (depozyt), nie vs cały kapitał
                 pnl_pct = (profit_base / capital) * 100 if capital != 0 else 0
 
-                # Pips (tradycyjne) - informacyjnie
+                # ROI on margin - zwrot na depozycie
+                roi_on_margin = (profit_base / margin_used) * 100 if margin_used != 0 else 0
+
+                # Pips
                 pip_value = 0.0001
                 if 'JPY' in symbol:
                     pip_value = 0.01
@@ -383,8 +390,11 @@ class PivotBacktester:
                     'Profit (quoted)': profit_quoted,
                     'Profit (base)': profit_base,
                     'P&L %': pnl_pct,
+                    'ROI Margin %': roi_on_margin,
                     'Capital': capital,
                     'Volume': volume,
+                    'Eff. Volume': effective_volume,
+                    'Leverage': leverage,
                     'Duration': days_held,
                     'Exit Reason': exit_reason
                 })
@@ -436,13 +446,16 @@ class PivotBacktester:
                 exit_price = last_row['Close'] + spread_value
                 price_diff = pos['entry_price'] - exit_price
 
-            profit_quoted = price_diff * volume
+            profit_quoted = price_diff * effective_volume
             if exit_price != 0:
                 profit_base = profit_quoted / exit_price
             else:
                 profit_base = 0
 
             pnl_pct = (profit_base / capital) * 100 if capital != 0 else 0
+
+            margin_used = volume
+            roi_on_margin = (profit_base / margin_used) * 100 if margin_used != 0 else 0
 
             pip_value = 0.0001
             if 'JPY' in symbol:
@@ -467,8 +480,11 @@ class PivotBacktester:
                 'Profit (quoted)': profit_quoted,
                 'Profit (base)': profit_base,
                 'P&L %': pnl_pct,
+                'ROI Margin %': roi_on_margin,
                 'Capital': capital,
                 'Volume': volume,
+                'Eff. Volume': effective_volume,
+                'Leverage': leverage,
                 'Duration': days_held,
                 'Exit Reason': 'End of data'
             })
@@ -643,7 +659,7 @@ def calculate_projection(trades_df, initial_capital, years_ahead=5):
 # ============================================
 
 st.title("📊 Forex Pivot Strategy Backtester - Multi-Currency")
-st.markdown("**P&L w walucie BAZOWEJ | Volume w jednostkach bazowych | Holding 1-120d**")
+st.markdown("**P&L w walucie BAZOWEJ | Leverage x1-x20 | Hold 1-120d**")
 
 # SIDEBAR
 st.sidebar.header("⚙️ Konfiguracja")
@@ -727,6 +743,26 @@ volume = st.sidebar.number_input(
     format="%d",
     help="Ile jednostek waluty bazowej kupujesz/sprzedajesz (np. 100,000 EUR)"
 )
+
+leverage = st.sidebar.select_slider(
+    "⚡ Leverage (dźwignia)",
+    options=[1, 5, 10, 15, 20],
+    value=1,
+    help="Mnożnik dźwigni. x10 = kontrolujesz 10× więcej niż depozyt"
+)
+
+effective_volume_display = volume * leverage
+margin_display = volume  # depozyt = nominalna pozycja
+
+if leverage > 1:
+    st.sidebar.warning(
+        f"⚡ **Leverage x{leverage}**\n\n"
+        f"Nominalna pozycja: {volume:,}\n\n"
+        f"Efektywny wolumen: **{effective_volume_display:,}**\n\n"
+        f"⚠️ Zyski i straty × {leverage}"
+    )
+else:
+    st.sidebar.info(f"Wolumen: {volume:,} (bez dźwigni)")
 
 spread_value = st.sidebar.number_input(
     "Spread (format 0.0000)",
@@ -834,7 +870,8 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
 
                 trades_df, final_cap = backtester.run_backtest(
                     df, symbol, capital_per_pair, volume, spread_value,
-                    holding_days, stop_loss_pct, support_level, resistance_level, trade_direction_value
+                    holding_days, stop_loss_pct, support_level, resistance_level, trade_direction_value,
+                    leverage
                 )
 
                 all_trades.append(trades_df)
@@ -865,7 +902,8 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
 
                 trades_df, final_cap = backtester.run_backtest(
                     df, symbol, capital_per_pair, volume, spread_value,
-                    holding_days, stop_loss_pct, support_level, resistance_level, trade_direction_value
+                    holding_days, stop_loss_pct, support_level, resistance_level, trade_direction_value,
+                    leverage
                 )
 
                 all_trades.append(trades_df)
@@ -901,23 +939,27 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         # INFO BOX: P&L EXPLANATION
         # ============================================
         st.markdown("## ℹ️ Logika kalkulacji P&L")
+        leverage_text = f" × leverage x{leverage} = **{volume * leverage:,}**" if leverage > 1 else ""
         st.markdown(f"""
         <div class="fee-info">
-        <b>POPRAWIONA KALKULACJA:</b><br>
+        <b>KALKULACJA P&L (waluta bazowa) + LEVERAGE:</b><br>
         1. Różnica kursowa: <code>exit_price - entry_price</code> (long) lub odwrotnie (short)<br>
-        2. Wynik w walucie <b>kwotowanej</b>: <code>różnica × wolumen ({volume:,})</code><br>
-        3. Przeliczenie na walutę <b>bazową</b>: <code>wynik_kwotowany / kurs_zamknięcia</code><br><br>
-        <b>Przykład EURPLN:</b> Long 100k EUR, entry 4.2100, exit 4.2200<br>
-        → Wynik PLN = 0.0100 × 100,000 = <b>1,000 PLN</b><br>
-        → Wynik EUR = 1,000 / 4.2200 = <b>236.97 EUR</b><br><br>
-        Kapitał i wszystkie wyniki są w <b>walucie bazowej</b> pary.
+        2. Efektywny wolumen: <code>{volume:,}{' × ' + str(leverage) + ' = ' + f'{volume*leverage:,}' if leverage > 1 else ''}</code><br>
+        3. Wynik w walucie <b>kwotowanej</b>: <code>różnica × efektywny wolumen</code><br>
+        4. Przeliczenie na walutę <b>bazową</b>: <code>wynik_kwotowany / kurs_zamknięcia</code><br><br>
+        <b>Przykład EURPLN (wolumen {volume:,}, leverage x{leverage}):</b><br>
+        Long entry: 4.2100, exit: 4.2200, efektywny wolumen: {volume*leverage:,}<br>
+        → Wynik PLN = 0.0100 × {volume*leverage:,} = <b>{0.01 * volume * leverage:,.0f} PLN</b><br>
+        → Wynik EUR = {0.01 * volume * leverage:,.0f} / 4.2200 = <b>{0.01 * volume * leverage / 4.22:,.2f} EUR</b><br><br>
+        {'⚡ <b>UWAGA: Leverage x' + str(leverage) + ' oznacza ' + str(leverage) + '× większe zyski ALE też ' + str(leverage) + '× większe straty!</b><br>' if leverage > 1 else ''}
+        Kapitał i wyniki w <b>walucie bazowej</b> pary.
         </div>
         """, unsafe_allow_html=True)
 
         # WYNIKI ZBIORCZE
-        st.markdown("## 📊 Podsumowanie Portfolio (przed fees)")
+        st.markdown(f"## 📊 Podsumowanie Portfolio (przed fees) {'| ⚡ Leverage x' + str(leverage) if leverage > 1 else ''}")
 
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
 
         total_return_before = final_portfolio_capital - initial_capital
         return_pct_before = (total_return_before / initial_capital) * 100
@@ -927,8 +969,10 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
         with col2:
             st.metric("Zwrot %", f"{return_pct_before:.2f}%")
         with col3:
-            st.metric("Liczba par", len(results_per_symbol))
+            st.metric("Leverage", f"x{leverage}")
         with col4:
+            st.metric("Liczba par", len(results_per_symbol))
+        with col5:
             st.metric("Łączne transakcje", len(combined_trades))
 
         # FEES
@@ -1092,7 +1136,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
                                     annotation_text='Start')
 
             fig_portfolio.update_layout(
-                title=f"Rozwój kapitału ({len(selected_symbols)} par) - Pivot {lookback_days}d, Hold {holding_days}d",
+                title=f"Rozwój kapitału ({len(selected_symbols)} par) - Pivot {lookback_days}d, Hold {holding_days}d, Lev x{leverage}",
                 xaxis_title="Data",
                 yaxis_title="Kapitał (waluta bazowa)",
                 height=500,
@@ -1348,6 +1392,7 @@ if st.sidebar.button("🚀 URUCHOM BACKTEST", type="primary", disabled=not can_r
             display['Profit (quoted)'] = display['Profit (quoted)'].round(2)
             display['Profit (base)'] = display['Profit (base)'].round(2)
             display['P&L %'] = display['P&L %'].round(2)
+            display['ROI Margin %'] = display['ROI Margin %'].round(2)
             display['Portfolio Capital'] = display['Portfolio Capital'].round(2)
 
             st.dataframe(display, use_container_width=True)
@@ -1372,23 +1417,25 @@ else:
     st.info("👈 Wybierz źródło danych i kliknij URUCHOM BACKTEST")
 
     st.markdown(f"""
-    ## 📖 Multi-Currency Backtesting - POPRAWIONA KALKULACJA P&L
+    ## 📖 Multi-Currency Backtesting - P&L in Base Currency + Leverage
 
-    **🔑 Kluczowa zmiana - P&L w walucie bazowej:**
-    - Wynik transakcji: `(exit - entry) × wolumen` = wynik w **walucie kwotowanej**
+    **🔑 Kalkulacja P&L (waluta bazowa):**
+    - Wynik transakcji: `(exit - entry) × efektywny_wolumen` = wynik w **walucie kwotowanej**
     - Przeliczenie na bazową: `wynik_kwotowany / kurs_zamknięcia` = wynik w **walucie bazowej**
     - Kapitał i wszystkie wyniki wyrażone w walucie **bazowej** pary
 
-    **Przykład EURPLN (wolumen 100,000 EUR):**
-    - Long entry: 4.2100, exit: 4.2200
-    - Wynik PLN = 0.0100 × 100,000 = **1,000 PLN** (kwotowana)
-    - Wynik EUR = 1,000 / 4.2200 = **236.97 EUR** (bazowa)
+    **⚡ Leverage (dźwignia):**
+    - Dostępne: x1 (bez), x5, x10, x15, x20
+    - Efektywny wolumen = wolumen × leverage
+    - Zyski i straty pomnożone przez dźwignię
+    - Przykład: 100k EUR × x10 = kontrolujesz 1M EUR pozycję
 
-    **Pivot Points:**
-    - Okres: 3-21 dni (rolling window)
-    - Poziomy: R3, R2, R1, Pivot, S1, S2, S3
+    **Przykład EURPLN (wolumen 100,000 EUR, leverage x10):**
+    - Long entry: 4.2100, exit: 4.2200, eff. volume: 1,000,000
+    - Wynik PLN = 0.0100 × 1,000,000 = **10,000 PLN** (kwotowana)
+    - Wynik EUR = 10,000 / 4.2200 = **2,369.67 EUR** (bazowa)
 
-    **Holding Period: 1-120 dni**
+    **Pivot Points:** 3-21 dni | **Holding:** 1-120 dni
 
     **Fee Structure:**
     - Management Fee {management_fee_pct}% (start roku z rzeczywistego kapitału)
@@ -1397,4 +1444,4 @@ else:
 
 st.markdown("---")
 st.markdown(
-    f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | 💱 Multi-Currency | P&L in Base Currency | Hold 1-120d")
+    f"**🕐 {datetime.now().strftime('%Y-%m-%d %H:%M')}** | 💱 Multi-Currency | P&L Base Currency | Leverage x1-x20 | Hold 1-120d")
