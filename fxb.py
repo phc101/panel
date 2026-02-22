@@ -69,8 +69,22 @@ selected_pairs = st.sidebar.multiselect(
     default=["USD/PLN", "EUR/PLN"]
 )
 
-period   = st.sidebar.selectbox("Okres historyczny", ["6mo", "1y", "2y", "5y"], index=1)
-interval = st.sidebar.selectbox("Interwał", ["1h", "1d"], index=0)
+# Yahoo Finance interval limits:
+# 1h  → max 730 days (2y)
+# 4h  → not native, resampled from 1h (max 2y)
+# 1d  → unlimited
+INTERVAL_MAX_PERIOD = {
+    "1h":  ["6mo", "1y", "2y"],
+    "4h":  ["6mo", "1y", "2y"],
+    "1d":  ["6mo", "1y", "2y", "5y"],
+}
+
+interval = st.sidebar.selectbox("Interwał", ["1h", "4h", "1d"], index=0)
+allowed_periods = INTERVAL_MAX_PERIOD[interval]
+period = st.sidebar.selectbox("Okres historyczny", allowed_periods, index=min(1, len(allowed_periods)-1))
+
+if interval in ("1h", "4h") and period not in allowed_periods:
+    st.sidebar.warning(f"⚠️ Interwał {interval} obsługuje max 2y – ustawiono 2y.")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📐 Parametry Fibonacciego")
@@ -87,9 +101,27 @@ min_impulse  = st.sidebar.slider("Minimalny impuls (%)",  0.1, 2.0, 0.5, 0.1) / 
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=3600)
 def load_data(ticker, period, interval):
-    df = yf.download(ticker, period=period, interval=interval, auto_adjust=True)
+    # 4h is not natively supported by yfinance – download 1h and resample
+    dl_interval = "1h" if interval == "4h" else interval
+
+    df = yf.download(ticker, period=period, interval=dl_interval, auto_adjust=True)
+
+    if df.empty:
+        return pd.DataFrame()
+
     df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
-    return df[['Open', 'High', 'Low', 'Close']].dropna()
+    df = df[['Open', 'High', 'Low', 'Close']].dropna()
+
+    # Resample 1h → 4h
+    if interval == "4h":
+        df = df.resample("4h").agg({
+            'Open':  'first',
+            'High':  'max',
+            'Low':   'min',
+            'Close': 'last',
+        }).dropna()
+
+    return df
 
 
 def find_swings(df, window):
@@ -262,8 +294,13 @@ for tab, pair_name in zip(pair_tabs[:-1], selected_pairs):
                 st.error(f"Błąd pobierania danych: {e}")
                 continue
 
+        if df.empty:
+            st.error(f"❌ Brak danych dla {pair_name} przy interwale {interval} / okresie {period}. Spróbuj krótszego okresu.")
+            continue
+
         st.caption(
             f"**{len(df)}** świec | {df.index[0].date()} → {df.index[-1].date()}"
+            + (f" | ⚠️ 4h zresampleowane z 1h" if interval == "4h" else "")
         )
 
         highs, lows = find_swings(df, swing_window)
