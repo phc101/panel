@@ -75,7 +75,7 @@ selected_pairs = st.sidebar.multiselect(
 # 1d  → unlimited
 INTERVAL_MAX_PERIOD = {
     "1h":  ["6mo", "1y", "2y"],
-    "4h":  ["6mo", "1y", "2y"],
+    "4h":  ["6mo", "1y", "2y", "5y"],
     "1d":  ["6mo", "1y", "2y", "5y"],
 }
 
@@ -101,8 +101,22 @@ min_impulse  = st.sidebar.slider("Minimalny impuls (%)",  0.1, 2.0, 0.5, 0.1) / 
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=3600)
 def load_data(ticker, period, interval):
-    # 4h is not natively supported by yfinance – download 1h and resample
-    dl_interval = "1h" if interval == "4h" else interval
+    # Yahoo Finance limits:
+    # 1h  → max 730 days → use 1h directly
+    # 4h  → not native:
+    #         period <= 2y  → download 1h, resample to 4h (higher precision)
+    #         period >  2y  → download 1d, resample to 4h (approximation)
+    # 1d  → unlimited
+
+    if interval == "4h":
+        TWO_YEAR_PERIODS = {"6mo", "1y", "2y"}
+        if period in TWO_YEAR_PERIODS:
+            dl_interval = "1h"
+        else:
+            # 5y: use daily data resampled to ~4h (2 bars/day approximation)
+            dl_interval = "1d"
+    else:
+        dl_interval = interval
 
     df = yf.download(ticker, period=period, interval=dl_interval, auto_adjust=True)
 
@@ -112,9 +126,9 @@ def load_data(ticker, period, interval):
     df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
     df = df[['Open', 'High', 'Low', 'Close']].dropna()
 
-    # Resample 1h → 4h
     if interval == "4h":
-        df = df.resample("4h").agg({
+        resample_rule = "4h" if dl_interval == "1h" else "2D"
+        df = df.resample(resample_rule).agg({
             'Open':  'first',
             'High':  'max',
             'Low':   'min',
@@ -298,9 +312,12 @@ for tab, pair_name in zip(pair_tabs[:-1], selected_pairs):
             st.error(f"❌ Brak danych dla {pair_name} przy interwale {interval} / okresie {period}. Spróbuj krótszego okresu.")
             continue
 
+        source_note = ""
+        if interval == "4h":
+            source_note = " | ⚠️ 4h z 1h" if period in ("6mo", "1y", "2y") else " | ⚠️ 4h aproks. z 1d (5y)"
+
         st.caption(
-            f"**{len(df)}** świec | {df.index[0].date()} → {df.index[-1].date()}"
-            + (f" | ⚠️ 4h zresampleowane z 1h" if interval == "4h" else "")
+            f"**{len(df)}** świec | {df.index[0].date()} → {df.index[-1].date()}{source_note}"
         )
 
         highs, lows = find_swings(df, swing_window)
