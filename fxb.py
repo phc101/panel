@@ -1,8 +1,9 @@
 """
 Fibonacci 0.618 → 1.618 Backtester - Streamlit App
+With capital management, leverage and multiple PLN pairs
 
 Usage:
-    pip install yfinance pandas numpy matplotlib streamlit plotly
+    pip install yfinance pandas numpy streamlit plotly
     streamlit run fib_streamlit.py
 """
 
@@ -11,7 +12,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 # ─────────────────────────────────────────────
 st.set_page_config(
@@ -23,49 +23,64 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    .main { background-color: #0d0d1a; }
-    .metric-card {
+    .block-container { padding-top: 1rem; }
+    div[data-testid="metric-container"] {
         background: #1a1a2e;
-        border-radius: 10px;
-        padding: 15px;
-        text-align: center;
         border: 1px solid #333;
+        border-radius: 8px;
+        padding: 10px;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# SIDEBAR SETTINGS
+# PAIRS
+# ─────────────────────────────────────────────
+PAIRS = {
+    "USD/PLN": "PLN=X",
+    "EUR/PLN": "EURPLN=X",
+    "GBP/PLN": "GBPPLN=X",
+    "CHF/PLN": "CHFPLN=X",
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "CHF/USD": "CHFUSD=X",
+    "GBP/EUR": "GBPEUR=X",
+    "CHF/EUR": "CHFEUR=X",
+}
+
+# ─────────────────────────────────────────────
+# SIDEBAR
 # ─────────────────────────────────────────────
 st.sidebar.title("⚙️ Ustawienia")
 
-ticker = st.sidebar.selectbox(
-    "Para walutowa",
-    ["PLN=X", "EURUSD=X", "GBPUSD=X", "EURPLN=X", "USDJPY=X"],
-    index=0
+st.sidebar.subheader("💰 Kapitał i ryzyko")
+capital = st.sidebar.number_input(
+    "Kapitał (USD)", min_value=1000, max_value=1_000_000, value=10_000, step=1000
 )
-
-period = st.sidebar.selectbox(
-    "Okres historyczny",
-    ["6mo", "1y", "2y", "5y"],
-    index=1
-)
-
-interval = st.sidebar.selectbox(
-    "Interwał",
-    ["1h", "1d"],
-    index=0
-)
+leverage = st.sidebar.select_slider("Lewar", options=[1, 5, 10, 20], value=1)
+risk_pct = st.sidebar.slider("Ryzyko na transakcję (%)", 0.5, 10.0, 2.0, 0.5)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Parametry Fibonacciego")
+st.sidebar.subheader("📊 Para i dane")
+
+selected_pairs = st.sidebar.multiselect(
+    "Pary walutowe",
+    list(PAIRS.keys()),
+    default=["USD/PLN", "EUR/PLN"]
+)
+
+period   = st.sidebar.selectbox("Okres historyczny", ["6mo", "1y", "2y", "5y"], index=1)
+interval = st.sidebar.selectbox("Interwał", ["1h", "1d"], index=0)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📐 Parametry Fibonacciego")
 
 swing_window = st.sidebar.slider("Okno swingów (bary)", 5, 30, 10)
-entry_fib = st.sidebar.slider("Poziom wejścia (retracement)", 0.50, 0.786, 0.618, 0.001, format="%.3f")
-stop_fib = st.sidebar.slider("Stop Loss (retracement)", 0.618, 0.90, 0.786, 0.001, format="%.3f")
-target_fib = st.sidebar.slider("Take Profit (extension)", 1.272, 2.618, 1.618, 0.001, format="%.3f")
-fib_zone = st.sidebar.slider("Tolerancja strefy wejścia (%)", 0.1, 3.0, 1.0, 0.1) / 100
-min_impulse = st.sidebar.slider("Minimalny impuls (%)", 0.1, 2.0, 0.5, 0.1) / 100
+entry_fib    = st.sidebar.slider("Wejście (retracement)",  0.500, 0.786, 0.618, 0.001, format="%.3f")
+stop_fib     = st.sidebar.slider("Stop Loss (retracement)", 0.618, 0.900, 0.786, 0.001, format="%.3f")
+target_fib   = st.sidebar.slider("Take Profit (extension)", 1.272, 2.618, 1.618, 0.001, format="%.3f")
+fib_zone     = st.sidebar.slider("Tolerancja strefy (%)", 0.1, 3.0, 1.0, 0.1) / 100
+min_impulse  = st.sidebar.slider("Minimalny impuls (%)",  0.1, 2.0, 0.5, 0.1) / 100
 
 # ─────────────────────────────────────────────
 # FUNCTIONS
@@ -76,22 +91,45 @@ def load_data(ticker, period, interval):
     df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
     return df[['Open', 'High', 'Low', 'Close']].dropna()
 
+
 def find_swings(df, window):
     highs, lows = [], []
     for i in range(window, len(df) - window):
-        if df['High'].iloc[i] == df['High'].iloc[i-window:i+window+1].max():
+        if df['High'].iloc[i] == df['High'].iloc[i - window:i + window + 1].max():
             highs.append((i, float(df['High'].iloc[i])))
-        if df['Low'].iloc[i] == df['Low'].iloc[i-window:i+window+1].min():
+        if df['Low'].iloc[i] == df['Low'].iloc[i - window:i + window + 1].min():
             lows.append((i, float(df['Low'].iloc[i])))
     return highs, lows
 
-def run_backtest(df, highs, lows, entry_fib, stop_fib, target_fib, fib_zone, min_impulse):
+
+def calc_position_size(equity, risk_pct, leverage, entry, stop):
+    risk_amount  = equity * (risk_pct / 100)
+    pip_risk     = abs(entry - stop)
+    if pip_risk == 0:
+        return 0, 0
+    position_size = (risk_amount / pip_risk) * leverage
+    max_position  = equity * leverage
+    position_size = min(position_size, max_position)
+    return position_size, risk_amount
+
+
+def run_backtest(df, highs, lows, entry_fib, stop_fib, target_fib,
+                 fib_zone, min_impulse, capital, leverage, risk_pct):
     trades = []
+    equity = float(capital)
+    # Block new setups until this bar index – enforces one position at a time
+    blocked_until_bar = -1
+
     for low_idx, low_price in lows:
         next_highs = [(i, p) for i, p in highs if i > low_idx]
         if not next_highs:
             continue
         high_idx, high_price = next_highs[0]
+
+        # Skip this setup if we're still in a trade from a previous one
+        if high_idx <= blocked_until_bar:
+            continue
+
         impulse = high_price - low_price
         if impulse / low_price < min_impulse:
             continue
@@ -101,241 +139,422 @@ def run_backtest(df, highs, lows, entry_fib, stop_fib, target_fib, fib_zone, min
         target_level = high_price + impulse * (target_fib - 1.0)
         risk   = entry_level - stop_level
         reward = target_level - entry_level
-        rr = reward / risk if risk > 0 else 0
+        rr     = reward / risk if risk > 0 else 0
 
+        # Search for entry only from the swing high onward (not before blocked_until)
+        search_start = max(high_idx, blocked_until_bar + 1)
         entry_bar = None
-        for j, (idx, row) in enumerate(df.iloc[high_idx:].iterrows()):
-            if row['Low'] <= entry_level * (1 + fib_zone) and row['High'] >= entry_level * (1 - fib_zone):
-                entry_bar = (j + high_idx, idx, entry_level)
+        for j, (idx, row) in enumerate(df.iloc[search_start:].iterrows()):
+            if row['Low'] <= entry_level * (1 + fib_zone) and \
+               row['High'] >= entry_level * (1 - fib_zone):
+                entry_bar = (j + search_start, idx, entry_level)
                 break
-
         if entry_bar is None:
             continue
 
         entry_bar_num, entry_date, entry_price = entry_bar
-        outcome = exit_price = exit_date = None
+        position_size, risk_amount = calc_position_size(
+            equity, risk_pct, leverage, entry_price, stop_level
+        )
 
-        for idx, row in df.iloc[entry_bar_num:].iterrows():
+        outcome = exit_price = exit_date = exit_bar_num = None
+        for j, (idx, row) in enumerate(df.iloc[entry_bar_num:].iterrows()):
             if row['Low'] <= stop_level:
-                outcome, exit_price, exit_date = 'LOSS', stop_level, idx
+                outcome, exit_price, exit_date, exit_bar_num = 'LOSS', stop_level, idx, j + entry_bar_num
                 break
             if row['High'] >= target_level:
-                outcome, exit_price, exit_date = 'WIN', target_level, idx
+                outcome, exit_price, exit_date, exit_bar_num = 'WIN', target_level, idx, j + entry_bar_num
                 break
-
         if outcome is None:
             continue
 
-        pnl_pips = (exit_price - entry_price) * 10000
+        # Block all new setups until this trade is closed
+        blocked_until_bar = exit_bar_num
+
+        pnl_price = exit_price - entry_price
+        pnl_usd   = pnl_price * position_size
+        pnl_pips  = pnl_price * 10000
+        equity   += pnl_usd
+        equity    = max(equity, 0)
 
         trades.append({
-            'low_price': low_price, 'high_price': high_price,
-            'impulse_size': impulse,
-            'entry_level': entry_level, 'stop_level': stop_level,
-            'target_level': target_level,
-            'entry_date': entry_date, 'exit_date': exit_date,
-            'outcome': outcome, 'pnl_pips': pnl_pips, 'rr_ratio': rr,
+            'entry_date':    entry_date,
+            'exit_date':     exit_date,
+            'outcome':       outcome,
+            'entry_level':   entry_level,
+            'stop_level':    stop_level,
+            'target_level':  target_level,
+            'impulse_size':  impulse,
+            'position_size': position_size,
+            'risk_amount':   risk_amount,
+            'pnl_pips':      pnl_pips,
+            'pnl_usd':       pnl_usd,
+            'equity':        equity,
+            'rr_ratio':      rr,
         })
+
     return pd.DataFrame(trades)
 
+
+def calc_max_drawdown(equity_series):
+    peak = equity_series.cummax()
+    dd   = (equity_series - peak) / peak * 100
+    return dd.min()
+
+
+def dark_layout(height=300):
+    return dict(
+        paper_bgcolor='#1a1a2e', plot_bgcolor='#1a1a2e',
+        font=dict(color='white'), height=height,
+        xaxis=dict(gridcolor='#333'),
+        yaxis=dict(gridcolor='#333'),
+        showlegend=False, margin=dict(t=10, b=30)
+    )
+
+
 # ─────────────────────────────────────────────
-# MAIN APP
+# MAIN
 # ─────────────────────────────────────────────
 st.title("📊 Fibonacci Backtester")
-st.caption(f"Setup: retracement {entry_fib:.3f} → extension {target_fib:.3f} | SL @ {stop_fib:.3f}")
+st.caption(
+    f"Setup: retracement **{entry_fib:.3f}** → extension **{target_fib:.3f}** | "
+    f"SL @ **{stop_fib:.3f}** | Kapitał: **${capital:,}** | "
+    f"Lewar: **x{leverage}** | Ryzyko/trade: **{risk_pct}%**"
+)
 
-with st.spinner("Pobieranie danych..."):
-    try:
-        df = load_data(ticker, period, interval)
-        st.success(f"✅ {len(df)} świec | {df.index[0].date()} → {df.index[-1].date()}")
-    except Exception as e:
-        st.error(f"Błąd pobierania danych: {e}")
-        st.stop()
-
-with st.spinner("Szukam swingów i liczę transakcje..."):
-    highs, lows = find_swings(df, swing_window)
-    results = run_backtest(df, highs, lows, entry_fib, stop_fib, target_fib, fib_zone, min_impulse)
-
-if results.empty:
-    st.warning("Nie znaleziono transakcji. Spróbuj zmniejszyć minimalny impuls lub zwiększyć tolerancję strefy.")
+if not selected_pairs:
+    st.warning("Wybierz co najmniej jedną parę walutową.")
     st.stop()
 
 # ─────────────────────────────────────────────
-# METRICS
+# LEVERAGE QUICK CALC
 # ─────────────────────────────────────────────
-total  = len(results)
-wins   = (results['outcome'] == 'WIN').sum()
-losses = (results['outcome'] == 'LOSS').sum()
-win_rate   = wins / total * 100
-avg_rr     = results['rr_ratio'].mean()
-total_pips = results['pnl_pips'].sum()
-expected_value = (win_rate/100 * avg_rr) - (1 - win_rate/100)
-max_dd = (results['pnl_pips'].cumsum() - results['pnl_pips'].cumsum().cummax()).min()
-
-col1, col2, col3, col4, col5, col6 = st.columns(6)
-col1.metric("Transakcje", total)
-col2.metric("Win Rate", f"{win_rate:.1f}%", f"{wins}W / {losses}L")
-col3.metric("Avg R:R", f"{avg_rr:.2f}")
-col4.metric("Expected Value", f"{expected_value:.2f}R",
-            "✅ Pozytywne" if expected_value > 0 else "❌ Negatywne")
-col5.metric("Total P&L", f"{total_pips:.0f} pips")
-col6.metric("Max Drawdown", f"{max_dd:.0f} pips")
+with st.expander("📐 Kalkulator lewarowania"):
+    risk_amt = capital * risk_pct / 100
+    lev_data = []
+    for lev in [1, 5, 10, 20]:
+        lev_data.append({
+            "Lewar":                f"x{lev}",
+            "Kapitał handlowy":     f"${capital * lev:,.0f}",
+            "Ryzyko/trade (USD)":   f"${risk_amt:,.0f}",
+            "Ryzyko/trade (%)":     f"{risk_pct}%",
+            "Margin required":      f"${capital / lev:,.0f}",
+        })
+    st.dataframe(pd.DataFrame(lev_data), use_container_width=True, hide_index=True)
 
 st.markdown("---")
 
 # ─────────────────────────────────────────────
-# CHARTS
+# TABS PER PAIR + COMPARISON
 # ─────────────────────────────────────────────
-col_left, col_right = st.columns(2)
+all_results = {}
+tab_labels  = selected_pairs + ["📊 Porównanie par"]
+pair_tabs   = st.tabs(tab_labels)
 
-# Cumulative PnL
-with col_left:
-    st.subheader("Cumulative P&L")
-    results['cum_pips'] = results['pnl_pips'].cumsum()
-    fig_pnl = go.Figure()
-    fig_pnl.add_trace(go.Scatter(
-        x=list(range(len(results))), y=results['cum_pips'],
-        fill='tozeroy',
-        line=dict(color='#2196F3', width=2),
-        fillcolor='rgba(33,150,243,0.15)',
-        name='Cumulative pips'
-    ))
-    fig_pnl.update_layout(
-        paper_bgcolor='#1a1a2e', plot_bgcolor='#1a1a2e',
-        font=dict(color='white'), height=300,
-        xaxis=dict(title='Trade #', gridcolor='#333'),
-        yaxis=dict(title='Pips', gridcolor='#333'),
-        showlegend=False
-    )
-    st.plotly_chart(fig_pnl, use_container_width=True)
+for tab, pair_name in zip(pair_tabs[:-1], selected_pairs):
+    ticker = PAIRS[pair_name]
 
-# Win/Loss by month
-with col_right:
-    st.subheader("Win Rate miesięczny")
-    results['month'] = pd.to_datetime(results['entry_date']).dt.to_period('M').astype(str)
-    monthly = results.groupby('month').apply(
-        lambda x: (x['outcome'] == 'WIN').mean() * 100
-    ).reset_index()
-    monthly.columns = ['month', 'win_rate']
+    with tab:
+        with st.spinner(f"Pobieranie {pair_name}..."):
+            try:
+                df = load_data(ticker, period, interval)
+            except Exception as e:
+                st.error(f"Błąd pobierania danych: {e}")
+                continue
 
-    fig_monthly = go.Figure(go.Bar(
-        x=monthly['month'], y=monthly['win_rate'],
-        marker_color=['#26a69a' if w >= 50 else '#ef5350' for w in monthly['win_rate']],
-    ))
-    fig_monthly.add_hline(y=50, line_dash="dash", line_color="yellow", opacity=0.7)
-    fig_monthly.update_layout(
-        paper_bgcolor='#1a1a2e', plot_bgcolor='#1a1a2e',
-        font=dict(color='white'), height=300,
-        xaxis=dict(gridcolor='#333'),
-        yaxis=dict(title='Win Rate %', gridcolor='#333', range=[0, 100]),
-        showlegend=False
-    )
-    st.plotly_chart(fig_monthly, use_container_width=True)
+        st.caption(
+            f"**{len(df)}** świec | {df.index[0].date()} → {df.index[-1].date()}"
+        )
 
-# R:R distribution + PnL per trade
-col_left2, col_right2 = st.columns(2)
+        highs, lows = find_swings(df, swing_window)
 
-with col_left2:
-    st.subheader("Rozkład R:R")
-    fig_rr = go.Figure(go.Histogram(
-        x=results['rr_ratio'], nbinsx=20,
-        marker_color='#9c27b0', opacity=0.8
-    ))
-    fig_rr.add_vline(x=avg_rr, line_dash="dash", line_color="yellow",
-                     annotation_text=f"Avg: {avg_rr:.2f}")
-    fig_rr.update_layout(
-        paper_bgcolor='#1a1a2e', plot_bgcolor='#1a1a2e',
-        font=dict(color='white'), height=300,
-        xaxis=dict(title='R:R Ratio', gridcolor='#333'),
-        yaxis=dict(title='Count', gridcolor='#333'),
-        showlegend=False
-    )
-    st.plotly_chart(fig_rr, use_container_width=True)
+        with st.spinner("Liczę transakcje..."):
+            results = run_backtest(
+                df, highs, lows,
+                entry_fib, stop_fib, target_fib,
+                fib_zone, min_impulse,
+                capital, leverage, risk_pct
+            )
 
-with col_right2:
-    st.subheader("P&L per transakcja")
-    colors = ['#26a69a' if p > 0 else '#ef5350' for p in results['pnl_pips']]
-    fig_bar = go.Figure(go.Bar(
-        x=list(range(len(results))), y=results['pnl_pips'],
-        marker_color=colors
-    ))
-    fig_bar.update_layout(
-        paper_bgcolor='#1a1a2e', plot_bgcolor='#1a1a2e',
-        font=dict(color='white'), height=300,
-        xaxis=dict(title='Trade #', gridcolor='#333'),
-        yaxis=dict(title='Pips', gridcolor='#333'),
-        showlegend=False
-    )
-    st.plotly_chart(fig_bar, use_container_width=True)
+        if results.empty:
+            st.warning("Brak transakcji – zmniejsz minimalny impuls lub zwiększ tolerancję strefy.")
+            continue
+
+        all_results[pair_name] = results
+
+        # ── METRICS ──────────────────────────────────────────────
+        total     = len(results)
+        wins      = (results['outcome'] == 'WIN').sum()
+        losses    = total - wins
+        win_rate  = wins / total * 100
+        avg_rr    = results['rr_ratio'].mean()
+        total_usd = results['pnl_usd'].sum()
+        final_eq  = results['equity'].iloc[-1]
+        max_dd    = calc_max_drawdown(results['equity'])
+        ev        = (win_rate / 100 * avg_rr) - (1 - win_rate / 100)
+
+        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+        c1.metric("Transakcje",      total)
+        c2.metric("Win Rate",        f"{win_rate:.1f}%",    f"{wins}W / {losses}L")
+        c3.metric("Avg R:R",         f"{avg_rr:.2f}")
+        c4.metric("Expected Value",  f"{ev:.2f}R",
+                  "✅ pozytywne" if ev > 0 else "❌ negatywne")
+        c5.metric("Total P&L",       f"${total_usd:,.0f}")
+        c6.metric("Końcowy kapitał", f"${final_eq:,.0f}",
+                  f"{(final_eq / capital - 1) * 100:+.1f}%")
+        c7.metric("Max Drawdown",    f"{max_dd:.1f}%")
+
+        st.markdown("---")
+
+        # ── ROW 1: Equity + Monthly WR ───────────────────────────
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("Krzywa kapitału")
+            fig_eq = go.Figure()
+            fig_eq.add_trace(go.Scatter(
+                x=list(range(len(results))), y=results['equity'],
+                fill='tozeroy', line=dict(color='#2196F3', width=2),
+                fillcolor='rgba(33,150,243,0.1)'
+            ))
+            fig_eq.add_hline(y=capital, line_dash="dash",
+                             line_color="yellow", opacity=0.5,
+                             annotation_text=f"Start ${capital:,}")
+            layout = dark_layout(300)
+            layout['xaxis']['title'] = 'Trade #'
+            layout['yaxis']['title'] = 'USD'
+            fig_eq.update_layout(**layout)
+            st.plotly_chart(fig_eq, use_container_width=True)
+
+        with col2:
+            st.subheader("Win Rate miesięczny")
+            results['month'] = (
+                pd.to_datetime(results['entry_date'])
+                .dt.to_period('M').astype(str)
+            )
+            monthly = (
+                results.groupby('month')
+                .apply(lambda x: (x['outcome'] == 'WIN').mean() * 100)
+                .reset_index(name='win_rate')
+            )
+            fig_m = go.Figure(go.Bar(
+                x=monthly['month'], y=monthly['win_rate'],
+                marker_color=['#26a69a' if w >= 50 else '#ef5350'
+                              for w in monthly['win_rate']],
+                text=[f"{w:.0f}%" for w in monthly['win_rate']],
+                textposition='outside'
+            ))
+            fig_m.add_hline(y=50, line_dash="dash", line_color="yellow", opacity=0.5)
+            layout2 = dark_layout(300)
+            layout2['yaxis']['range'] = [0, 115]
+            layout2['yaxis']['title'] = 'Win Rate %'
+            fig_m.update_layout(**layout2)
+            st.plotly_chart(fig_m, use_container_width=True)
+
+        # ── ROW 2: P&L bars + R:R histogram ─────────────────────
+        col3, col4 = st.columns(2)
+
+        with col3:
+            st.subheader("P&L per transakcja (USD)")
+            fig_bar = go.Figure(go.Bar(
+                x=list(range(len(results))),
+                y=results['pnl_usd'].round(2),
+                marker_color=['#26a69a' if p > 0 else '#ef5350'
+                              for p in results['pnl_usd']]
+            ))
+            layout3 = dark_layout(280)
+            layout3['xaxis']['title'] = 'Trade #'
+            layout3['yaxis']['title'] = 'USD'
+            fig_bar.update_layout(**layout3)
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+        with col4:
+            st.subheader("Rozkład R:R")
+            fig_rr = go.Figure(go.Histogram(
+                x=results['rr_ratio'], nbinsx=20,
+                marker_color='#9c27b0', opacity=0.85
+            ))
+            fig_rr.add_vline(x=avg_rr, line_dash="dash", line_color="yellow",
+                             annotation_text=f"Avg {avg_rr:.2f}")
+            layout4 = dark_layout(280)
+            layout4['xaxis']['title'] = 'R:R'
+            layout4['yaxis']['title'] = 'Liczba transakcji'
+            fig_rr.update_layout(**layout4)
+            st.plotly_chart(fig_rr, use_container_width=True)
+
+        # ── PRICE CHART ──────────────────────────────────────────
+        st.subheader("Wykres ceny z wejściami (ostatnie 300 świec)")
+        sample = df.tail(300)
+        fig_p  = go.Figure()
+        fig_p.add_trace(go.Candlestick(
+            x=sample.index,
+            open=sample['Open'], high=sample['High'],
+            low=sample['Low'],   close=sample['Close'],
+            name='Price',
+            increasing_line_color='#26a69a',
+            decreasing_line_color='#ef5350',
+        ))
+        recent = results[
+            pd.to_datetime(results['entry_date']) >= sample.index[0]
+        ]
+        for outcome, color, symbol in [
+            ('WIN',  '#26a69a', 'triangle-up'),
+            ('LOSS', '#ef5350', 'triangle-up'),
+        ]:
+            sub = recent[recent['outcome'] == outcome]
+            if not sub.empty:
+                fig_p.add_trace(go.Scatter(
+                    x=sub['entry_date'], y=sub['entry_level'],
+                    mode='markers', name=outcome,
+                    marker=dict(symbol=symbol, size=12, color=color,
+                                line=dict(width=1, color='white'))
+                ))
+        price_layout = dark_layout(420)
+        price_layout['showlegend']            = True
+        price_layout['legend']                = dict(bgcolor='#1a1a2e')
+        price_layout['xaxis']['rangeslider']  = dict(visible=False)
+        fig_p.update_layout(**price_layout)
+        st.plotly_chart(fig_p, use_container_width=True)
+
+        # ── LEVERAGE COMPARISON ──────────────────────────────────
+        st.subheader("💡 Wpływ lewara na wyniki (bieżące parametry)")
+        lev_rows = []
+        for lev in [1, 5, 10, 20]:
+            r = run_backtest(
+                df, highs, lows,
+                entry_fib, stop_fib, target_fib,
+                fib_zone, min_impulse,
+                capital, lev, risk_pct
+            )
+            if r.empty:
+                continue
+            eq_f = r['equity'].iloc[-1]
+            dd   = calc_max_drawdown(r['equity'])
+            wr   = (r['outcome'] == 'WIN').mean() * 100
+            lev_rows.append({
+                'Lewar':             f'x{lev}',
+                'Win Rate':          f'{wr:.1f}%',
+                'Total P&L (USD)':   f"${r['pnl_usd'].sum():,.0f}",
+                'Końcowy kapitał':   f"${eq_f:,.0f}",
+                'Zwrot (%)':         f"{(eq_f / capital - 1) * 100:+.1f}%",
+                'Max Drawdown (%)':  f'{dd:.1f}%',
+                'Transakcji':        len(r),
+            })
+        if lev_rows:
+            st.dataframe(
+                pd.DataFrame(lev_rows), use_container_width=True, hide_index=True
+            )
+
+        # ── TRADE TABLE ──────────────────────────────────────────
+        with st.expander("📋 Lista wszystkich transakcji"):
+            disp = results[[
+                'entry_date', 'exit_date', 'outcome',
+                'entry_level', 'stop_level', 'target_level',
+                'position_size', 'risk_amount', 'pnl_pips', 'pnl_usd',
+                'equity', 'rr_ratio'
+            ]].copy()
+            for col in ['entry_level', 'stop_level', 'target_level']:
+                disp[col] = disp[col].round(4)
+            disp['position_size'] = disp['position_size'].round(0)
+            disp['risk_amount']   = disp['risk_amount'].round(2)
+            disp['pnl_pips']      = disp['pnl_pips'].round(1)
+            disp['pnl_usd']       = disp['pnl_usd'].round(2)
+            disp['equity']        = disp['equity'].round(2)
+            disp['rr_ratio']      = disp['rr_ratio'].round(2)
+
+            def color_outcome(val):
+                return ('color: #26a69a; font-weight: bold' if val == 'WIN'
+                        else 'color: #ef5350; font-weight: bold')
+
+            st.dataframe(
+                disp.style.applymap(color_outcome, subset=['outcome']),
+                use_container_width=True
+            )
+            csv = disp.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                f"⬇️ Pobierz CSV – {pair_name}",
+                csv,
+                f"fib_{pair_name.replace('/', '')}_{period}.csv",
+                "text/csv"
+            )
 
 # ─────────────────────────────────────────────
-# PRICE CHART WITH TRADE MARKERS
+# COMPARISON TAB
 # ─────────────────────────────────────────────
-st.subheader("📈 Wykres ceny z transakcjami")
+with pair_tabs[-1]:
+    st.subheader("📊 Porównanie wszystkich par")
 
-sample_df = df.tail(500)
-fig_price = go.Figure()
+    if not all_results:
+        st.info("Uruchom backtest na co najmniej jednej parze.")
+    else:
+        COLORS = ['#2196F3', '#26a69a', '#ef5350', '#ff9800',
+                  '#9c27b0', '#00bcd4', '#ffeb3b', '#e91e63', '#4caf50']
 
-fig_price.add_trace(go.Candlestick(
-    x=sample_df.index,
-    open=sample_df['Open'], high=sample_df['High'],
-    low=sample_df['Low'], close=sample_df['Close'],
-    name='Price',
-    increasing_line_color='#26a69a',
-    decreasing_line_color='#ef5350',
-))
+        comp_rows       = []
+        fig_equity_comp = go.Figure()
 
-# Plot trade entries
-recent_trades = results[pd.to_datetime(results['entry_date']) >= sample_df.index[0]]
+        for i, (pair_name, res) in enumerate(all_results.items()):
+            total  = len(res)
+            wins   = (res['outcome'] == 'WIN').sum()
+            wr     = wins / total * 100
+            avg_rr = res['rr_ratio'].mean()
+            ev     = (wr / 100 * avg_rr) - (1 - wr / 100)
+            pnl    = res['pnl_usd'].sum()
+            eq_fin = res['equity'].iloc[-1]
+            ret    = (eq_fin / capital - 1) * 100
+            dd     = calc_max_drawdown(res['equity'])
 
-wins_df  = recent_trades[recent_trades['outcome'] == 'WIN']
-losses_df = recent_trades[recent_trades['outcome'] == 'LOSS']
+            comp_rows.append({
+                'Para':             pair_name,
+                'Transakcji':       total,
+                'Win Rate':         f'{wr:.1f}%',
+                'Avg R:R':          f'{avg_rr:.2f}',
+                'Expected Value':   f'{ev:.2f}R',
+                'Total P&L (USD)':  f'${pnl:,.0f}',
+                'Zwrot':            f'{ret:+.1f}%',
+                'Max Drawdown':     f'{dd:.1f}%',
+                'Końcowy kapitał':  f'${eq_fin:,.0f}',
+            })
 
-if not wins_df.empty:
-    fig_price.add_trace(go.Scatter(
-        x=wins_df['entry_date'], y=wins_df['entry_level'],
-        mode='markers', marker=dict(symbol='triangle-up', size=12, color='#26a69a'),
-        name='WIN entry'
-    ))
+            fig_equity_comp.add_trace(go.Scatter(
+                x=list(range(len(res))), y=res['equity'],
+                name=pair_name,
+                line=dict(color=COLORS[i % len(COLORS)], width=2)
+            ))
 
-if not losses_df.empty:
-    fig_price.add_trace(go.Scatter(
-        x=losses_df['entry_date'], y=losses_df['entry_level'],
-        mode='markers', marker=dict(symbol='triangle-up', size=12, color='#ef5350'),
-        name='LOSS entry'
-    ))
+        st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
 
-fig_price.update_layout(
-    paper_bgcolor='#1a1a2e', plot_bgcolor='#1a1a2e',
-    font=dict(color='white'), height=500,
-    xaxis=dict(gridcolor='#333', rangeslider=dict(visible=False)),
-    yaxis=dict(gridcolor='#333'),
-    legend=dict(bgcolor='#1a1a2e')
+        # Equity curves
+        st.subheader("Krzywe kapitału – wszystkie pary")
+        fig_equity_comp.add_hline(
+            y=capital, line_dash="dash", line_color="white", opacity=0.3,
+            annotation_text=f"Start ${capital:,}"
+        )
+        eq_layout = dark_layout(450)
+        eq_layout['showlegend']   = True
+        eq_layout['legend']       = dict(bgcolor='#1a1a2e', bordercolor='#333', borderwidth=1)
+        eq_layout['xaxis']['title'] = 'Trade #'
+        eq_layout['yaxis']['title'] = 'Equity (USD)'
+        fig_equity_comp.update_layout(**eq_layout)
+        st.plotly_chart(fig_equity_comp, use_container_width=True)
+
+        # Win rate comparison bar
+        st.subheader("Win Rate – porównanie")
+        wr_vals = [float(r['Win Rate'].replace('%', '')) for r in comp_rows]
+        fig_wr  = go.Figure(go.Bar(
+            x=[r['Para'] for r in comp_rows], y=wr_vals,
+            marker_color=['#26a69a' if w >= 50 else '#ef5350' for w in wr_vals],
+            text=[f"{w:.1f}%" for w in wr_vals], textposition='outside'
+        ))
+        fig_wr.add_hline(y=50, line_dash="dash", line_color="yellow", opacity=0.5)
+        wr_layout = dark_layout(350)
+        wr_layout['yaxis']['range'] = [0, 115]
+        wr_layout['yaxis']['title'] = 'Win Rate %'
+        fig_wr.update_layout(**wr_layout)
+        st.plotly_chart(fig_wr, use_container_width=True)
+
+st.markdown("---")
+st.caption(
+    "Fibonacci Backtester | PHC Trading Tools | Dane: Yahoo Finance | "
+    "Nie stanowi doradztwa inwestycyjnego"
 )
-st.plotly_chart(fig_price, use_container_width=True)
-
-# ─────────────────────────────────────────────
-# TRADE TABLE
-# ─────────────────────────────────────────────
-with st.expander("📋 Lista wszystkich transakcji"):
-    display = results[['entry_date', 'exit_date', 'outcome', 'entry_level',
-                        'stop_level', 'target_level', 'pnl_pips', 'rr_ratio']].copy()
-    display['entry_level'] = display['entry_level'].round(4)
-    display['stop_level']  = display['stop_level'].round(4)
-    display['target_level'] = display['target_level'].round(4)
-    display['pnl_pips'] = display['pnl_pips'].round(1)
-    display['rr_ratio'] = display['rr_ratio'].round(2)
-
-    def color_outcome(val):
-        return 'color: #26a69a' if val == 'WIN' else 'color: #ef5350'
-
-    st.dataframe(
-        display.style.applymap(color_outcome, subset=['outcome']),
-        use_container_width=True
-    )
-
-    csv = display.to_csv(index=False).encode('utf-8')
-    st.download_button("⬇️ Pobierz CSV", csv, "fib_trades.csv", "text/csv")
-
-st.markdown("---")
-st.caption("Fibonacci Backtester | PHC Trading Tools | Dane: Yahoo Finance")
