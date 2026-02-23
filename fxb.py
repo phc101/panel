@@ -1,6 +1,7 @@
 """
 Fibonacci 0.618 → 1.618 Backtester - Streamlit App
 With capital management, leverage and multiple PLN pairs
+USD/CHF kwotowanie (odwrócone z CHF=X)
 
 Usage:
     pip install yfinance pandas numpy streamlit plotly
@@ -43,10 +44,13 @@ PAIRS = {
     "CHF/PLN": "CHFPLN=X",
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
-    "CHF/USD": "CHFUSD=X",
+    "USD/CHF": "CHF=X",       # Yahoo podaje CHF/USD → odwracamy do USD/CHF
     "GBP/EUR": "GBPEUR=X",
     "CHF/EUR": "CHFEUR=X",
 }
+
+# Pary wymagające odwrócenia cen (Yahoo podaje kwotowanie odwrotne)
+INVERTED_PAIRS = {"USD/CHF"}
 
 # ─────────────────────────────────────────────
 # SIDEBAR
@@ -100,20 +104,18 @@ min_impulse  = st.sidebar.slider("Minimalny impuls (%)",  0.1, 2.0, 0.5, 0.1) / 
 # FUNCTIONS
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=3600)
-def load_data(ticker, period, interval):
-    # Yahoo Finance limits:
-    # 1h  → max 730 days → use 1h directly
-    # 4h  → not native:
-    #         period <= 2y  → download 1h, resample to 4h (higher precision)
-    #         period >  2y  → download 1d, resample to 4h (approximation)
-    # 1d  → unlimited
-
+def load_data(ticker, period, interval, invert=False):
+    """
+    Pobiera dane z Yahoo Finance.
+    invert=True: odwraca OHLC (1/cena) dla par kwotowanych odwrotnie w Yahoo,
+    np. CHF=X daje CHF/USD, a my chcemy USD/CHF → odwracamy.
+    Uwaga: po odwróceniu High ↔ Low zamieniają się miejscami.
+    """
     if interval == "4h":
         TWO_YEAR_PERIODS = {"6mo", "1y", "2y"}
         if period in TWO_YEAR_PERIODS:
             dl_interval = "1h"
         else:
-            # 5y: use daily data resampled to ~4h (2 bars/day approximation)
             dl_interval = "1d"
     else:
         dl_interval = interval
@@ -134,6 +136,16 @@ def load_data(ticker, period, interval):
             'Low':   'min',
             'Close': 'last',
         }).dropna()
+
+    # Odwrócenie kwotowania (np. CHF=X → USD/CHF)
+    if invert:
+        df['Open']  = 1.0 / df['Open']
+        df['Close'] = 1.0 / df['Close']
+        # High i Low zamieniają się miejscami po odwróceniu!
+        high_inv   = 1.0 / df['Low']
+        low_inv    = 1.0 / df['High']
+        df['High'] = high_inv
+        df['Low']  = low_inv
 
     return df
 
@@ -163,7 +175,6 @@ def run_backtest(df, highs, lows, entry_fib, stop_fib, target_fib,
                  fib_zone, min_impulse, capital, leverage, risk_pct):
     trades = []
     equity = float(capital)
-    # Block new setups until this bar index – enforces one position at a time
     blocked_until_bar = -1
 
     for low_idx, low_price in lows:
@@ -172,7 +183,6 @@ def run_backtest(df, highs, lows, entry_fib, stop_fib, target_fib,
             continue
         high_idx, high_price = next_highs[0]
 
-        # Skip this setup if we're still in a trade from a previous one
         if high_idx <= blocked_until_bar:
             continue
 
@@ -187,7 +197,6 @@ def run_backtest(df, highs, lows, entry_fib, stop_fib, target_fib,
         reward = target_level - entry_level
         rr     = reward / risk if risk > 0 else 0
 
-        # Search for entry only from the swing high onward (not before blocked_until)
         search_start = max(high_idx, blocked_until_bar + 1)
         entry_bar = None
         for j, (idx, row) in enumerate(df.iloc[search_start:].iterrows()):
@@ -214,7 +223,6 @@ def run_backtest(df, highs, lows, entry_fib, stop_fib, target_fib,
         if outcome is None:
             continue
 
-        # Block all new setups until this trade is closed
         blocked_until_bar = exit_bar_num
 
         pnl_price = exit_price - entry_price
@@ -299,11 +307,12 @@ pair_tabs   = st.tabs(tab_labels)
 
 for tab, pair_name in zip(pair_tabs[:-1], selected_pairs):
     ticker = PAIRS[pair_name]
+    invert = pair_name in INVERTED_PAIRS
 
     with tab:
         with st.spinner(f"Pobieranie {pair_name}..."):
             try:
-                df = load_data(ticker, period, interval)
+                df = load_data(ticker, period, interval, invert=invert)
             except Exception as e:
                 st.error(f"Błąd pobierania danych: {e}")
                 continue
@@ -315,6 +324,8 @@ for tab, pair_name in zip(pair_tabs[:-1], selected_pairs):
         source_note = ""
         if interval == "4h":
             source_note = " | ⚠️ 4h z 1h" if period in ("6mo", "1y", "2y") else " | ⚠️ 4h aproks. z 1d (5y)"
+        if invert:
+            source_note += " | 🔄 kwotowanie odwrócone (Yahoo → USD/CHF)"
 
         st.caption(
             f"**{len(df)}** świec | {df.index[0].date()} → {df.index[-1].date()}{source_note}"
