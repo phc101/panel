@@ -11,3 +11,4 @@ seaborn
 pdfplumber
 openpyxl
 reportlab
+streamlit-autorefresh
