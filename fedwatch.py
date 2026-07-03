@@ -305,9 +305,10 @@ def build_dataset(csv_bytes: bytes | None) -> pd.DataFrame:
     df["ea_real"] = fisher(df["ecb_rate"], df["ea_hicp"])
     df["us_real"] = fisher(df["us_rate"], df["us_breakeven"])
 
-    # Fundamenty: DYFERENCJAŁY (nie sama stopa PL)
-    df["x_pln"] = df["pl_real"] - df["ea_real"]     # dla EUR/PLN
-    df["x_eur"] = df["us_real"] - df["ea_real"]     # dla EUR/USD
+    # Fundamenty: dla EUR/PLN dwa warianty (wybór w UI), dla EUR/USD dyferencjał
+    df["x_pln_solo"] = df["pl_real"]                    # PL stopa realna SOLO
+    df["x_pln_diff"] = df["pl_real"] - df["ea_real"]    # dyferencjał PL−EA
+    df["x_eur"] = df["us_real"] - df["ea_real"]         # dla EUR/USD
 
     # EUR/USD wyprowadzony z krzyża (spójność trójkątna także w danych)
     df["eur_usd"] = df["eur_pln"] / df["usd_pln"]
@@ -379,8 +380,8 @@ def estimate_ecm(log_s: np.ndarray, x: np.ndarray) -> dict:
     return dict(
         alpha=float(b[0]), beta=float(b[1]), t_beta=float(t[1]), r2_level=r2,
         adf=adf, coint=coint, gamma=gamma, t_gamma=float(gt[0]),
-        sigma_u=sigma_u, halflife=halflife, mean_rev=mean_rev,
-        ect=ect, u=u, n=n,
+        sigma_u=sigma_u, sigma_lr=float(np.std(ect)), halflife=halflife,
+        mean_rev=mean_rev, ect=ect, u=u, n=n,
     )
 
 
@@ -449,6 +450,17 @@ if len(df) < 36:
 
 H = st.sidebar.slider("Horyzont prognozy (mies.)", 3, 36, 12)
 
+fund_solo = st.sidebar.radio(
+    "Fundament modelu EUR/PLN",
+    ["PL stopa realna (solo)", "Dyferencjał realny PL−EA"],
+    index=0,
+    help="Solo: silna kointegracja (1%) — realna stopa PL działa jak barometr "
+         "wiarygodności/premii za ryzyko. Dyferencjał: teoretycznie czystszy, "
+         "ale w 2021-22 realne stopy EA też się załamały i relacja znika (R²≈3%).",
+) == "PL stopa realna (solo)"
+df["x_pln"] = df["x_pln_solo"] if fund_solo else df["x_pln_diff"]
+FUND_NAME = "PL stopa realna" if fund_solo else "dyferencjał PL−EA"
+
 last = df.iloc[-1]
 st.sidebar.header("💱 Kursy bieżące")
 spot_pln = st.sidebar.number_input("EUR/PLN spot", 3.0, 6.5, float(round(last["eur_pln"], 4)), 0.01, format="%.4f")
@@ -470,14 +482,14 @@ bkeven = st.sidebar.slider("Breakeven 10Y (%)", 0.0, 5.0, float(round(last["us_b
 pl_real_s = float(fisher(nbp, cpi))
 ea_real_s = float(fisher(ecb, hicp))
 us_real_s = float(fisher(fed, bkeven))
-x_pln_s = pl_real_s - ea_real_s
+x_pln_s = pl_real_s if fund_solo else pl_real_s - ea_real_s
 x_eur_s = us_real_s - ea_real_s
 
 st.sidebar.markdown("---")
 st.sidebar.markdown(
     f"**Realne stopy (scenariusz):**\n\n"
     f"PL: {pl_real_s:+.2f}% | EA: {ea_real_s:+.2f}% | US: {us_real_s:+.2f}%\n\n"
-    f"Dyferencjał PL−EA: **{x_pln_s:+.2f} pp**\n\n"
+    f"Fundament EUR/PLN ({FUND_NAME}): **{x_pln_s:+.2f}%**\n\n"
     f"Dyferencjał US−EA: **{x_eur_s:+.2f} pp**"
 )
 
@@ -503,6 +515,16 @@ sig_u = np.sqrt(np.maximum(sig_p ** 2 + sig_e ** 2 - 2 * res_corr * sig_p * sig_
 
 q_p, q_e, q_u = quantiles(mu_p, sig_p), quantiles(mu_e, sig_e), quantiles(mu_u, sig_u)
 
+# Zakres historyczny: przy danym poziomie fundamentu kurs historycznie mieścił się
+# w paśmie fair value ± z * sigma_LR (odchylenie reszt relacji długookresowej)
+def hist_band(fair, s_lr, z=Z80):
+    return fair * np.exp(-z * s_lr), fair * np.exp(z * s_lr)
+
+slr_usd = float(np.std(m_pln["ect"] - m_eur["ect"]))
+band_p = hist_band(fair_pln, m_pln["sigma_lr"])
+band_e = hist_band(fair_eur, m_eur["sigma_lr"])
+band_u = hist_band(fair_usd, slr_usd)
+
 t0 = pd.Timestamp.today().normalize()
 fdates = pd.date_range(t0, periods=H + 1, freq=pd.DateOffset(months=1))
 
@@ -521,7 +543,7 @@ st.info(
 )
 
 
-def card(col, name, color, spot, fair, q, m_or_none, dec_places=4):
+def card(col, name, color, spot, fair, q, m_or_none, band, dec_places=4):
     dev = (spot / fair - 1) * 100
     c, lo, hi = q["central"][H], q["p25"][H], q["p75"][H]
     chg = (c / spot - 1) * 100
@@ -547,6 +569,8 @@ def card(col, name, color, spot, fair, q, m_or_none, dec_places=4):
               <h1 style="color:{color};margin:8px 0;font-size:2.1em;">{c:.{dec_places}f}</h1>
               <p style="margin:2px 0;color:#666;">prognoza {H}M ({chg:+.2f}%)</p>
               <p style="margin:4px 0;">zakres 50%: <b>{lo:.{dec_places}f} – {hi:.{dec_places}f}</b></p>
+              <p style="margin:4px 0;font-size:0.9em;color:#666;">zakres historyczny 80%
+                 przy tym scenariuszu:<br><b>{band[0]:.{dec_places}f} – {band[1]:.{dec_places}f}</b></p>
               {extra}
             </div>
             """,
@@ -555,9 +579,9 @@ def card(col, name, color, spot, fair, q, m_or_none, dec_places=4):
 
 
 c1, c2, c3 = st.columns(3)
-card(c1, "EUR/PLN", PHC, spot_pln, fair_pln, q_p, m_pln)
-card(c2, "EUR/USD", BLU, spot_eur, fair_eur, q_e, m_eur)
-card(c3, "USD/PLN", GRN, spot_usd, fair_usd, q_u, None)
+card(c1, "EUR/PLN", PHC, spot_pln, fair_pln, q_p, m_pln, band_p)
+card(c2, "EUR/USD", BLU, spot_eur, fair_eur, q_e, m_eur, band_e)
+card(c3, "USD/PLN", GRN, spot_usd, fair_usd, q_u, None, band_u)
 
 for name, m in (("EUR/PLN", m_pln), ("EUR/USD", m_eur)):
     if m["coint"] == "BRAK":
@@ -573,7 +597,7 @@ for name, m in (("EUR/PLN", m_pln), ("EUR/USD", m_eur)):
 # ------------------------------------------------------------------
 # Wykresy i tabele
 # ------------------------------------------------------------------
-def fan_fig(hist_dates, hist_vals, q, color, title, fair, hist_months=36):
+def fan_fig(hist_dates, hist_vals, q, color, title, fair, band, hist_months=36):
     hd = hist_dates[-hist_months:]
     hv = hist_vals[-hist_months:]
     fig = go.Figure()
@@ -594,6 +618,11 @@ def fan_fig(hist_dates, hist_vals, q, color, title, fair, hist_months=36):
     fig.add_hline(y=fair, line_dash="dash", line_color="#64748b",
                   annotation_text=f"fair value {fair:.4f}",
                   annotation_position="bottom right")
+    for b, lbl in ((band[0], "hist. P10"), (band[1], "hist. P90")):
+        fig.add_hline(y=b, line_dash="dot", line_color="#94a3b8",
+                      annotation_text=f"{lbl} {b:.4f}",
+                      annotation_position="top right",
+                      annotation_font_size=10)
     fig.update_layout(title=title, height=480, hovermode="x unified",
                       legend=dict(orientation="h", y=1.08))
     return fig
@@ -618,16 +647,17 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
 
 with tab1:
     st.plotly_chart(fan_fig(df["date"], df["eur_pln"], q_p, PHC,
-                            f"EUR/PLN — ECM | dyferencjał PL−EA: {x_pln_s:+.2f} pp",
-                            fair_pln), width="stretch")
+                            f"EUR/PLN — ECM | {FUND_NAME}: {x_pln_s:+.2f}%",
+                            fair_pln, band_p), width="stretch")
     st.dataframe(horizon_table(q_p), width="stretch", hide_index=True)
-    st.caption("Szerokość pasma rośnie z horyzontem: Var(h) = σ²·(1−ρ²ʰ)/(1−ρ²) "
-               "≈ σ²·h dla małych h, z plateau na wariancji bezwarunkowej.")
+    st.caption("Linie kropkowane = zakres historyczny 80%: przy tym poziomie fundamentu "
+               "kurs mieścił się historycznie w tym paśmie w ~80% miesięcy. "
+               "Wachlarz prognozy rozszerza się ~√h i zbiega do tego pasma.")
 
 with tab2:
     st.plotly_chart(fan_fig(df["date"], df["eur_usd"], q_e, BLU,
                             f"EUR/USD — ECM | dyferencjał US−EA: {x_eur_s:+.2f} pp",
-                            fair_eur), width="stretch")
+                            fair_eur, band_e), width="stretch")
     st.dataframe(horizon_table(q_e), width="stretch", hide_index=True)
     st.caption("Seria historyczna EUR/USD wyprowadzona z krzyża EUR/PLN ÷ USD/PLN — "
                "dziedziczy jakość danych PLN.")
@@ -635,7 +665,7 @@ with tab2:
 with tab3:
     st.plotly_chart(fan_fig(df["date"], df["eur_pln"] / df["eur_usd"], q_u, GRN,
                             "USD/PLN — wyprowadzony z trójkąta (EUR/PLN ÷ EUR/USD)",
-                            fair_usd), width="stretch")
+                            fair_usd, band_u), width="stretch")
     st.dataframe(horizon_table(q_u), width="stretch", hide_index=True)
     st.caption(f"Wariancja: σ²ᵤ = σ²ₚ + σ²ₑ − 2·ρ·σₚ·σₑ, "
                f"korelacja reszt ECM ρ = {res_corr:+.2f}. "
@@ -651,22 +681,27 @@ with tab4:
 
     diag = pd.DataFrame({
         "Parametr": [
-            "α (stała, log)", "β (wrażliwość na dyferencjał)", "t-stat β",
+            "Fundament", "α (stała, log)", "β (wrażliwość na fundament)", "t-stat β",
             "R² (poziomy — tylko opisowo)", "ADF na resztach", "Kointegracja",
             "γ (szybkość korekty)", "t-stat γ", "Half-life (mies.)",
             "σ miesięczna (reszty ECM, %)", "σ roczna (%)",
+            "σ długookresowa (zakres hist., %)",
         ],
         "EUR/PLN": [
+            FUND_NAME,
             f"{m_pln['alpha']:.4f}", f"{m_pln['beta']:+.4f}", f"{m_pln['t_beta']:.2f}",
             f"{m_pln['r2_level']*100:.1f}%", f"{m_pln['adf']:.2f}", m_pln["coint"],
             f"{m_pln['gamma']:+.4f}", f"{m_pln['t_gamma']:.2f}", fmt_hl(m_pln),
             f"{m_pln['sigma_u']*100:.2f}", f"{m_pln['sigma_u']*np.sqrt(12)*100:.2f}",
+            f"{m_pln['sigma_lr']*100:.2f}",
         ],
         "EUR/USD": [
+            "dyferencjał US−EA",
             f"{m_eur['alpha']:.4f}", f"{m_eur['beta']:+.4f}", f"{m_eur['t_beta']:.2f}",
             f"{m_eur['r2_level']*100:.1f}%", f"{m_eur['adf']:.2f}", m_eur["coint"],
             f"{m_eur['gamma']:+.4f}", f"{m_eur['t_gamma']:.2f}", fmt_hl(m_eur),
             f"{m_eur['sigma_u']*100:.2f}", f"{m_eur['sigma_u']*np.sqrt(12)*100:.2f}",
+            f"{m_eur['sigma_lr']*100:.2f}",
         ],
     })
     st.dataframe(diag, width="stretch", hide_index=True)
@@ -717,7 +752,7 @@ with tab5:
         file_name="fx_ecm_dataset.csv", mime="text/csv",
     )
     fig_x = go.Figure()
-    fig_x.add_trace(go.Scatter(x=df["date"], y=df["x_pln"], name="dyferencjał PL−EA",
+    fig_x.add_trace(go.Scatter(x=df["date"], y=df["x_pln"], name=f"fundament EUR/PLN ({FUND_NAME})",
                                line=dict(color=PHC, width=2)))
     fig_x.add_trace(go.Scatter(x=df["date"], y=df["x_eur"], name="dyferencjał US−EA",
                                line=dict(color=BLU, width=2)))
@@ -733,7 +768,7 @@ st.markdown("---")
 with st.expander("📋 Założenia, ograniczenia i następne kroki"):
     st.markdown(f"""
 **Mechanika modelu**
-1. Relacja długookresowa: `log(kurs) = α + β · dyferencjał realnych stóp` (Engle–Granger, krok 1).
+1. Relacja długookresowa: `log(kurs) = α + β · fundament` (EUR/PLN: PL stopa realna solo lub dyferencjał PL−EA — do wyboru; EUR/USD: dyferencjał US−EA) (Engle–Granger, krok 1).
 2. Test DF na resztach vs wartości krytyczne E-G → czy fair value ma sens statystyczny.
 3. ECM: `Δlog(kurs) = γ · odchylenie(t−1) + u` — kurs reaguje **tylko** gdy odjechał od równowagi
    (naprawia podwójne liczenie dyferencjału ze starego modelu).
